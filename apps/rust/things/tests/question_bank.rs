@@ -1745,6 +1745,623 @@ async fn question_ai_delete_is_authenticated_and_only_removes_current_stem() {
     server.abort();
 }
 
+struct StreamingAi {
+    started: tokio::sync::mpsc::UnboundedSender<tokio::sync::oneshot::Sender<()>>,
+}
+
+#[async_trait]
+impl hyz_things::application::question_bank::practice::AiReviewBackend for StreamingAi {
+    async fn connect(
+        &self,
+        _: Option<&str>,
+    ) -> Result<Box<dyn hyz_things::application::question_bank::practice::AiReviewTurn>, String>
+    {
+        Ok(Box::new(StreamingTurn {
+            started: self.started.clone(),
+        }))
+    }
+}
+
+struct StreamingTurn {
+    started: tokio::sync::mpsc::UnboundedSender<tokio::sync::oneshot::Sender<()>>,
+}
+
+#[async_trait]
+impl hyz_things::application::question_bank::practice::AiReviewTurn for StreamingTurn {
+    fn thread_id(&self) -> &str {
+        "stream-thread"
+    }
+    async fn turn(
+        &mut self,
+        _: &str,
+        _: &[String],
+        _: tokio::sync::watch::Sender<bool>,
+    ) -> Result<String, String> {
+        Err("stream method required".into())
+    }
+    async fn turn_stream(
+        &mut self,
+        _: &str,
+        _: &[String],
+        _: tokio::sync::watch::Sender<bool>,
+        sink: hyz_things::application::question_bank::practice::AiReviewEventSink,
+    ) -> Result<String, String> {
+        use hyz_things::application::question_bank::practice::AiReviewProgress;
+        sink(AiReviewProgress::TextDelta {
+            item_id: "item-1".into(),
+            text: "部分正文".into(),
+        })?;
+        let (release, wait) = tokio::sync::oneshot::channel();
+        self.started.send(release).map_err(|_| "test closed")?;
+        wait.await.map_err(|_| "test closed")?;
+        sink(AiReviewProgress::TextDelta {
+            item_id: "item-1".into(),
+            text: "后续正文".into(),
+        })?;
+        Ok("完整正文".into())
+    }
+}
+
+async fn read_sse_through(response: &mut reqwest::Response, marker: &str) -> String {
+    tokio::time::timeout(std::time::Duration::from_secs(5), async {
+        let mut bytes = Vec::new();
+        loop {
+            let chunk = response.chunk().await.unwrap().expect("SSE closed");
+            bytes.extend_from_slice(&chunk);
+            let text = String::from_utf8_lossy(&bytes);
+            if text.contains(marker) {
+                return text.into_owned();
+            }
+        }
+    })
+    .await
+    .unwrap()
+}
+
+#[tokio::test]
+async fn ai_events_authorize_and_recover_stream_snapshot() {
+    let (started, mut turns) = tokio::sync::mpsc::unbounded_channel();
+    let (server, base, cookie, _, bank, _) =
+        bank_server_fixture_with_ai(true, Some(Arc::new(StreamingAi { started }))).await;
+    bank.sync().await.unwrap();
+    let endpoint = format!(
+        "{base}/api/v1/question-bank/practice/questions/019a3d8e-1b32-7a60-9c83-f34217a6e210/ai"
+    );
+    let client = reqwest::Client::new();
+    assert_eq!(
+        client
+            .get(format!("{endpoint}/events"))
+            .send()
+            .await
+            .unwrap()
+            .status(),
+        401
+    );
+    assert_eq!(
+        client
+            .get(format!("{endpoint}/events"))
+            .header("cookie", &cookie)
+            .header("sec-fetch-site", "cross-site")
+            .send()
+            .await
+            .unwrap()
+            .status(),
+        403
+    );
+    assert_eq!(
+        client
+            .post(&endpoint)
+            .header("cookie", &cookie)
+            .header("origin", &base)
+            .header("x-hyz-csrf", "qb-csrf")
+            .json(&serde_json::json!({}))
+            .send()
+            .await
+            .unwrap()
+            .status(),
+        202
+    );
+    let release = turns.recv().await.unwrap();
+    let mut response = client
+        .get(format!("{endpoint}/events"))
+        .header("cookie", &cookie)
+        .header("last-event-id", "old-run:99")
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(response.status(), 200);
+    assert!(response.headers()["content-type"]
+        .to_str()
+        .unwrap()
+        .starts_with("text/event-stream"));
+    assert_eq!(response.headers()["cache-control"], "no-store");
+    let snapshot = read_sse_through(&mut response, "部分正文").await;
+    assert!(snapshot.contains("event: snapshot"), "{snapshot}");
+    assert!(snapshot.contains("run_id"), "{snapshot}");
+    release.send(()).unwrap();
+    let terminal = read_sse_through(&mut response, "run_finished").await;
+    assert!(terminal.contains("text_delta"), "{terminal}");
+    assert!(terminal.contains("后续正文"), "{terminal}");
+    assert!(terminal.contains("answer_final"), "{terminal}");
+    assert!(terminal.contains("完整正文"), "{terminal}");
+    let state: serde_json::Value = client
+        .get(&endpoint)
+        .header("cookie", &cookie)
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(state["status"], "complete");
+    assert_eq!(state["messages"][0]["content"], "完整正文");
+    assert!(state["messages"][0]["id"].as_i64().is_some());
+    server.abort();
+}
+
+#[tokio::test]
+async fn closing_ai_events_does_not_cancel_the_owned_turn() {
+    let (started, mut turns) = tokio::sync::mpsc::unbounded_channel();
+    let (server, base, cookie, _, bank, _) =
+        bank_server_fixture_with_ai(true, Some(Arc::new(StreamingAi { started }))).await;
+    bank.sync().await.unwrap();
+    let endpoint = format!(
+        "{base}/api/v1/question-bank/practice/questions/019a3d8e-1b32-7a60-9c83-f34217a6e210/ai"
+    );
+    let client = reqwest::Client::new();
+    assert_eq!(
+        client
+            .post(&endpoint)
+            .header("cookie", &cookie)
+            .header("origin", &base)
+            .header("x-hyz-csrf", "qb-csrf")
+            .json(&serde_json::json!({}))
+            .send()
+            .await
+            .unwrap()
+            .status(),
+        202
+    );
+    let release = turns.recv().await.unwrap();
+    let mut stream = client
+        .get(format!("{endpoint}/events"))
+        .header("cookie", &cookie)
+        .send()
+        .await
+        .unwrap();
+    assert!(read_sse_through(&mut stream, "部分正文")
+        .await
+        .contains("event: snapshot"));
+    drop(stream);
+    release.send(()).unwrap();
+    tokio::time::timeout(std::time::Duration::from_secs(5), async {
+        loop {
+            let state: serde_json::Value = client
+                .get(&endpoint)
+                .header("cookie", &cookie)
+                .send()
+                .await
+                .unwrap()
+                .json()
+                .await
+                .unwrap();
+            if state["status"] == "complete" {
+                break;
+            }
+            tokio::task::yield_now().await;
+        }
+    })
+    .await
+    .unwrap();
+    let mut resumed = client
+        .get(format!("{endpoint}/events"))
+        .header("cookie", &cookie)
+        .send()
+        .await
+        .unwrap();
+    let snapshot = read_sse_through(&mut resumed, "完整正文").await;
+    assert!(snapshot.contains("event: snapshot"));
+    assert!(snapshot.contains("\"status\":\"complete\""));
+    server.abort();
+}
+
+#[tokio::test]
+async fn ai_request_id_is_idempotent_and_conflicting_payload_is_rejected() {
+    let (started, mut turns) = tokio::sync::mpsc::unbounded_channel();
+    let (server, base, cookie, _, bank, _) =
+        bank_server_fixture_with_ai(true, Some(Arc::new(BlockingAi { started }))).await;
+    bank.sync().await.unwrap();
+    let client = reqwest::Client::new();
+    let endpoint = format!(
+        "{base}/api/v1/question-bank/practice/questions/019a3d8e-1b32-7a60-9c83-f34217a6e210/ai"
+    );
+    let id = "019a3d8e-1b32-7a60-9c83-f34217a6e211";
+    let post = |instruction: &str| {
+        client
+            .post(&endpoint)
+            .header("cookie", &cookie)
+            .header("origin", &base)
+            .header("x-hyz-csrf", "qb-csrf")
+            .json(&serde_json::json!({"request_id":id,"instruction":instruction}))
+    };
+    let (first, second) = tokio::join!(post("解释").send(), post("解释").send());
+    let first: serde_json::Value = first.unwrap().json().await.unwrap();
+    let second: serde_json::Value = second.unwrap().json().await.unwrap();
+    let finish = turns.recv().await.unwrap();
+    assert_eq!(first["request"]["run_id"], second["request"]["run_id"]);
+    assert_eq!(post("不同内容").send().await.unwrap().status(), 409);
+    assert!(turns.try_recv().is_err());
+    assert_eq!(
+        client
+            .get(format!("{endpoint}/requests/{id}"))
+            .send()
+            .await
+            .unwrap()
+            .status(),
+        401
+    );
+    let lookup: serde_json::Value = client
+        .get(format!("{endpoint}/requests/{id}"))
+        .header("cookie", &cookie)
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(lookup["run_id"], first["request"]["run_id"]);
+    finish.send("解析完成".into()).unwrap();
+    tokio::time::timeout(std::time::Duration::from_secs(5), async {
+        loop {
+            let info: serde_json::Value = client
+                .get(format!("{endpoint}/requests/{id}"))
+                .header("cookie", &cookie)
+                .send()
+                .await
+                .unwrap()
+                .json()
+                .await
+                .unwrap();
+            if info["status"] == "complete" {
+                break;
+            }
+            tokio::task::yield_now().await;
+        }
+    })
+    .await
+    .unwrap();
+    let replay: serde_json::Value = post("解释").send().await.unwrap().json().await.unwrap();
+    assert_eq!(replay["request"]["run_id"], first["request"]["run_id"]);
+    assert_eq!(
+        client
+            .delete(&endpoint)
+            .header("cookie", &cookie)
+            .header("origin", &base)
+            .header("x-hyz-csrf", "qb-csrf")
+            .send()
+            .await
+            .unwrap()
+            .status(),
+        200
+    );
+    assert_eq!(
+        client
+            .get(format!("{endpoint}/requests/{id}"))
+            .header("cookie", &cookie)
+            .send()
+            .await
+            .unwrap()
+            .status(),
+        404
+    );
+    server.abort();
+}
+
+#[tokio::test]
+async fn ai_request_insert_failure_rolls_back_review_and_user_message() {
+    let (started, mut turns) = tokio::sync::mpsc::unbounded_channel();
+    let (server, base, cookie, _, bank, pool) =
+        bank_server_fixture_with_ai(true, Some(Arc::new(BlockingAi { started }))).await;
+    bank.sync().await.unwrap();
+    sqlx::raw_sql("CREATE TRIGGER reject_ai_request BEFORE INSERT ON question_ai_requests BEGIN SELECT RAISE(ABORT, 'injected'); END;")
+        .execute(&pool).await.unwrap();
+    let question = "019a3d8e-1b32-7a60-9c83-f34217a6e210";
+    let response = reqwest::Client::new().post(format!("{base}/api/v1/question-bank/practice/questions/{question}/ai"))
+        .header("cookie", &cookie).header("origin", &base).header("x-hyz-csrf", "qb-csrf")
+        .json(&serde_json::json!({"request_id":"019a3d8e-1b32-7a60-9c83-f34217a6e211","instruction":"解释"}))
+        .send().await.unwrap();
+    assert_eq!(response.status(), 503);
+    for table in [
+        "question_ai_reviews",
+        "question_ai_messages",
+        "question_ai_requests",
+    ] {
+        let count: i64 =
+            sqlx::query_scalar(&format!("SELECT count(*) FROM {table} WHERE question_id=?"))
+                .bind(question)
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+        assert_eq!(count, 0, "{table}");
+    }
+    assert!(turns.try_recv().is_err());
+    server.abort();
+}
+
+struct RetryAi {
+    turns: tokio::sync::mpsc::UnboundedSender<(
+        Option<String>,
+        String,
+        tokio::sync::oneshot::Sender<Result<String, String>>,
+    )>,
+}
+struct RetryTurn {
+    previous: Option<String>,
+    turns: tokio::sync::mpsc::UnboundedSender<(
+        Option<String>,
+        String,
+        tokio::sync::oneshot::Sender<Result<String, String>>,
+    )>,
+}
+#[async_trait]
+impl hyz_things::application::question_bank::practice::AiReviewBackend for RetryAi {
+    async fn connect(
+        &self,
+        previous: Option<&str>,
+    ) -> Result<Box<dyn hyz_things::application::question_bank::practice::AiReviewTurn>, String>
+    {
+        Ok(Box::new(RetryTurn {
+            previous: previous.map(str::to_owned),
+            turns: self.turns.clone(),
+        }))
+    }
+}
+#[async_trait]
+impl hyz_things::application::question_bank::practice::AiReviewTurn for RetryTurn {
+    fn thread_id(&self) -> &str {
+        "retry-thread"
+    }
+    async fn turn(
+        &mut self,
+        prompt: &str,
+        _: &[String],
+        _: tokio::sync::watch::Sender<bool>,
+    ) -> Result<String, String> {
+        let (send, receive) = tokio::sync::oneshot::channel();
+        self.turns
+            .send((self.previous.clone(), prompt.into(), send))
+            .map_err(|_| "test closed")?;
+        receive.await.map_err(|_| "test closed")?
+    }
+}
+
+#[tokio::test]
+async fn ai_retry_requires_confirmation_and_reuses_input_and_user_message() {
+    let (turns, mut started) = tokio::sync::mpsc::unbounded_channel();
+    let (server, base, cookie, _, bank, pool) =
+        bank_server_fixture_with_ai(true, Some(Arc::new(RetryAi { turns }))).await;
+    bank.sync().await.unwrap();
+    let client = reqwest::Client::new();
+    let question = "019a3d8e-1b32-7a60-9c83-f34217a6e210";
+    let endpoint = format!("{base}/api/v1/question-bank/practice/questions/{question}/ai");
+    let first_id = "019a3d8e-1b32-7a60-9c83-f34217a6e211";
+    let retry_id = "019a3d8e-1b32-7a60-9c83-f34217a6e212";
+    let first: serde_json::Value = client
+        .post(&endpoint)
+        .header("cookie", &cookie)
+        .header("origin", &base)
+        .header("x-hyz-csrf", "qb-csrf")
+        .json(&serde_json::json!({"request_id":first_id,"instruction":"请详细分析"}))
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    let (_, first_prompt, finish) = started.recv().await.unwrap();
+    finish.send(Err("连接中断".into())).unwrap();
+    tokio::time::timeout(std::time::Duration::from_secs(5), async {
+        loop {
+            let info: serde_json::Value = client
+                .get(format!("{endpoint}/requests/{first_id}"))
+                .header("cookie", &cookie)
+                .send()
+                .await
+                .unwrap()
+                .json()
+                .await
+                .unwrap();
+            if info["status"] == "failed" {
+                assert_eq!(info["remote_uncertain"], true);
+                break;
+            }
+            tokio::task::yield_now().await;
+        }
+    })
+    .await
+    .unwrap();
+    assert_eq!(
+        client
+            .delete(&endpoint)
+            .header("cookie", &cookie)
+            .header("origin", &base)
+            .header("x-hyz-csrf", "qb-csrf")
+            .send()
+            .await
+            .unwrap()
+            .status(),
+        409
+    );
+    assert_eq!(
+        client
+            .post(&endpoint)
+            .header("cookie", &cookie)
+            .header("origin", &base)
+            .header("x-hyz-csrf", "qb-csrf")
+            .json(&serde_json::json!({"request_id":retry_id}))
+            .send()
+            .await
+            .unwrap()
+            .status(),
+        409
+    );
+    let retry_url = format!("{endpoint}/requests/{first_id}/retry");
+    assert_eq!(
+        client
+            .post(&retry_url)
+            .header("cookie", &cookie)
+            .header("origin", &base)
+            .json(&serde_json::json!({"request_id":retry_id}))
+            .send()
+            .await
+            .unwrap()
+            .status(),
+        403
+    );
+    let retry = |confirmed: bool| {
+        client
+            .post(&retry_url)
+            .header("cookie", &cookie)
+            .header("origin", &base)
+            .header("x-hyz-csrf", "qb-csrf")
+            .json(&serde_json::json!({"request_id":retry_id,"confirm_uncertain":confirmed}))
+    };
+    assert_eq!(retry(false).send().await.unwrap().status(), 409);
+    let accepted: serde_json::Value = retry(true).send().await.unwrap().json().await.unwrap();
+    let (previous, retry_prompt, finish) = started.recv().await.unwrap();
+    assert_eq!(previous.as_deref(), Some("retry-thread"));
+    assert_eq!(retry_prompt, first_prompt);
+    assert_eq!(
+        accepted["request"]["user_message_id"],
+        first["request"]["user_message_id"]
+    );
+    let repeated: serde_json::Value = retry(true).send().await.unwrap().json().await.unwrap();
+    assert_eq!(repeated["request"]["run_id"], accepted["request"]["run_id"]);
+    assert!(started.try_recv().is_err());
+    let count: i64 = sqlx::query_scalar(
+        "SELECT count(*) FROM question_ai_messages WHERE question_id=? AND role='user'",
+    )
+    .bind(question)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(count, 1);
+    finish.send(Ok("完成".into())).unwrap();
+    server.abort();
+}
+
+struct FailingResumeAi {
+    calls: tokio::sync::mpsc::UnboundedSender<Option<String>>,
+    turns: tokio::sync::mpsc::UnboundedSender<(
+        Option<String>,
+        String,
+        tokio::sync::oneshot::Sender<Result<String, String>>,
+    )>,
+}
+#[async_trait]
+impl hyz_things::application::question_bank::practice::AiReviewBackend for FailingResumeAi {
+    async fn connect(
+        &self,
+        previous: Option<&str>,
+    ) -> Result<Box<dyn hyz_things::application::question_bank::practice::AiReviewTurn>, String>
+    {
+        self.calls
+            .send(previous.map(str::to_owned))
+            .map_err(|_| "closed")?;
+        if previous.is_some() {
+            return Err("resume failed".into());
+        }
+        Ok(Box::new(RetryTurn {
+            previous: None,
+            turns: self.turns.clone(),
+        }))
+    }
+}
+
+#[tokio::test]
+async fn ai_failed_thread_resume_requires_explicit_new_thread_confirmation() {
+    let (calls, mut connections) = tokio::sync::mpsc::unbounded_channel();
+    let (turns, mut started) = tokio::sync::mpsc::unbounded_channel();
+    let (server, base, cookie, _, bank, pool) =
+        bank_server_fixture_with_ai(true, Some(Arc::new(FailingResumeAi { calls, turns }))).await;
+    bank.sync().await.unwrap();
+    let question = "019a3d8e-1b32-7a60-9c83-f34217a6e210";
+    let fingerprint = bank
+        .question_ai_locator(question)
+        .await
+        .unwrap()
+        .stem_fingerprint;
+    sqlx::query("INSERT INTO question_ai_reviews(question_id,stem_fingerprint,thread_id,status,updated_at) VALUES(?,?,'old-thread','complete',1)")
+        .bind(question).bind(fingerprint).execute(&pool).await.unwrap();
+    let endpoint = format!("{base}/api/v1/question-bank/practice/questions/{question}/ai");
+    let client = reqwest::Client::new();
+    let id = "019a3d8e-1b32-7a60-9c83-f34217a6e211";
+    let retry_id = "019a3d8e-1b32-7a60-9c83-f34217a6e212";
+    let first: serde_json::Value = client
+        .post(format!("{endpoint}/messages"))
+        .header("cookie", &cookie)
+        .header("origin", &base)
+        .header("x-hyz-csrf", "qb-csrf")
+        .json(&serde_json::json!({"request_id":id,"message":"继续讲解"}))
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(
+        connections.recv().await.unwrap().as_deref(),
+        Some("old-thread")
+    );
+    tokio::time::timeout(std::time::Duration::from_secs(5), async {
+        loop {
+            let info: serde_json::Value = client
+                .get(format!("{endpoint}/requests/{id}"))
+                .header("cookie", &cookie)
+                .send()
+                .await
+                .unwrap()
+                .json()
+                .await
+                .unwrap();
+            if info["status"] == "failed" {
+                assert!(info["error"].as_str().unwrap().contains("上下文不可用"));
+                break;
+            }
+            tokio::task::yield_now().await;
+        }
+    })
+    .await
+    .unwrap();
+    assert!(connections.try_recv().is_err());
+    let retry: serde_json::Value = client
+        .post(format!("{endpoint}/requests/{id}/retry"))
+        .header("cookie", &cookie)
+        .header("origin", &base)
+        .header("x-hyz-csrf", "qb-csrf")
+        .json(&serde_json::json!({"request_id":retry_id,"confirm_new_thread":true}))
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(
+        connections.recv().await.unwrap().as_deref(),
+        Some("old-thread")
+    );
+    assert_eq!(connections.recv().await.unwrap(), None);
+    let (_, prompt, finish) = started.recv().await.unwrap();
+    assert_eq!(prompt, "继续讲解");
+    assert_eq!(retry["request"]["new_thread_requested"], true);
+    assert_eq!(
+        retry["request"]["user_message_id"],
+        first["request"]["user_message_id"]
+    );
+    finish.send(Ok("完成".into())).unwrap();
+    server.abort();
+}
+
 struct BlockingAi {
     started: tokio::sync::mpsc::UnboundedSender<tokio::sync::oneshot::Sender<String>>,
 }
@@ -1803,22 +2420,27 @@ async fn deleting_running_ai_prevents_old_completion_from_overwriting_new_task()
     };
     assert_eq!(post(&endpoint).send().await.unwrap().status(), 202);
     let first = turns.recv().await.unwrap();
-    assert_eq!(
-        client
-            .delete(&endpoint)
+    let delete_client = client.clone();
+    let delete_endpoint = endpoint.clone();
+    let delete_cookie = cookie.clone();
+    let delete_base = base.clone();
+    let deleting = tokio::spawn(async move {
+        delete_client
+            .delete(delete_endpoint)
             .header("content-type", "application/json")
-            .header("cookie", &cookie)
-            .header("origin", &base)
+            .header("cookie", delete_cookie)
+            .header("origin", delete_base)
             .header("x-hyz-csrf", "qb-csrf")
             .send()
             .await
             .unwrap()
-            .status(),
-        200
-    );
+            .status()
+    });
+    tokio::task::yield_now().await;
+    first.send("旧回答".into()).unwrap();
+    assert_eq!(deleting.await.unwrap(), 200);
     assert_eq!(post(&endpoint).send().await.unwrap().status(), 202);
     let second = turns.recv().await.unwrap();
-    first.send("旧回答".into()).unwrap();
     second.send("新回答".into()).unwrap();
     let value = tokio::time::timeout(std::time::Duration::from_secs(5), async {
         loop {
@@ -2442,18 +3064,32 @@ async fn ai_start_and_follow_up_forward_uploaded_images_as_local_paths() {
     assert!(!messages[0].contains(upload_path));
 
     // A follow-up resumes the same thread with its own image.
-    sqlx::query("UPDATE question_ai_reviews SET status='complete',thread_id='test-image-thread' WHERE question_id=?")
-        .bind(question)
-        .execute(&pool)
-        .await
-        .unwrap();
+    tokio::time::timeout(std::time::Duration::from_secs(5), async {
+        loop {
+            let state: serde_json::Value = client
+                .get(&endpoint)
+                .header("cookie", &cookie)
+                .send()
+                .await
+                .unwrap()
+                .json()
+                .await
+                .unwrap();
+            if state["status"] == "complete" {
+                break;
+            }
+            tokio::task::yield_now().await;
+        }
+    })
+    .await
+    .unwrap();
     let id = second["id"].as_str().unwrap();
     let response = client
         .post(format!("{endpoint}/messages"))
         .header("cookie", &cookie)
         .header("origin", &base)
         .header("x-hyz-csrf", "qb-csrf")
-        .json(&serde_json::json!({"message": "再解释一下", "attachments": [id]}))
+        .json(&serde_json::json!({"message": "", "attachments": [id]}))
         .send()
         .await
         .unwrap();
@@ -2464,7 +3100,7 @@ async fn ai_start_and_follow_up_forward_uploaded_images_as_local_paths() {
             .unwrap()
             .unwrap();
     assert_eq!(previous.as_deref(), Some("test-image-thread"));
-    assert_eq!(prompt, "再解释一下");
+    assert!(prompt.contains("请结合本次图片继续分析"));
     assert_eq!(images, [upload_path.to_owned()]);
     server.abort();
 }

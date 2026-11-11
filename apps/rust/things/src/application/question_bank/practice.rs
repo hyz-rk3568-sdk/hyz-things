@@ -87,6 +87,32 @@ mod codex_limits_tests {
     }
 }
 
+#[derive(Clone, Debug, serde::Serialize)]
+#[serde(tag = "kind", content = "payload", rename_all = "snake_case")]
+pub enum AiReviewProgress {
+    LimitExceeded,
+    TextDelta {
+        item_id: String,
+        text: String,
+    },
+    ReasoningSummaryDelta {
+        item_id: String,
+        text: String,
+    },
+    ToolStarted {
+        item_id: String,
+        tool: String,
+    },
+    ToolFinished {
+        item_id: String,
+        tool: String,
+        status: String,
+    },
+}
+
+pub type AiReviewEventSink =
+    std::sync::Arc<dyn Fn(AiReviewProgress) -> Result<(), String> + Send + Sync>;
+
 #[async_trait::async_trait]
 pub trait AiReviewTurn: Send {
     fn thread_id(&self) -> &str;
@@ -96,6 +122,16 @@ pub trait AiReviewTurn: Send {
         images: &[String],
         cancellation: tokio::sync::watch::Sender<bool>,
     ) -> Result<String, String>;
+
+    async fn turn_stream(
+        &mut self,
+        prompt: &str,
+        images: &[String],
+        cancellation: tokio::sync::watch::Sender<bool>,
+        _sink: AiReviewEventSink,
+    ) -> Result<String, String> {
+        self.turn(prompt, images, cancellation).await
+    }
 }
 
 /// Forwards validated temporary images to the PC-side receiver. The returned

@@ -2,23 +2,149 @@
 use super::data_analysis::CodexConfig;
 use crate::application::question_bank::{
     attachments::{validate_image, MAX_IMAGES_PER_MESSAGE},
-    practice::{AiAttachmentRelay, AiReviewBackend, AiReviewTurn, QuestionAiLocator},
+    practice::{
+        AiAttachmentRelay, AiReviewBackend, AiReviewEventSink, AiReviewProgress, AiReviewTurn,
+        QuestionAiLocator,
+    },
     BankError, QuestionBankApplication,
 };
 use crate::domain::question_bank::{AiReviewMessage, AiReviewState};
+use sha2::{Digest, Sha256};
 use sqlx::{Row, SqlitePool};
 use std::{
     collections::HashMap,
-    sync::Arc,
+    sync::{Arc, Mutex as StdMutex},
     time::{Duration, Instant},
 };
-use tokio::sync::{watch, Mutex, Semaphore};
+use tokio::sync::{broadcast, watch, Mutex, Semaphore};
 
 const MAX_FOLLOW_UP: usize = 2000;
 const MAX_ACTIVE: usize = 2;
 const STOP_CONFIRM_TIMEOUT: Duration = Duration::from_secs(15);
+const CONNECT_TIMEOUT: Duration = Duration::from_secs(15);
 const ATTACHMENT_TTL: Duration = Duration::from_secs(6 * 60 * 60);
 const MAX_ATTACHMENT_PATH: usize = 1024;
+
+const MAX_STREAM_RUNS: usize = 64;
+const MAX_STREAM_TEXT: usize = 512 * 1024;
+const MAX_STREAM_PROGRESS: usize = 256;
+const MAX_STREAM_CONNECTIONS: usize = 32;
+
+#[derive(Clone, Debug, serde::Serialize)]
+pub struct AiReviewStreamEventV1 {
+    pub version: u8,
+    pub run_id: String,
+    pub seq: u64,
+    pub kind: String,
+    pub timestamp_ms: i64,
+    pub payload: serde_json::Value,
+}
+
+#[derive(Clone, Debug, serde::Serialize)]
+pub struct AiReviewStreamSnapshot {
+    pub version: u8,
+    pub question_id: String,
+    pub stem_fingerprint: String,
+    pub run_id: Option<String>,
+    pub seq: u64,
+    pub status: String,
+    pub text: String,
+    pub progress: Vec<AiReviewStreamEventV1>,
+}
+
+#[derive(Clone)]
+pub struct StreamMessage {
+    key: Key,
+    pub event: AiReviewStreamEventV1,
+}
+
+struct StreamStore {
+    runs: HashMap<Key, AiReviewStreamSnapshot>,
+    sender: broadcast::Sender<StreamMessage>,
+}
+
+impl StreamStore {
+    fn emit(
+        &mut self,
+        key: &Key,
+        id: uuid::Uuid,
+        kind: &str,
+        payload: serde_json::Value,
+    ) -> Result<(), String> {
+        if matches!(kind, "text_delta" | "reasoning_summary_delta")
+            && payload
+                .get("text")
+                .and_then(serde_json::Value::as_str)
+                .is_some_and(|text| text.len() > 32 * 1024)
+        {
+            return Err("AI 解析单条事件超过大小限制".into());
+        }
+        let run = self
+            .runs
+            .get_mut(key)
+            .filter(|run| run.run_id.as_deref() == Some(id.to_string().as_str()))
+            .ok_or("AI 解析已失效")?;
+        if kind == "text_delta" {
+            let text = payload
+                .get("text")
+                .and_then(serde_json::Value::as_str)
+                .ok_or("AI 解析增量无效")?;
+            if run.text.len().saturating_add(text.len()) > MAX_STREAM_TEXT {
+                return Err("AI 解析流超过大小限制".into());
+            }
+            run.text.push_str(text);
+        }
+        if matches!(
+            kind,
+            "tool_started" | "tool_finished" | "reasoning_summary_delta" | "phase_changed"
+        ) && (run.progress.len() >= MAX_STREAM_PROGRESS
+            || run
+                .progress
+                .iter()
+                .map(|entry| entry.payload.to_string().len())
+                .sum::<usize>()
+                .saturating_add(payload.to_string().len())
+                > MAX_STREAM_TEXT)
+        {
+            return Err("AI 解析进度超过大小限制".into());
+        }
+        run.seq += 1;
+        let event = AiReviewStreamEventV1 {
+            version: 1,
+            run_id: id.to_string(),
+            seq: run.seq,
+            kind: kind.to_owned(),
+            timestamp_ms: now(),
+            payload,
+        };
+        if matches!(
+            kind,
+            "tool_started" | "tool_finished" | "reasoning_summary_delta" | "phase_changed"
+        ) {
+            run.progress.push(event.clone());
+        }
+        match kind {
+            "answer_final" => {
+                if let Some(text) = event
+                    .payload
+                    .get("text")
+                    .and_then(serde_json::Value::as_str)
+                {
+                    run.text = text.to_owned();
+                }
+            }
+            "run_finished" => run.status = "complete".into(),
+            "run_failed" => run.status = "failed".into(),
+            "run_stopped" => run.status = "stopped".into(),
+            _ => {}
+        }
+        let _ = self.sender.send(StreamMessage {
+            key: key.clone(),
+            event,
+        });
+        Ok(())
+    }
+}
 
 #[derive(Clone, Debug)]
 pub enum AiReviewError {
@@ -26,6 +152,10 @@ pub enum AiReviewError {
     Unavailable,
     Busy,
     Invalid,
+    RequestConflict,
+    RequestNotFound,
+    AttachmentExpired,
+    ConfirmationRequired,
     Storage,
 }
 impl From<BankError> for AiReviewError {
@@ -33,6 +163,67 @@ impl From<BankError> for AiReviewError {
         Self::Bank(error)
     }
 }
+#[derive(Clone, Debug, serde::Serialize)]
+pub struct AiRequestInfo {
+    pub request_id: String,
+    pub run_id: String,
+    pub intent: String,
+    pub status: String,
+    pub error: Option<String>,
+    pub remote_uncertain: bool,
+    pub new_thread_requested: bool,
+    pub user_message_id: Option<i64>,
+    pub retry_of: Option<String>,
+}
+
+#[derive(serde::Serialize)]
+pub struct AiRequestReceipt {
+    #[serde(flatten)]
+    pub state: AiReviewState,
+    pub request: AiRequestInfo,
+}
+
+struct StoredRequest {
+    info: AiRequestInfo,
+    payload_hash: String,
+    intent: String,
+    input_text: Option<String>,
+    attachments: Vec<String>,
+}
+
+#[derive(serde::Serialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+enum RequestIntent {
+    Initial {
+        instruction: Option<String>,
+        attachments: Vec<String>,
+    },
+    FollowUp {
+        message: String,
+        attachments: Vec<String>,
+    },
+    Retry {
+        source_request_id: String,
+        confirm_uncertain: bool,
+        confirm_new_thread: bool,
+        replacement_attachments: Option<Vec<String>>,
+    },
+}
+
+fn request_uuid(value: &str) -> Result<String, AiReviewError> {
+    uuid::Uuid::parse_str(value)
+        .map(|value| value.to_string())
+        .map_err(|_| AiReviewError::Invalid)
+}
+
+fn request_hash(intent: &RequestIntent) -> Result<String, AiReviewError> {
+    let bytes = serde_json::to_vec(intent).map_err(|_| AiReviewError::Invalid)?;
+    Ok(Sha256::digest(bytes)
+        .iter()
+        .map(|byte| format!("{byte:02x}"))
+        .collect())
+}
+
 #[derive(Clone)]
 struct ActiveTask {
     id: uuid::Uuid,
@@ -47,6 +238,7 @@ struct UploadedAttachment {
 struct ReviewInput {
     prompt: String,
     images: Vec<String>,
+    allow_new_thread: bool,
 }
 #[derive(Clone)]
 pub struct QuestionBankAiService {
@@ -58,6 +250,8 @@ pub struct QuestionBankAiService {
     uploads: Arc<Mutex<HashMap<String, UploadedAttachment>>>,
     active: Arc<Mutex<HashMap<Key, ActiveTask>>>,
     limit: Arc<Semaphore>,
+    streams: Arc<StdMutex<StreamStore>>,
+    stream_connections: Arc<Semaphore>,
 }
 fn now() -> i64 {
     chrono::Utc::now().timestamp_millis()
@@ -69,10 +263,8 @@ fn key(locator: &QuestionAiLocator) -> Key {
     )
 }
 
-const AI_REVIEW_ENVELOPE: &str = concat!(
-    "输出格式：只输出一个符合 outputSchema 的 JSON 对象，把全部 Markdown 放进 answer 字符串；\n",
-    "不要在 JSON 之外写任何说明，也不要用代码围栏包裹整个 JSON。\n",
-);
+const AI_REVIEW_ENVELOPE: &str =
+    "输出格式：直接输出 Markdown 正文，不要用 JSON 包装或用代码围栏包裹全文。\n";
 
 const AI_SVG_INSTRUCTIONS: &str = concat!(
     "当图形有助理解时，用独立的 ```svg 代码块绘制线段图、数轴、对比图或流程图；\n",
@@ -177,6 +369,16 @@ impl AiReviewTurn for super::codex_app_server::CodexSession {
     ) -> Result<String, String> {
         self.turn_review(prompt, images, cancellation).await
     }
+    async fn turn_stream(
+        &mut self,
+        prompt: &str,
+        images: &[String],
+        cancellation: watch::Sender<bool>,
+        sink: AiReviewEventSink,
+    ) -> Result<String, String> {
+        self.turn_review_stream(prompt, images, cancellation, sink)
+            .await
+    }
 }
 
 impl QuestionBankAiService {
@@ -216,7 +418,66 @@ impl QuestionBankAiService {
             uploads: Arc::new(Mutex::new(HashMap::new())),
             active: Arc::new(Mutex::new(HashMap::new())),
             limit: Arc::new(Semaphore::new(MAX_ACTIVE)),
+            streams: Arc::new(StdMutex::new(StreamStore {
+                runs: HashMap::new(),
+                sender: broadcast::channel(256).0,
+            })),
+            stream_connections: Arc::new(Semaphore::new(MAX_STREAM_CONNECTIONS)),
         }
+    }
+
+    pub async fn stream_identity(
+        &self,
+        question_id: &str,
+    ) -> Result<(String, String), AiReviewError> {
+        Ok(key(&self.bank.question_ai_locator(question_id).await?))
+    }
+
+    pub fn stream_permit(&self) -> Result<tokio::sync::OwnedSemaphorePermit, AiReviewError> {
+        self.stream_connections
+            .clone()
+            .try_acquire_owned()
+            .map_err(|_| AiReviewError::Busy)
+    }
+
+    pub fn stream_subscribe(
+        &self,
+        identity: &(String, String),
+        status: &str,
+    ) -> (AiReviewStreamSnapshot, broadcast::Receiver<StreamMessage>) {
+        let streams = self
+            .streams
+            .lock()
+            .unwrap_or_else(|error| error.into_inner());
+        let receiver = streams.sender.subscribe();
+        let snapshot =
+            streams
+                .runs
+                .get(identity)
+                .cloned()
+                .unwrap_or_else(|| AiReviewStreamSnapshot {
+                    version: 1,
+                    question_id: identity.0.clone(),
+                    stem_fingerprint: identity.1.clone(),
+                    run_id: None,
+                    seq: 0,
+                    status: status.to_owned(),
+                    text: String::new(),
+                    progress: Vec::new(),
+                });
+        (snapshot, receiver)
+    }
+
+    pub fn stream_snapshot(
+        &self,
+        identity: &(String, String),
+        status: &str,
+    ) -> AiReviewStreamSnapshot {
+        self.stream_subscribe(identity, status).0
+    }
+
+    pub fn stream_matches(message: &StreamMessage, identity: &(String, String)) -> bool {
+        &message.key == identity
     }
 
     /// Configure the PC-side temporary image receiver. Without a relay, image
@@ -238,8 +499,16 @@ impl QuestionBankAiService {
     }
 
     pub async fn recover_interrupted(&self) -> Result<(), AiReviewError> {
-        sqlx::query("UPDATE question_ai_reviews SET status='failed',error='设备服务重启，之前的生成状态无法确认；可重新尝试',updated_at=? WHERE status='running'")
-            .bind(now()).execute(&self.pool).await.map_err(|_| AiReviewError::Storage)?;
+        let mut tx = self
+            .pool
+            .begin()
+            .await
+            .map_err(|_| AiReviewError::Storage)?;
+        sqlx::query("UPDATE question_ai_reviews SET status='failed',error='设备服务重启，之前的生成状态无法确认；确认后可重新尝试',updated_at=? WHERE status='running'")
+            .bind(now()).execute(&mut *tx).await.map_err(|_| AiReviewError::Storage)?;
+        sqlx::query("UPDATE question_ai_requests SET status='unknown',remote_uncertain=1,error='设备服务重启，远端状态无法确认',updated_at=? WHERE status='running'")
+            .bind(now()).execute(&mut *tx).await.map_err(|_| AiReviewError::Storage)?;
+        tx.commit().await.map_err(|_| AiReviewError::Storage)?;
         Ok(())
     }
 
@@ -309,7 +578,7 @@ impl QuestionBankAiService {
                     .get(id)
                     .filter(|entry| entry.expires_at > now)
                     .map(|entry| entry.path.clone())
-                    .ok_or(AiReviewError::Invalid)
+                    .ok_or(AiReviewError::AttachmentExpired)
             })
             .collect()
     }
@@ -329,11 +598,12 @@ impl QuestionBankAiService {
                 )
             })
             .unwrap_or_else(|| ("idle".into(), None));
-        let rows = sqlx::query("SELECT role,content,created_at FROM question_ai_messages WHERE question_id=? AND stem_fingerprint=? ORDER BY id")
+        let rows = sqlx::query("SELECT id,role,content,created_at FROM question_ai_messages WHERE question_id=? AND stem_fingerprint=? ORDER BY id")
             .bind(&key.0).bind(&key.1).fetch_all(&self.pool).await.map_err(|_| AiReviewError::Storage)?;
         let messages = rows
             .into_iter()
             .map(|row| AiReviewMessage {
+                id: row.get("id"),
                 role: row.get("role"),
                 content: row.get("content"),
                 created_at: row.get("created_at"),
@@ -353,60 +623,97 @@ impl QuestionBankAiService {
         self.state_for_key(&key(&locator)).await
     }
 
+    async fn request_for_key(
+        &self,
+        key: &Key,
+        request_id: &str,
+    ) -> Result<Option<StoredRequest>, AiReviewError> {
+        let row = sqlx::query("SELECT request_id,run_id,status,error,remote_uncertain,new_thread_requested,user_message_id,retry_of,payload_hash,intent,input_text,attachments FROM question_ai_requests WHERE question_id=? AND stem_fingerprint=? AND request_id=?")
+            .bind(&key.0).bind(&key.1).bind(request_id).fetch_optional(&self.pool).await.map_err(|_| AiReviewError::Storage)?;
+        row.map(|row| {
+            let attachments: String = row.get("attachments");
+            let intent: String = row.get("intent");
+            Ok(StoredRequest {
+                info: AiRequestInfo {
+                    request_id: row.get("request_id"),
+                    run_id: row.get("run_id"),
+                    intent: intent.clone(),
+                    status: row.get("status"),
+                    error: row.get("error"),
+                    remote_uncertain: row.get::<i64, _>("remote_uncertain") != 0,
+                    new_thread_requested: row.get::<i64, _>("new_thread_requested") != 0,
+                    user_message_id: row.get("user_message_id"),
+                    retry_of: row.get("retry_of"),
+                },
+                payload_hash: row.get("payload_hash"),
+                intent,
+                input_text: row.get("input_text"),
+                attachments: serde_json::from_str(&attachments)
+                    .map_err(|_| AiReviewError::Storage)?,
+            })
+        })
+        .transpose()
+    }
+
+    pub async fn request_status(
+        &self,
+        question_id: &str,
+        request_id: &str,
+    ) -> Result<AiRequestInfo, AiReviewError> {
+        let request_id = request_uuid(request_id)?;
+        let locator = self.bank.question_ai_locator(question_id).await?;
+        let _active = self.active.lock().await;
+        Ok(self
+            .request_for_key(&key(&locator), &request_id)
+            .await?
+            .ok_or(AiReviewError::RequestNotFound)?
+            .info)
+    }
+
     pub async fn start(
         self: &Arc<Self>,
         question_id: &str,
         instruction: Option<String>,
         attachment_ids: Vec<String>,
     ) -> Result<AiReviewState, AiReviewError> {
-        let instruction = instruction
-            .map(|value| value.trim().to_owned())
-            .filter(|value| !value.is_empty());
-        if instruction.as_ref().is_some_and(|value| {
-            value.chars().count() > MAX_FOLLOW_UP
-                || value.chars().any(|c| c.is_control() && c != '\n')
-        }) {
-            return Err(AiReviewError::Invalid);
-        }
-        if self.backend.is_none() {
-            return Err(AiReviewError::Unavailable);
-        }
-        let images = self.resolve_attachments(&attachment_ids).await?;
-        let locator = self.bank.question_ai_locator(question_id).await?;
-        let key = key(&locator);
-        let mut active = self.active.lock().await;
-        if active.contains_key(&key) {
-            return self.state_for_key(&key).await;
-        }
-        let row = sqlx::query("SELECT status,thread_id FROM question_ai_reviews WHERE question_id=? AND stem_fingerprint=?")
-            .bind(&key.0).bind(&key.1).fetch_optional(&self.pool).await.map_err(|_| AiReviewError::Storage)?;
-        let thread = if let Some(row) = row {
-            if row.get::<String, _>("status") == "complete" {
-                return self.state_for_key(&key).await;
+        match self
+            .start_request(
+                question_id,
+                &uuid::Uuid::now_v7().to_string(),
+                instruction,
+                attachment_ids,
+            )
+            .await
+        {
+            Ok(receipt) => Ok(receipt.state),
+            Err(AiReviewError::Busy) => {
+                let state = self.state(question_id).await?;
+                if matches!(state.status.as_str(), "running" | "complete") {
+                    Ok(state)
+                } else {
+                    Err(AiReviewError::Busy)
+                }
             }
-            row.get::<Option<String>, _>("thread_id")
-        } else {
-            None
-        };
-        sqlx::query("INSERT INTO question_ai_reviews(question_id,stem_fingerprint,thread_id,status,updated_at) VALUES(?,?,?,'running',?) ON CONFLICT(question_id,stem_fingerprint) DO UPDATE SET status='running',error=NULL,updated_at=excluded.updated_at")
-            .bind(&key.0).bind(&key.1).bind(&thread).bind(now()).execute(&self.pool).await.map_err(|_| AiReviewError::Storage)?;
-        if !images.is_empty() {
-            sqlx::query("INSERT INTO question_ai_messages(question_id,stem_fingerprint,role,content,created_at) VALUES(?,?,'user',?,?)")
-                .bind(&key.0)
-                .bind(&key.1)
-                .bind(Self::attachment_note(images.len()))
-                .bind(now())
-                .execute(&self.pool)
-                .await
-                .map_err(|_| AiReviewError::Storage)?;
+            Err(error) => Err(error),
         }
-        let prompt = format!(
-            "{}{}",
-            initial_prompt(&locator, instruction.as_deref()),
-            image_path_section(&images)
-        );
-        self.spawn_task(&mut active, key.clone(), thread, prompt, images);
-        self.state_for_key(&key).await
+    }
+
+    pub async fn start_request(
+        self: &Arc<Self>,
+        question_id: &str,
+        request_id: &str,
+        instruction: Option<String>,
+        attachment_ids: Vec<String>,
+    ) -> Result<AiRequestReceipt, AiReviewError> {
+        self.begin_request(
+            question_id,
+            request_id,
+            RequestIntent::Initial {
+                instruction,
+                attachments: attachment_ids,
+            },
+        )
+        .await
     }
 
     pub async fn follow_up(
@@ -415,59 +722,351 @@ impl QuestionBankAiService {
         message: String,
         attachment_ids: Vec<String>,
     ) -> Result<AiReviewState, AiReviewError> {
-        if message.trim().is_empty()
-            || message != message.trim()
-            || message.chars().count() > MAX_FOLLOW_UP
-            || message.chars().any(|c| c.is_control() && c != '\n')
-        {
-            return Err(AiReviewError::Invalid);
+        Ok(self
+            .follow_up_request(
+                question_id,
+                &uuid::Uuid::now_v7().to_string(),
+                message,
+                attachment_ids,
+            )
+            .await?
+            .state)
+    }
+
+    pub async fn follow_up_request(
+        self: &Arc<Self>,
+        question_id: &str,
+        request_id: &str,
+        message: String,
+        attachment_ids: Vec<String>,
+    ) -> Result<AiRequestReceipt, AiReviewError> {
+        self.begin_request(
+            question_id,
+            request_id,
+            RequestIntent::FollowUp {
+                message,
+                attachments: attachment_ids,
+            },
+        )
+        .await
+    }
+
+    pub async fn retry_request(
+        self: &Arc<Self>,
+        question_id: &str,
+        source_request_id: &str,
+        request_id: &str,
+        confirm_uncertain: bool,
+        confirm_new_thread: bool,
+        replacement_attachments: Option<Vec<String>>,
+    ) -> Result<AiRequestReceipt, AiReviewError> {
+        let source_request_id = request_uuid(source_request_id)?;
+        self.begin_request(
+            question_id,
+            request_id,
+            RequestIntent::Retry {
+                source_request_id,
+                confirm_uncertain,
+                confirm_new_thread,
+                replacement_attachments,
+            },
+        )
+        .await
+    }
+
+    async fn begin_request(
+        self: &Arc<Self>,
+        question_id: &str,
+        request_id: &str,
+        intent: RequestIntent,
+    ) -> Result<AiRequestReceipt, AiReviewError> {
+        let request_id = request_uuid(request_id)?;
+        let hash = request_hash(&intent)?;
+        let locator = self.bank.question_ai_locator(question_id).await?;
+        let key = key(&locator);
+        let mut active = self.active.lock().await;
+        if let Some(existing) = self.request_for_key(&key, &request_id).await? {
+            if existing.payload_hash != hash {
+                return Err(AiReviewError::RequestConflict);
+            }
+            return Ok(AiRequestReceipt {
+                state: self.state_for_key(&key).await?,
+                request: existing.info,
+            });
+        }
+        match &intent {
+            RequestIntent::Initial {
+                instruction: Some(value),
+                ..
+            } if value.chars().count() > MAX_FOLLOW_UP
+                || value.chars().any(|c| c.is_control() && c != '\n') =>
+            {
+                return Err(AiReviewError::Invalid)
+            }
+            RequestIntent::FollowUp {
+                message,
+                attachments,
+            } if (message.is_empty() && attachments.is_empty())
+                || message != message.trim()
+                || message.chars().count() > MAX_FOLLOW_UP
+                || message.chars().any(|c| c.is_control() && c != '\n') =>
+            {
+                return Err(AiReviewError::Invalid)
+            }
+            _ => {}
         }
         if self.backend.is_none() {
             return Err(AiReviewError::Unavailable);
         }
-        let images = self.resolve_attachments(&attachment_ids).await?;
-        let locator = self.bank.question_ai_locator(question_id).await?;
-        let key = key(&locator);
-        let mut active = self.active.lock().await;
-        if active.contains_key(&key) {
+        if active.contains_key(&key) || active.len() >= MAX_STREAM_RUNS {
             return Err(AiReviewError::Busy);
         }
-        let row = sqlx::query("SELECT thread_id,status FROM question_ai_reviews WHERE question_id=? AND stem_fingerprint=?")
-            .bind(&key.0).bind(&key.1).fetch_optional(&self.pool).await.map_err(|_| AiReviewError::Storage)?.ok_or(AiReviewError::Invalid)?;
-        let thread: Option<String> = row.get("thread_id");
-        let status: String = row.get("status");
-        if thread.is_none() || !matches!(status.as_str(), "complete" | "stopped" | "failed") {
+        if !matches!(&intent, RequestIntent::Retry { .. }) {
+            let uncertain: Option<i64> = sqlx::query_scalar("SELECT remote_uncertain FROM question_ai_requests WHERE question_id=? AND stem_fingerprint=? ORDER BY rowid DESC LIMIT 1")
+                .bind(&key.0).bind(&key.1).fetch_optional(&self.pool).await.map_err(|_| AiReviewError::Storage)?;
+            if uncertain == Some(1) {
+                return Err(AiReviewError::ConfirmationRequired);
+            }
+        }
+        let row = sqlx::query("SELECT status,thread_id,updated_at FROM question_ai_reviews WHERE question_id=? AND stem_fingerprint=?")
+            .bind(&key.0).bind(&key.1).fetch_optional(&self.pool).await.map_err(|_| AiReviewError::Storage)?;
+        let status = row.as_ref().map(|row| row.get::<String, _>("status"));
+        if status.as_deref() == Some("running") {
             return Err(AiReviewError::Busy);
         }
+        let thread: Option<String> = row
+            .as_ref()
+            .and_then(|row| row.get::<Option<String>, _>("thread_id"));
+        let expected_updated = row.as_ref().map(|row| row.get::<i64, _>("updated_at"));
+        let expected_latest: Option<String> = sqlx::query_scalar("SELECT request_id FROM question_ai_requests WHERE question_id=? AND stem_fingerprint=? ORDER BY rowid DESC LIMIT 1")
+            .bind(&key.0).bind(&key.1).fetch_optional(&self.pool).await.map_err(|_| AiReviewError::Storage)?;
+        let (kind, text, attachments, retry_of, existing_message_id, allow_new_thread) =
+            match intent {
+                RequestIntent::Initial {
+                    instruction,
+                    attachments,
+                } => {
+                    if matches!(status.as_deref(), Some("complete" | "running")) {
+                        return Err(AiReviewError::Busy);
+                    }
+                    let instruction = instruction
+                        .map(|value| value.trim().to_owned())
+                        .filter(|value| !value.is_empty());
+                    (
+                        "initial".to_owned(),
+                        instruction,
+                        attachments,
+                        None,
+                        None,
+                        false,
+                    )
+                }
+                RequestIntent::FollowUp {
+                    message,
+                    attachments,
+                } => {
+                    if thread.is_none()
+                        || !matches!(status.as_deref(), Some("complete" | "stopped" | "failed"))
+                    {
+                        return Err(AiReviewError::Busy);
+                    }
+                    (
+                        "follow_up".to_owned(),
+                        Some(message),
+                        attachments,
+                        None,
+                        None,
+                        false,
+                    )
+                }
+                RequestIntent::Retry {
+                    source_request_id,
+                    confirm_uncertain,
+                    confirm_new_thread,
+                    replacement_attachments,
+                } => {
+                    let source = self
+                        .request_for_key(&key, &source_request_id)
+                        .await?
+                        .ok_or(AiReviewError::RequestNotFound)?;
+                    if expected_latest.as_deref() != Some(source_request_id.as_str())
+                        || !matches!(
+                            source.info.status.as_str(),
+                            "failed" | "stopped" | "unknown"
+                        )
+                    {
+                        return Err(AiReviewError::Busy);
+                    }
+                    if source.info.remote_uncertain && !confirm_uncertain {
+                        return Err(AiReviewError::ConfirmationRequired);
+                    }
+                    if confirm_new_thread
+                        && !source
+                            .info
+                            .error
+                            .as_deref()
+                            .is_some_and(|error| error.starts_with("无法恢复原 Codex Thread"))
+                    {
+                        return Err(AiReviewError::Invalid);
+                    }
+                    if source.intent == "follow_up" && thread.is_none() {
+                        return Err(AiReviewError::Busy);
+                    }
+                    if replacement_attachments
+                        .as_ref()
+                        .is_some_and(|replacement| replacement.len() != source.attachments.len())
+                    {
+                        return Err(AiReviewError::Invalid);
+                    }
+                    let attachments = replacement_attachments.unwrap_or(source.attachments);
+                    (
+                        source.intent,
+                        source.input_text,
+                        attachments,
+                        Some(source_request_id),
+                        source.info.user_message_id,
+                        confirm_new_thread,
+                    )
+                }
+            };
+        if kind == "follow_up" && text.as_deref().unwrap_or("").is_empty() && attachments.is_empty()
+        {
+            return Err(AiReviewError::Invalid);
+        }
+        let images = self.resolve_attachments(&attachments).await?;
         let mut tx = self
             .pool
             .begin()
             .await
             .map_err(|_| AiReviewError::Storage)?;
-        let stored = if images.is_empty() {
-            message.clone()
-        } else {
-            format!("{message}\n\n{}", Self::attachment_note(images.len()))
-        };
-        sqlx::query("INSERT INTO question_ai_messages(question_id,stem_fingerprint,role,content,created_at) VALUES(?,?,'user',?,?)")
-            .bind(&key.0).bind(&key.1).bind(&stored).bind(now()).execute(&mut *tx).await.map_err(|_| AiReviewError::Storage)?;
-        sqlx::query("UPDATE question_ai_reviews SET status='running',error=NULL,updated_at=? WHERE question_id=? AND stem_fingerprint=?")
-            .bind(now()).bind(&key.0).bind(&key.1).execute(&mut *tx).await.map_err(|_| AiReviewError::Storage)?;
+        let changed = sqlx::query("INSERT INTO question_ai_reviews(question_id,stem_fingerprint,thread_id,status,updated_at) VALUES(?,?,?,'running',?) ON CONFLICT(question_id,stem_fingerprint) DO UPDATE SET status='running',error=NULL,updated_at=excluded.updated_at WHERE question_ai_reviews.status=? AND question_ai_reviews.updated_at=? AND COALESCE((SELECT request_id FROM question_ai_requests WHERE question_id=question_ai_reviews.question_id AND stem_fingerprint=question_ai_reviews.stem_fingerprint ORDER BY rowid DESC LIMIT 1),'')=?")
+            .bind(&key.0).bind(&key.1).bind(&thread).bind(now()).bind(&status).bind(expected_updated).bind(expected_latest.as_deref().unwrap_or(""))
+            .execute(&mut *tx).await.map_err(|_| AiReviewError::Storage)?;
+        if changed.rows_affected() != 1 {
+            tx.rollback().await.map_err(|_| AiReviewError::Storage)?;
+            if let Some(existing) = self.request_for_key(&key, &request_id).await? {
+                if existing.payload_hash != hash {
+                    return Err(AiReviewError::RequestConflict);
+                }
+                return Ok(AiRequestReceipt {
+                    state: self.state_for_key(&key).await?,
+                    request: existing.info,
+                });
+            }
+            return Err(AiReviewError::Busy);
+        }
+        let mut message_id = existing_message_id;
+        if retry_of.is_none() && (kind == "follow_up" || text.is_some() || !images.is_empty()) {
+            let mut stored = text.clone().unwrap_or_default();
+            if !images.is_empty() {
+                if !stored.is_empty() {
+                    stored.push_str("\n\n");
+                }
+                stored.push_str(&Self::attachment_note(images.len()));
+            }
+            message_id = Some(sqlx::query("INSERT INTO question_ai_messages(question_id,stem_fingerprint,role,content,created_at) VALUES(?,?,'user',?,?)")
+                .bind(&key.0).bind(&key.1).bind(stored).bind(now()).execute(&mut *tx).await.map_err(|_| AiReviewError::Storage)?.last_insert_rowid());
+        }
+        let run_id = uuid::Uuid::now_v7();
+        let attachments_json =
+            serde_json::to_string(&attachments).map_err(|_| AiReviewError::Invalid)?;
+        let inserted = sqlx::query("INSERT INTO question_ai_requests(question_id,stem_fingerprint,request_id,payload_hash,run_id,intent,input_text,attachments,user_message_id,retry_of,new_thread_requested,status,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,'running',?,?)")
+            .bind(&key.0).bind(&key.1).bind(&request_id).bind(&hash).bind(run_id.to_string()).bind(&kind).bind(&text).bind(attachments_json)
+            .bind(message_id).bind(&retry_of).bind(i64::from(allow_new_thread)).bind(now()).bind(now()).execute(&mut *tx).await;
+        if let Err(error) = inserted {
+            let unique = error
+                .as_database_error()
+                .is_some_and(|error| error.is_unique_violation());
+            tx.rollback().await.map_err(|_| AiReviewError::Storage)?;
+            if unique {
+                if let Some(existing) = self.request_for_key(&key, &request_id).await? {
+                    if existing.payload_hash != hash {
+                        return Err(AiReviewError::RequestConflict);
+                    }
+                    return Ok(AiRequestReceipt {
+                        state: self.state_for_key(&key).await?,
+                        request: existing.info,
+                    });
+                }
+                return Err(AiReviewError::Busy);
+            }
+            return Err(AiReviewError::Storage);
+        }
         tx.commit().await.map_err(|_| AiReviewError::Storage)?;
-        let prompt = format!("{message}{}", image_path_section(&images));
-        self.spawn_task(&mut active, key.clone(), thread, prompt, images);
-        self.state_for_key(&key).await
+        let prompt = if kind == "initial" {
+            initial_prompt(&locator, text.as_deref())
+        } else {
+            text.clone()
+                .filter(|text| !text.is_empty())
+                .unwrap_or_else(|| "请结合本次图片继续分析。".into())
+        };
+        let prompt = format!("{prompt}{}", image_path_section(&images));
+        self.spawn_task(
+            &mut active,
+            key.clone(),
+            run_id,
+            thread,
+            ReviewInput {
+                prompt,
+                images,
+                allow_new_thread,
+            },
+        );
+        let request = self
+            .request_for_key(&key, &request_id)
+            .await?
+            .ok_or(AiReviewError::Storage)?
+            .info;
+        Ok(AiRequestReceipt {
+            state: self.state_for_key(&key).await?,
+            request,
+        })
     }
 
     fn spawn_task(
         self: &Arc<Self>,
         active: &mut HashMap<Key, ActiveTask>,
         key: Key,
+        id: uuid::Uuid,
         thread: Option<String>,
-        prompt: String,
-        images: Vec<String>,
+        input: ReviewInput,
     ) {
-        let id = uuid::Uuid::now_v7();
+        {
+            let mut streams = self
+                .streams
+                .lock()
+                .unwrap_or_else(|error| error.into_inner());
+            if streams.runs.len() >= MAX_STREAM_RUNS {
+                if let Some(old) = streams
+                    .runs
+                    .iter()
+                    .find(|(_, run)| run.status != "running")
+                    .map(|(key, _)| key.clone())
+                {
+                    streams.runs.remove(&old);
+                }
+            }
+            streams.runs.insert(
+                key.clone(),
+                AiReviewStreamSnapshot {
+                    version: 1,
+                    question_id: key.0.clone(),
+                    stem_fingerprint: key.1.clone(),
+                    run_id: Some(id.to_string()),
+                    seq: 0,
+                    status: "running".into(),
+                    text: String::new(),
+                    progress: Vec::new(),
+                },
+            );
+            let _ = streams.emit(&key, id, "run_started", serde_json::json!({}));
+            let _ = streams.emit(
+                &key,
+                id,
+                "phase_changed",
+                serde_json::json!({"phase":"queued"}),
+            );
+        }
         let (cancellation, _) = watch::channel(false);
         let (done, finished) = watch::channel(false);
         active.insert(
@@ -481,14 +1080,7 @@ impl QuestionBankAiService {
         let service = Arc::clone(self);
         tokio::spawn(async move {
             service
-                .generate(
-                    key,
-                    id,
-                    thread,
-                    ReviewInput { prompt, images },
-                    cancellation,
-                    done,
-                )
+                .generate(key, id, thread, input, cancellation, done)
                 .await;
         });
     }
@@ -511,16 +1103,59 @@ impl QuestionBankAiService {
     }
 
     pub async fn delete(&self, question_id: &str) -> Result<AiReviewState, AiReviewError> {
+        self.delete_with_confirmation(question_id, false).await
+    }
+
+    pub async fn delete_with_confirmation(
+        &self,
+        question_id: &str,
+        confirm_uncertain: bool,
+    ) -> Result<AiReviewState, AiReviewError> {
         let locator = self.bank.question_ai_locator(question_id).await?;
         let key = key(&locator);
-        let mut active = self.active.lock().await;
-        // Keep the task registered until the transaction commits; failed deletion must not permit a second writer.
-        if let Some(task) = active.get(&key) {
+        let task = {
+            let active = self.active.lock().await;
+            active.get(&key).cloned()
+        };
+        if let Some(task) = task {
             task.cancellation.send_replace(true);
+            let mut finished = task.finished;
+            if !matches!(
+                tokio::time::timeout(STOP_CONFIRM_TIMEOUT, finished.wait_for(|value| *value)).await,
+                Ok(Ok(_))
+            ) {
+                return Err(AiReviewError::Busy);
+            }
+        }
+        let mut active = self.active.lock().await;
+        if active.contains_key(&key) {
+            return Err(AiReviewError::Busy);
         }
         let mut tx = self
             .pool
             .begin()
+            .await
+            .map_err(|_| AiReviewError::Storage)?;
+        let status: Option<String> = sqlx::query_scalar(
+            "SELECT status FROM question_ai_reviews WHERE question_id=? AND stem_fingerprint=?",
+        )
+        .bind(&key.0)
+        .bind(&key.1)
+        .fetch_optional(&mut *tx)
+        .await
+        .map_err(|_| AiReviewError::Storage)?;
+        if status.as_deref() == Some("running") {
+            return Err(AiReviewError::Busy);
+        }
+        let uncertain: Option<i64> = sqlx::query_scalar("SELECT remote_uncertain FROM question_ai_requests WHERE question_id=? AND stem_fingerprint=? ORDER BY rowid DESC LIMIT 1")
+            .bind(&key.0).bind(&key.1).fetch_optional(&mut *tx).await.map_err(|_| AiReviewError::Storage)?;
+        if uncertain == Some(1) && !confirm_uncertain {
+            return Err(AiReviewError::ConfirmationRequired);
+        }
+        sqlx::query("DELETE FROM question_ai_requests WHERE question_id=? AND stem_fingerprint=?")
+            .bind(&key.0)
+            .bind(&key.1)
+            .execute(&mut *tx)
             .await
             .map_err(|_| AiReviewError::Storage)?;
         sqlx::query("DELETE FROM question_ai_messages WHERE question_id=? AND stem_fingerprint=?")
@@ -537,6 +1172,28 @@ impl QuestionBankAiService {
             .map_err(|_| AiReviewError::Storage)?;
         tx.commit().await.map_err(|_| AiReviewError::Storage)?;
         active.remove(&key);
+        {
+            let mut streams = self
+                .streams
+                .lock()
+                .unwrap_or_else(|error| error.into_inner());
+            if let Some(run) = streams.runs.remove(&key) {
+                if let Some(run_id) = run.run_id {
+                    let event = AiReviewStreamEventV1 {
+                        version: 1,
+                        run_id,
+                        seq: run.seq + 1,
+                        kind: "reset".into(),
+                        timestamp_ms: now(),
+                        payload: serde_json::json!({}),
+                    };
+                    let _ = streams.sender.send(StreamMessage {
+                        key: key.clone(),
+                        event,
+                    });
+                }
+            }
+        }
         self.state_for_key(&key).await
     }
 
@@ -549,6 +1206,8 @@ impl QuestionBankAiService {
         cancellation: watch::Sender<bool>,
         done: watch::Sender<bool>,
     ) {
+        let overflow = Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let remote_started = std::sync::atomic::AtomicBool::new(false);
         let result: Result<String, String> = async {
             let mut cancelled = cancellation.subscribe();
             if *cancelled.borrow() { return Err("用户已停止".into()); }
@@ -557,40 +1216,141 @@ impl QuestionBankAiService {
                 _ = cancelled.wait_for(|value| *value) => return Err("用户已停止".into()),
             };
             if *cancellation.borrow() { return Err("用户已停止".into()); }
+            {
+                let mut streams = self.streams.lock().unwrap_or_else(|error| error.into_inner());
+                let _ = streams.emit(&key, id, "phase_changed", serde_json::json!({"phase":"connecting"}));
+            }
             let config = self.backend.as_ref().ok_or("Codex 未配置")?;
-            let mut codex = match config.connect(previous_thread.as_deref()).await {
-                Ok(codex) => codex,
-                Err(resume_error) if previous_thread.is_some() => config.connect(None).await.map_err(|new_error| format!("无法恢复原 Codex Thread（{resume_error}）；新 Thread 也无法创建（{new_error}）"))?,
-                Err(error) => return Err(error),
+            let connect = async {
+                match config.connect(previous_thread.as_deref()).await {
+                    Ok(codex) => Ok(codex),
+                    Err(resume_error) if previous_thread.is_some() && input.allow_new_thread => config.connect(None).await.map_err(|new_error| format!("无法恢复原 Codex Thread（{resume_error}）；新 Thread 创建失败（{new_error}）")),
+                    Err(resume_error) if previous_thread.is_some() => Err(format!("无法恢复原 Codex Thread，原有上下文不可用：{resume_error}")),
+                    Err(error) => Err(error),
+                }
+            };
+            let mut codex = tokio::select! {
+                result = tokio::time::timeout(CONNECT_TIMEOUT, connect) => result.map_err(|_| "连接 Codex App Server 超时")??,
+                _ = cancelled.wait_for(|value| *value) => return Err("用户已停止".into()),
             };
             {
                 let active = self.active.lock().await;
                 if active.get(&key).is_none_or(|task| task.id != id) || *cancellation.borrow() { return Err("用户已停止".into()); }
-                sqlx::query("UPDATE question_ai_reviews SET thread_id=?,updated_at=? WHERE question_id=? AND stem_fingerprint=?")
-                    .bind(codex.thread_id()).bind(now()).bind(&key.0).bind(&key.1).execute(&self.pool).await.map_err(|_| "无法保存 Codex Thread ID")?;
+                let updated = sqlx::query("UPDATE question_ai_reviews SET thread_id=?,updated_at=? WHERE question_id=? AND stem_fingerprint=? AND EXISTS(SELECT 1 FROM question_ai_requests WHERE question_id=? AND stem_fingerprint=? AND run_id=? AND status='running')")
+                    .bind(codex.thread_id()).bind(now()).bind(&key.0).bind(&key.1).bind(&key.0).bind(&key.1).bind(id.to_string()).execute(&self.pool).await.map_err(|_| "无法保存 Codex Thread ID")?;
+                if updated.rows_affected() != 1 { return Err("AI 解析运行已失效".into()); }
             }
             if *cancellation.borrow() { return Err("用户已停止".into()); }
+            {
+                let mut streams = self.streams.lock().unwrap_or_else(|error| error.into_inner());
+                let _ = streams.emit(&key, id, "phase_changed", serde_json::json!({"phase":"executing"}));
+            }
+            let streams = Arc::clone(&self.streams);
+            let stream_key = key.clone();
+            let stream_cancellation = cancellation.clone();
+            let stream_overflow = Arc::clone(&overflow);
+            let sink: AiReviewEventSink = Arc::new(move |progress: AiReviewProgress| {
+                if *stream_cancellation.borrow() { return Ok(()); }
+                if matches!(&progress, AiReviewProgress::LimitExceeded) {
+                    stream_overflow.store(true, std::sync::atomic::Ordering::Relaxed);
+                    stream_cancellation.send_replace(true);
+                    return Ok(());
+                }
+                let value = serde_json::to_value(progress).map_err(|_| "AI 解析事件编码失败")?;
+                let kind = value.get("kind").and_then(serde_json::Value::as_str).ok_or("AI 解析事件无效")?;
+                let payload = value.get("payload").cloned().ok_or("AI 解析事件无效")?;
+                let result = streams.lock().unwrap_or_else(|error| error.into_inner()).emit(&stream_key, id, kind, payload);
+                if result.is_err() {
+                    stream_overflow.store(true, std::sync::atomic::Ordering::Relaxed);
+                    stream_cancellation.send_replace(true);
+                }
+                Ok(())
+            });
+            remote_started.store(true, std::sync::atomic::Ordering::Relaxed);
             codex
-                .turn(&input.prompt, &input.images, cancellation.clone())
+                .turn_stream(&input.prompt, &input.images, cancellation.clone(), sink)
                 .await
         }.await;
         let mut active = self.active.lock().await;
         if active.get(&key).is_some_and(|task| task.id == id) {
-            let stopped = *cancellation.borrow();
-            let (status, error) = match result {
-                Ok(answer) if !stopped => {
-                    if sqlx::query("INSERT INTO question_ai_messages(question_id,stem_fingerprint,role,content,created_at) VALUES(?,?,'assistant',?,?)")
-                        .bind(&key.0).bind(&key.1).bind(answer).bind(now()).execute(&self.pool).await.is_ok() { ("complete", None) }
-                    else { ("failed", Some("AI 解析存储失败".to_owned())) }
-                },
-                _ if stopped => ("stopped", None),
-                Err(message) => ("failed", Some(message)),
-                Ok(_) => ("stopped", None),
+            let exceeded = overflow.load(std::sync::atomic::Ordering::Relaxed);
+            let stopped = *cancellation.borrow() && !exceeded;
+            let result = if exceeded {
+                let uncertainty = result
+                    .as_ref()
+                    .err()
+                    .filter(|error| error.contains(super::codex_app_server::UNCONFIRMED_MESSAGE));
+                Err(match uncertainty {
+                    Some(error) => format!("AI 解析流超过大小限制；{error}"),
+                    None => "AI 解析流超过大小限制；请重试".to_owned(),
+                })
+            } else {
+                result
             };
-            if sqlx::query("UPDATE question_ai_reviews SET status=?,error=?,updated_at=? WHERE question_id=? AND stem_fingerprint=?")
-                .bind(status).bind(error).bind(now()).bind(&key.0).bind(&key.1).execute(&self.pool).await.is_err() {
-                tracing::error!(question_id=%key.0, "failed to persist AI review status");
+            let (status, error, answer) = match result {
+                Ok(answer) if !stopped => ("complete", None, Some(answer)),
+                Err(message) if message.contains(super::codex_app_server::UNCONFIRMED_MESSAGE) => {
+                    ("failed", Some(message), None)
+                }
+                _ if stopped => ("stopped", None, None),
+                Err(message) => ("failed", Some(message), None),
+                Ok(_) => ("stopped", None, None),
+            };
+            let remote_uncertain = matches!(status, "failed" | "stopped")
+                && remote_started.load(std::sync::atomic::Ordering::Relaxed);
+            let persisted = async {
+                let mut tx = self.pool.begin().await?;
+                if let Some(answer) = &answer {
+                    sqlx::query("INSERT INTO question_ai_messages(question_id,stem_fingerprint,role,content,created_at) VALUES(?,?,'assistant',?,?)")
+                        .bind(&key.0).bind(&key.1).bind(answer).bind(now()).execute(&mut *tx).await?;
+                }
+                let review_updated = sqlx::query("UPDATE question_ai_reviews SET status=?,error=?,updated_at=? WHERE question_id=? AND stem_fingerprint=? AND EXISTS(SELECT 1 FROM question_ai_requests WHERE question_id=? AND stem_fingerprint=? AND run_id=? AND status='running')")
+                    .bind(status).bind(&error).bind(now()).bind(&key.0).bind(&key.1).bind(&key.0).bind(&key.1).bind(id.to_string()).execute(&mut *tx).await?;
+                if review_updated.rows_affected() != 1 { return Err(sqlx::Error::RowNotFound); }
+                let updated = sqlx::query("UPDATE question_ai_requests SET status=?,error=?,remote_uncertain=?,updated_at=? WHERE question_id=? AND stem_fingerprint=? AND run_id=? AND status='running'")
+                    .bind(status).bind(&error).bind(i64::from(remote_uncertain)).bind(now()).bind(&key.0).bind(&key.1).bind(id.to_string()).execute(&mut *tx).await?;
+                if updated.rows_affected() != 1 { return Err(sqlx::Error::RowNotFound); }
+                tx.commit().await
+            }.await;
+            let failure_recorded = if persisted.is_err() {
+                async {
+                    let mut tx = self.pool.begin().await?;
+                    let updated = sqlx::query("UPDATE question_ai_requests SET status='unknown',remote_uncertain=1,error='AI 解析存储失败，远端状态不确定',updated_at=? WHERE question_id=? AND stem_fingerprint=? AND run_id=? AND status='running'")
+                        .bind(now()).bind(&key.0).bind(&key.1).bind(id.to_string()).execute(&mut *tx).await?;
+                    if updated.rows_affected() != 1 { return Err(sqlx::Error::RowNotFound); }
+                    let review_updated = sqlx::query("UPDATE question_ai_reviews SET status='failed',error='AI 解析存储失败，远端状态不确定',updated_at=? WHERE question_id=? AND stem_fingerprint=?")
+                        .bind(now()).bind(&key.0).bind(&key.1).execute(&mut *tx).await?;
+                    if review_updated.rows_affected() != 1 { return Err(sqlx::Error::RowNotFound); }
+                    tx.commit().await
+                }.await.is_ok()
+            } else {
+                true
+            };
+            let mut streams = self
+                .streams
+                .lock()
+                .unwrap_or_else(|error| error.into_inner());
+            if persisted.is_err() {
+                tracing::error!(question_id=%key.0, "failed to persist AI review result");
+                let _ = streams.emit(
+                    &key,
+                    id,
+                    "run_failed",
+                    serde_json::json!({"error":"AI 解析存储失败", "persistence_confirmed":failure_recorded}),
+                );
+            } else {
+                if let Some(answer) = answer {
+                    let _ =
+                        streams.emit(&key, id, "answer_final", serde_json::json!({"text":answer}));
+                }
+                let kind = match status {
+                    "complete" => "run_finished",
+                    "stopped" => "run_stopped",
+                    _ => "run_failed",
+                };
+                let _ = streams.emit(&key, id, kind, serde_json::json!({"error":error}));
             }
+            drop(streams);
             active.remove(&key);
         }
         done.send_replace(true);
@@ -614,7 +1374,7 @@ mod tests {
         assert!(prompt.contains("```svg"), "{prompt}");
         assert!(prompt.contains("viewBox"), "{prompt}");
         assert!(prompt.contains("foreignObject"), "{prompt}");
-        assert!(prompt.contains("outputSchema"), "{prompt}");
+        assert!(!prompt.contains("outputSchema"), "{prompt}");
     }
 
     #[test]

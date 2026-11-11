@@ -9,6 +9,7 @@ apps/rust/**/target/
 apps/rust/**/node_modules/
 apps/rust/**/playwright-report/
 apps/rust/**/test-results/
+apps/rust/things/frontend/ts-dist/
 apps/rust/things/frontend/router.css
 apps/flutter/**/.dart_tool/
 apps/flutter/**/build/

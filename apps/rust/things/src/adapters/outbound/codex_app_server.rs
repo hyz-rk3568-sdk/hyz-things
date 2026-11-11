@@ -1,5 +1,6 @@
 //! Fixed-LAN Codex App Server adapter for the single-user study site.
 //! Codex signs in once on the PC; this device only holds a capability token.
+use crate::application::question_bank::practice::{AiReviewEventSink, AiReviewProgress};
 use base64::{engine::general_purpose::STANDARD, Engine as _};
 use serde_json::{json, Value};
 use sha1::{Digest, Sha1};
@@ -67,26 +68,100 @@ pub(super) fn validate_token(token: &str) -> Result<(), String> {
     Ok(())
 }
 
-/// Accept the JSON envelope, a fenced JSON envelope, or plain Markdown.
-/// Models occasionally skip the envelope even though it is requested.
 fn review_answer(raw: &str) -> Option<String> {
-    fn envelope(text: &str) -> Option<String> {
-        serde_json::from_str::<Value>(text)
-            .ok()?
-            .get("answer")?
-            .as_str()
-            .map(str::to_owned)
+    let answer = raw.trim();
+    (!answer.is_empty() && answer.len() <= MAX_PACKET).then(|| answer.to_owned())
+}
+
+#[derive(Default)]
+struct ReviewEventMapper {
+    items: std::collections::HashMap<String, String>,
+}
+
+impl ReviewEventMapper {
+    fn map(&mut self, packet: &Value, thread: &str, turn: &str) -> Option<AiReviewProgress> {
+        let params = packet.get("params")?;
+        if params.get("threadId")?.as_str()? != thread || params.get("turnId")?.as_str()? != turn {
+            return None;
+        }
+        let method = packet.get("method")?.as_str()?;
+        if method == "item/started" {
+            let item = params.get("item")?;
+            let id = item.get("id")?.as_str()?;
+            let kind = item.get("type")?.as_str()?;
+            if id.is_empty()
+                || self.items.contains_key(id)
+                || !matches!(
+                    kind,
+                    "agentMessage"
+                        | "reasoning"
+                        | "commandExecution"
+                        | "fileChange"
+                        | "mcpToolCall"
+                        | "webSearch"
+                )
+            {
+                return None;
+            }
+            if id.len() > 256 || self.items.len() >= 256 {
+                return Some(AiReviewProgress::LimitExceeded);
+            }
+            self.items.insert(id.to_owned(), kind.to_owned());
+            if matches!(
+                kind,
+                "commandExecution" | "fileChange" | "mcpToolCall" | "webSearch"
+            ) {
+                return Some(AiReviewProgress::ToolStarted {
+                    item_id: id.to_owned(),
+                    tool: kind.to_owned(),
+                });
+            }
+        } else if method == "item/completed" {
+            let item = params.get("item")?;
+            let id = item.get("id")?.as_str()?;
+            let kind = self.items.remove(id)?;
+            if matches!(
+                kind.as_str(),
+                "commandExecution" | "fileChange" | "mcpToolCall" | "webSearch"
+            ) {
+                let status = item
+                    .get("status")
+                    .and_then(Value::as_str)
+                    .unwrap_or("completed");
+                if status.len() > 64 {
+                    return Some(AiReviewProgress::LimitExceeded);
+                }
+                return Some(AiReviewProgress::ToolFinished {
+                    item_id: id.to_owned(),
+                    tool: kind,
+                    status: status.to_owned(),
+                });
+            }
+        } else if matches!(
+            method,
+            "item/agentMessage/delta" | "item/reasoning/summaryTextDelta"
+        ) {
+            let id = params.get("itemId")?.as_str()?;
+            let kind = self.items.get(id)?;
+            let text = params.get("delta")?.as_str()?;
+            if text.is_empty() {
+                return None;
+            }
+            if method == "item/agentMessage/delta" && kind == "agentMessage" {
+                return Some(AiReviewProgress::TextDelta {
+                    item_id: id.to_owned(),
+                    text: text.to_owned(),
+                });
+            }
+            if method == "item/reasoning/summaryTextDelta" && kind == "reasoning" {
+                return Some(AiReviewProgress::ReasoningSummaryDelta {
+                    item_id: id.to_owned(),
+                    text: text.to_owned(),
+                });
+            }
+        }
+        None
     }
-    fn without_fence(text: &str) -> Option<&str> {
-        let body = text.strip_prefix("```")?.trim_start();
-        let body = body.split_once('\n')?.1;
-        body.trim_end().strip_suffix("```").map(str::trim)
-    }
-    let text = raw.trim();
-    let answer = envelope(text)
-        .or_else(|| without_fence(text).and_then(envelope))
-        .unwrap_or_else(|| text.to_owned());
-    (!answer.trim().is_empty() && answer.len() <= MAX_PACKET).then_some(answer)
 }
 
 fn output_schema() -> Value {
@@ -232,6 +307,14 @@ async fn discard_payload(socket: &mut OwnedReadHalf, mut length: usize) -> Resul
 }
 
 async fn read_text(socket: &mut OwnedReadHalf, writer: &SharedWriter) -> Result<String, String> {
+    read_text_bounded(socket, writer, false).await
+}
+
+async fn read_text_bounded(
+    socket: &mut OwnedReadHalf,
+    writer: &SharedWriter,
+    strict: bool,
+) -> Result<String, String> {
     let mut message = Vec::new();
     let mut fragmented = false;
     let mut discarding = false;
@@ -279,6 +362,9 @@ async fn read_text(socket: &mut OwnedReadHalf, writer: &SharedWriter) -> Result<
         match opcode {
             0x1 if !fragmented && !discarding => {
                 if length > MAX_PACKET {
+                    if strict {
+                        return Err(format!("Codex 通知超过大小限制；{UNCONFIRMED_MESSAGE}"));
+                    }
                     discard_payload(socket, length).await?;
                     discarding = !final_frame;
                 } else {
@@ -297,6 +383,9 @@ async fn read_text(socket: &mut OwnedReadHalf, writer: &SharedWriter) -> Result<
                         discarding = false;
                     }
                 } else if message.len().saturating_add(length) > MAX_PACKET {
+                    if strict {
+                        return Err(format!("Codex 通知超过大小限制；{UNCONFIRMED_MESSAGE}"));
+                    }
                     message.clear();
                     fragmented = false;
                     discard_payload(socket, length).await?;
@@ -467,21 +556,27 @@ impl CodexSession {
     }
 
     /// Return one independently reasoned AI review message as Markdown.
-    /// The schema restricts only the output envelope, not model reasoning.
     pub async fn turn_review(
         &mut self,
         prompt: &str,
         images: &[String],
         cancellation: watch::Sender<bool>,
     ) -> Result<String, String> {
-        let schema = json!({
-            "type":"object",
-            "properties":{"answer":{"type":"string"}},
-            "required":["answer"],
-            "additionalProperties":false
-        });
         let raw = self
-            .turn_cancellable_with_schema(prompt, images, cancellation, schema)
+            .turn_cancellable_inner(prompt, images, cancellation, None, None)
+            .await?;
+        review_answer(&raw).ok_or_else(|| "Codex AI 解析内容为空或过长".to_owned())
+    }
+
+    pub async fn turn_review_stream(
+        &mut self,
+        prompt: &str,
+        images: &[String],
+        cancellation: watch::Sender<bool>,
+        sink: AiReviewEventSink,
+    ) -> Result<String, String> {
+        let raw = self
+            .turn_cancellable_inner(prompt, images, cancellation, None, Some(sink))
             .await?;
         review_answer(&raw).ok_or_else(|| "Codex AI 解析内容为空或过长".to_owned())
     }
@@ -516,6 +611,18 @@ impl CodexSession {
         cancellation: watch::Sender<bool>,
         schema: Value,
     ) -> Result<String, String> {
+        self.turn_cancellable_inner(prompt, images, cancellation, Some(schema), None)
+            .await
+    }
+
+    async fn turn_cancellable_inner(
+        &mut self,
+        prompt: &str,
+        images: &[String],
+        cancellation: watch::Sender<bool>,
+        schema: Option<Value>,
+        sink: Option<AiReviewEventSink>,
+    ) -> Result<String, String> {
         let mut cancelled = cancellation.subscribe();
         if *cancelled.borrow() {
             return Err(CANCELLED_MESSAGE.into());
@@ -524,7 +631,7 @@ impl CodexSession {
         let thread = self.thread_id.clone();
         let interrupt_id = self.next_request_id();
         let (state_tx, mut state) = watch::channel(TurnState::NotStarted);
-        let generation = self.run_turn(prompt, images, state_tx, schema);
+        let generation = self.run_turn(prompt, images, state_tx, schema, sink);
         tokio::pin!(generation);
         let error = tokio::select! {
             result = &mut generation => return result,
@@ -576,7 +683,8 @@ impl CodexSession {
         prompt: &str,
         images: &[String],
         state: watch::Sender<TurnState>,
-        schema: Value,
+        schema: Option<Value>,
+        sink: Option<AiReviewEventSink>,
     ) -> Result<String, String> {
         state.send_replace(TurnState::Starting);
         let thread = self.thread_id.clone();
@@ -588,15 +696,47 @@ impl CodexSession {
         );
         let mut params = json!({
             "threadId":thread,
-            "input":input,
-            "outputSchema":schema
+            "input":input
         });
+        if let Some(schema) = schema {
+            params["outputSchema"] = schema;
+        }
         // Resumed threads may still carry the old read-only policy; request the
         // maximum sandbox explicitly for every turn in that thread.
         if self.resumed {
             params["sandboxPolicy"] = json!({"type":"dangerFullAccess"});
         }
-        let result = self.request("turn/start", params).await?;
+        let request_id = self.next_request_id();
+        self.send(&json!({"id":request_id,"method":"turn/start","params":params}))
+            .await?;
+        let mut pending = std::collections::VecDeque::new();
+        let mut pending_bytes = 0usize;
+        let result = loop {
+            let raw = read_text_bounded(&mut self.reader, &self.writer, sink.is_some()).await?;
+            let packet: Value =
+                serde_json::from_str(&raw).map_err(|_| "Codex 返回非法 JSON-RPC")?;
+            if packet.get("id").and_then(Value::as_i64) == Some(request_id)
+                && packet.get("method").is_none()
+            {
+                if packet.get("error").is_some() {
+                    return Err("Codex 拒绝启动 Turn".into());
+                }
+                break packet
+                    .get("result")
+                    .cloned()
+                    .ok_or("Codex 响应缺少 result")?;
+            }
+            if packet.get("id").is_some() && packet.get("method").is_some() {
+                let id = &packet["id"];
+                self.send(&json!({"id":id,"error":{"code":-32601,"message":"Interactive tools unavailable"}})).await?;
+            } else if packet.get("method").is_some() {
+                pending_bytes = pending_bytes.saturating_add(raw.len());
+                if pending.len() >= 128 || pending_bytes > MAX_PACKET {
+                    return Err("Codex 启动通知过多，远端状态未确认".into());
+                }
+                pending.push_back(packet);
+            }
+        };
         let turn_id = result
             .pointer("/turn/id")
             .and_then(Value::as_str)
@@ -604,12 +744,16 @@ impl CodexSession {
             .to_owned();
         state.send_replace(TurnState::Running(turn_id.clone()));
         let mut final_answer = String::new();
+        let mut mapper = ReviewEventMapper::default();
         // A generation turn is bounded by TURN_TIMEOUT, not by notification count.
         // A long but healthy reasoning stream may exceed 2048 notifications.
         loop {
-            let raw = read_text(&mut self.reader, &self.writer).await?;
-            let packet: Value =
-                serde_json::from_str(&raw).map_err(|_| "Codex 返回非法 JSON-RPC 通知")?;
+            let packet: Value = if let Some(packet) = pending.pop_front() {
+                packet
+            } else {
+                let raw = read_text_bounded(&mut self.reader, &self.writer, sink.is_some()).await?;
+                serde_json::from_str(&raw).map_err(|_| "Codex 返回非法 JSON-RPC 通知")?
+            };
             // Reject interactive requests; responses such as interrupt acknowledgements
             // have an id without a method and need no reply.
             if let Some(id) = packet.get("id").filter(|_| packet.get("method").is_some()) {
@@ -620,6 +764,11 @@ impl CodexSession {
                 continue;
             }
             let method = packet.get("method").and_then(Value::as_str);
+            if let Some(sink) = &sink {
+                if let Some(event) = mapper.map(&packet, &thread, &turn_id) {
+                    sink(event)?;
+                }
+            }
             if packet.pointer("/params/turnId").and_then(Value::as_str) == Some(turn_id.as_str())
                 && method == Some("item/completed")
                 && packet.pointer("/params/item/type").and_then(Value::as_str)
@@ -655,6 +804,50 @@ impl CodexSession {
 mod tests {
     use super::*;
     use tokio::net::TcpListener;
+
+    #[test]
+    fn review_progress_requires_matching_turn_and_started_agent_item() {
+        let mut mapper = ReviewEventMapper::default();
+        let delta = |thread: &str, turn: &str| {
+            json!({"method":"item/agentMessage/delta", "params":{
+                "threadId":thread,"turnId":turn,"itemId":"item-1","delta":"正文"
+            }})
+        };
+        assert!(mapper
+            .map(&delta("thread", "turn"), "thread", "turn")
+            .is_none());
+        let started = json!({"method":"item/started","params":{"threadId":"thread","turnId":"turn",
+            "item":{"id":"item-1","type":"agentMessage"}}});
+        assert!(mapper.map(&started, "thread", "turn").is_none());
+        assert!(mapper
+            .map(&delta("other", "turn"), "thread", "turn")
+            .is_none());
+        assert!(mapper
+            .map(&delta("thread", "other"), "thread", "turn")
+            .is_none());
+        assert!(matches!(
+            mapper.map(&delta("thread", "turn"), "thread", "turn"),
+            Some(AiReviewProgress::TextDelta { .. })
+        ));
+    }
+
+    #[test]
+    fn review_tool_events_pair_only_matching_started_items() {
+        let mut mapper = ReviewEventMapper::default();
+        let started = json!({"method":"item/started","params":{"threadId":"t","turnId":"r",
+            "item":{"id":"tool","type":"commandExecution"}}});
+        let finished = json!({"method":"item/completed","params":{"threadId":"t","turnId":"r",
+            "item":{"id":"tool","type":"commandExecution","status":"failed"}}});
+        assert!(mapper.map(&finished, "t", "r").is_none());
+        assert!(matches!(
+            mapper.map(&started, "t", "r"),
+            Some(AiReviewProgress::ToolStarted { .. })
+        ));
+        assert!(
+            matches!(mapper.map(&finished, "t", "r"), Some(AiReviewProgress::ToolFinished { status, .. }) if status == "failed")
+        );
+        assert!(mapper.map(&finished, "t", "r").is_none());
+    }
 
     #[test]
     fn generation_turn_deadline_is_ten_minutes() {
@@ -928,31 +1121,34 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn review_accepts_an_answer_wrapped_in_a_json_code_fence() {
+    async fn review_stream_preserves_matching_notifications_before_start_response() {
         let (mut session, mut socket) = test_connection().await;
+        let (tx, mut events) = tokio::sync::mpsc::unbounded_channel();
+        let sink: AiReviewEventSink =
+            Arc::new(move |event| tx.send(event).map_err(|_| "closed".to_owned()));
         let task = tokio::spawn(async move {
             session
-                .turn_review("review", &[], watch::channel(false).0)
+                .turn_review_stream("review", &[], watch::channel(false).0, sink)
                 .await
         });
         let request = client_message(&mut socket).await;
+        server_message(&mut socket, json!({"method":"item/started","params":{"threadId":"test-thread","turnId":"turn-1","item":{"id":"a","type":"agentMessage"}}})).await;
+        server_message(&mut socket, json!({"method":"item/agentMessage/delta","params":{"threadId":"test-thread","turnId":"turn-1","itemId":"a","delta":"正文"}})).await;
         server_message(
             &mut socket,
             json!({"id":request["id"],"result":{"turn":{"id":"turn-1"}}}),
         )
         .await;
-        server_message(
-            &mut socket,
-            json!({"method":"item/completed","params":{"threadId":"test-thread","turnId":"turn-1",
-                "item":{"type":"agentMessage","text":"```json\n{\"answer\":\"## 解析\\n\\n正文\"}\n```"}}}),
-        )
-        .await;
+        server_message(&mut socket, json!({"method":"item/completed","params":{"threadId":"test-thread","turnId":"turn-1","item":{"id":"a","type":"agentMessage","text":"正文完成"}}})).await;
         complete_test_turn(&mut socket, "completed").await;
-        assert_eq!(task.await.unwrap().unwrap(), "## 解析\n\n正文");
+        assert!(
+            matches!(events.recv().await, Some(AiReviewProgress::TextDelta { text, .. }) if text == "正文")
+        );
+        assert_eq!(task.await.unwrap().unwrap(), "正文完成");
     }
 
     #[tokio::test]
-    async fn review_accepts_plain_markdown_when_the_model_skips_the_envelope() {
+    async fn review_requests_and_accepts_plain_markdown() {
         let (mut session, mut socket) = test_connection().await;
         let task = tokio::spawn(async move {
             session
@@ -960,6 +1156,7 @@ mod tests {
                 .await
         });
         let request = client_message(&mut socket).await;
+        assert!(request["params"].get("outputSchema").is_none());
         server_message(
             &mut socket,
             json!({"id":request["id"],"result":{"turn":{"id":"turn-1"}}}),
@@ -1315,6 +1512,24 @@ mod tests {
         .await;
         complete_test_turn(&mut socket, "completed").await;
         assert_eq!(worker.await.unwrap().unwrap(), "{\"questions\":[]}");
+    }
+
+    #[tokio::test]
+    async fn oversized_review_notification_reports_an_unconfirmed_turn() {
+        let (mut session, mut socket) = test_connection().await;
+        let sink: AiReviewEventSink = Arc::new(|_| Ok(()));
+        let worker = tokio::spawn(async move {
+            session
+                .turn_review_stream("review", &[], watch::channel(false).0, sink)
+                .await
+        });
+        start_test_turn(&mut socket).await;
+        let mut header = vec![0x81, 127];
+        header.extend_from_slice(&((MAX_PACKET + 1) as u64).to_be_bytes());
+        socket.write_all(&header).await.unwrap();
+        let error = worker.await.unwrap().unwrap_err();
+        assert!(error.contains("超过大小限制"));
+        assert!(error.contains(UNCONFIRMED_MESSAGE));
     }
 
     #[tokio::test]

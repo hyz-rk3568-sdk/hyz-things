@@ -835,9 +835,21 @@ fn app_with_assets(
                 .layer(DefaultBodyLimit::max(8 * 1024)),
         )
         .route(
+            "/api/v1/question-bank/practice/questions/{id}/ai/events",
+            on(MethodFilter::GET, question_bank::ai_events),
+        )
+        .route(
             "/api/v1/question-bank/practice/questions/{id}/ai/messages",
             on(MethodFilter::POST, question_bank::ai_follow_up)
                 .layer(DefaultBodyLimit::max(8 * 1024)),
+        )
+        .route(
+            "/api/v1/question-bank/practice/questions/{id}/ai/requests/{request_id}",
+            on(MethodFilter::GET, question_bank::ai_request_status),
+        )
+        .route(
+            "/api/v1/question-bank/practice/questions/{id}/ai/requests/{request_id}/retry",
+            on(MethodFilter::POST, question_bank::ai_retry).layer(DefaultBodyLimit::max(8 * 1024)),
         )
         .route(
             "/api/v1/question-bank/practice/questions/{id}/ai/stop",
