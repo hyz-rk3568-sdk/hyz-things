@@ -4,7 +4,7 @@
 
 ## 0. 决策摘要
 
-**推荐方案：继续使用 Rust Axum + Yew/WASM；PC 侧 Codex App Server 仍通过 WebSocket/JSON-RPC 接入；RK3568 侧补充受控的 Agent 事件映射 + SSE；**将 Vite + TypeScript Bridge 纳入标准浏览器构建链**，在真正需要时导入 npm 库。**
+**推荐方案：**继续使用 Rust Axum + Yew/WASM；PC 侧 Codex App Server 仍通过 WebSocket/JSON-RPC 接入；RK3568 侧补充受控的 Agent 事件映射 + SSE；**将 Vite + TypeScript Bridge 纳入标准浏览器构建链**，在真正需要时导入 npm 库。
 
 - **不**替换 Yew，不引入 React/Vue，不让 Node.js/Bun 常驻 RK3568，不重写 Codex Agent。
 - **不**直接把 Codex 原始 JSON-RPC、内部推理文本、原始工具参数或执行日志透传给浏览器。
@@ -158,7 +158,7 @@ data: {"version":1,"run_id":"run-opaque-1","seq":3,"kind":"text_delta","payload"
 
 SSE + 基础过程 UI 先使用 `web_sys::EventSource` 和 Yew 实现，不必为了调用标准浏览器 API 创建 JS Bridge。
 
-确定增加独立的、由 Vite 产出的 **browser-only TS bundle** 作为标准接入点；最初可仅暴露一个轻量可测的 JS API。后续适配模块可选 AG-UI 事件验证器、图片预览、输入框增强或流式 Markdown 增强功能，**不要为了使用 npm 库而将消息状态从 Yew/Rust 迁到 TS**。职责边界：
+确定增加独立的、由 Vite 产出的 **browser-only TS bundle** 作为标准接入点；**首个真实 npm 依赖选 `@floating-ui/dom`**，在现有 `AiReply` 回复操作菜单中试点浮层定位，覆盖 JS 包导入、Rust 调用、DOM 生命周期、清理与 iOS 兼容。之后按需增加 AG-UI 事件验证器、图片预览、输入框增强或流式 Markdown 增强功能，**不要为了使用 npm 库而将消息状态从 Yew/Rust 迁到 TS**。职责边界：
 
 - **Rust**：后端 AI 任务、数据模型、授权、Agent 事件筛选、SQLite、Yew 组件状态与生命周期。
 - **TypeScript**：npm 专用库、浏览器复杂组件、必要的事件解码/视图插件；不复制 Rust 题库状态机，不持有 Codex Token。
@@ -169,17 +169,18 @@ SSE + 基础过程 UI 先使用 `web_sys::EventSource` 和 Yew 实现，不必�
 
 ```text
 apps/rust/things/
+  package.json                          # 复用现有 npm 工作区，增设 build:ts
+  package-lock.json                     # 保持单一 lock；新增 @floating-ui/dom 和 Vite/TS
   frontend/ts/
-    package.json
-    package-lock.json
     vite.config.ts
-    src/index.ts
-    src/agent-events.ts                 # 可选：AG-UI/npm 的边界
+    src/index.ts                        # 稳定 Bridge API 导出
+    src/floating-menu.ts                # 第一个 npm 实例：回复“⋮”菜单
+    src/agent-events.ts                 # 后续可选：AG-UI/npm 的边界
   src/web/
-    bindings/ai_stream_bridge.rs        # 仅当需要 npm 时
-    components/ai_run_progress.rs       # 示例命名，依照现有模块风格决定
-  tools/build-frontend-bundle.sh        # npm ci / Vite / Trunk 产物检查
-  tools/frontend-bundle-cache.py        # 纳入 TS 源码、lock、toolchain、构建产物指纹
+    bindings/browser_bridge.rs          # Rust/WASM ↔ JS：统一初始化与销毁
+    components/ai_run_progress.rs       # 后续示例，依照现有模块风格决定
+  tools/build-frontend-bundle.sh        # 先 npm build:ts 再 Trunk，验证 JS/CSS
+  tools/frontend-bundle-cache.py        # 纳入 TS 源码、lock、toolchain、产物指纹
 ```
 
 Vite 产物必须由 Trunk 作为**本地静态 module** 引入，并由现有 tar/embed 链路交付；沿用 hyz-things 当前严谨的 `script-src 'self' 'wasm-unsafe-eval'` 与禁内联脚本 CSP，禁止全局 CDN/`unsafe-inline`。Device Hub 的 `window.deviceHub*` 只是可参考的桥接形式，原则上优先选择明确 module 生命周期、避免新增无约束全局变量。
@@ -190,12 +191,15 @@ Vite 产物必须由 Trunk 作为**本地静态 module** 引入，并由现有 t
 
 ### 阶段 0：Vite + TypeScript 标准接入工程（独立前置 PR）
 
-- 在 `apps/rust/things/` 建立锁定版本的 TS/npm + Vite 单入口 bundle，沿用 Device Hub 的 browser-only ES Module 模式，先用简单类型化 Bridge API 验证 Rust/WASM 双向调用、异常返回和组件释放。
-- 将 Vite 编译整合进当前 Trunk/前端 tar/embed 产物；处理本地 JS/CSS、CSP、绝对/相对资源路径和产物缓存指纹，禁止 CDN、内联脚本和设备端 Node 运行时。
-- 验证 iOS Safari、浏览器返回前台、旧前端缓存与更新后的 module 资源一致；记录 bundle 体积预算和失败后回退。
+- **复用已有** `apps/rust/things/package.json` + `package-lock.json`，不建立第二套 Node/npm 工作区；新增锁定的 Vite、TypeScript 和首个 browser-only 依赖 **`@floating-ui/dom`**。复用 Device Hub 的 ES Module + `wasm-bindgen` 模式，但统一 Bridge 的导出接口、错误返回、版本边界与组件释放。
+- **先做一个真正的业务落地点：**给现有 `AiReply` 的回复操作「⋮」菜单接入 `computePosition` + `flip` + `shift` + `autoUpdate`；菜单显隐、键盘 Escape、焦点和点击外部关闭由 Yew 处理，TS 只负责定位；菜单打开时订阅、关闭或卸载时执行 cleanup，不增加第二套状态管理。
+- 将 `npm run build:ts`（基于 Vite）整合进当前 Trunk/前端 tar/embed 产物；单一入口、相对资源路径、静态 JS/CSS、CSP 和构建缓存输入指纹全部被现有发布链识别。明确 dev 与 release 一致，不依赖 Node/Bun 运行时、CDN、内联脚本或设备端安装 npm 包。
+- 编写 `web/bridge` 的最小类型化 Rust 接口，并做一项自动化双向调用/错误处理/销毁 smoke test；以后新增 npm 库走同一入口、锁文件、构建和测试规范，不继续在 Yew 页面增加散落的 window 全局方法。
+- 验证长解析列表、窄屏、iOS Safari、滚动容器、旋转/窗口大小变化、返回前台、旧前端缓存与更新后的 module 资源一致；记录生产 bundle 体积与构建失败回退。
+- **AG-UI 暂不是首个验证库**：当前 Codex 事件还没转换为有保证的 AG-UI schema。先完成 Bridge 与 UI 实例，再在阶段 A/B 事件稳定时评估 `@ag-ui/core`；`@ag-ui/core/schemas` 的运行时校验还需要核对 Zod 依赖版本。
 - 可先于阶段 A 实施，也可与 A 并行；它的存在不要求基础 SSE 必须改用 TypeScript。
 
-**验收：** `npm ci` + Vite + Trunk release + 静态资源嵌入/CSP + browser E2E 通过，最小 Bridge 在真实 Yew 组件 mount/unmount 后不遗留监听器。
+**验收：** `npm ci` + `npm run build:ts` + Trunk release + 静态资源嵌入/CSP + Playwright E2E 通过。真实 Yew AI 回复菜单能翻转/避让边界，卸载后不残留 DOM 监听器。添加第二个示例模块无需修改构建主链，只需新增导出与依赖声明。
 
 ### 阶段 A：事件契约与 Codex Adapter（后端 PR 1）
 
