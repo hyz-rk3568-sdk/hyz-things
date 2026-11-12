@@ -1,4 +1,5 @@
 import {expect,test} from '@playwright/test';
+import {inkSnapshot} from './ink-fixtures';
 import {expectNoHorizontalOverflow,harnessOrigin,loginAsAdmin,resetHarness,webOrigin} from './fixtures';
 
 test.beforeEach(async ({request})=>{await resetHarness(request)});
@@ -2066,4 +2067,101 @@ test('split ratio is restored after reloading and opening another review',async(
   await page.getByTestId('question-bank-practice-submit').click();
   await page.getByRole('button',{name:'确认交卷'}).click();
   await expect.poll(async()=>Number(await page.getByTestId('training-split-handle').getAttribute('aria-valuenow'))).toBeCloseTo(saved,0);
+});
+
+
+test('AI review scratchpad writes in the options pane and follows its scrolling',async({page})=>{
+  await page.setViewportSize({width:1133,height:744});
+  await page.addInitScript(()=>{ (window as any).EventSource=class extends EventTarget { onmessage=null; onerror=null; close() {} }; });
+  await page.route('**/api/v1/question-bank/practice/questions/*/ai',async route=>{
+    const question_id=new URL(route.request().url()).pathname.split('/').at(-2)!;
+    await route.fulfill({json:{question_id,status:'complete',error:null,messages:[{id:1,role:'assistant',content:Array.from({length:100},(_,i)=>`解析第 ${i} 行`).join('\n\n'),created_at:1}]}});
+  });
+  await openFixtureReview(page);
+  const messages=page.getByTestId('question-bank-ai-messages');
+  await expect(messages).toBeVisible();
+  await expect(messages).toContainText('解析第 99 行');
+  await messages.evaluate(node=>{node.dispatchEvent(new WheelEvent('wheel',{bubbles:true,deltaY:-10000}));node.scrollTop=0;});
+  await expect.poll(()=>messages.evaluate(node=>node.scrollTop)).toBe(0);
+  await page.getByTestId('calculation-scratchpad-toggle').click();
+  const canvas=page.getByTestId('calculation-scratchpad-canvas');
+  await expect(canvas).toBeVisible();
+  const blank=await inkSnapshot(canvas), pane=(await messages.boundingBox())!;
+  await page.mouse.move(pane.x+55,pane.y+180); await page.mouse.down();
+  await page.mouse.move(pane.x+115,pane.y+200,{steps:6}); await page.mouse.up();
+  await expect(page.getByTestId('calculation-scratchpad-undo')).toBeEnabled();
+  await expect.poll(()=>inkSnapshot(canvas)).not.toBe(blank);
+  const drawn=await inkSnapshot(canvas);
+  const down=page.getByRole('button',{name:'题目向下滚动'});
+  await expect(down).toBeEnabled();
+  await down.click();
+  await expect.poll(()=>messages.evaluate(node=>node.scrollTop)).toBe(32);
+  await expect.poll(()=>inkSnapshot(canvas)).not.toBe(drawn);
+  expect(await inkSnapshot(canvas)).not.toBe(blank);
+  await page.getByRole('button',{name:'题目向上滚动'}).click();
+  await expect.poll(()=>messages.evaluate(node=>node.scrollTop)).toBe(0);
+  await expect.poll(()=>inkSnapshot(canvas)).toBe(drawn);
+  const aiChoiceOffset=await page.getByTestId('question-bank-practice-choice').first().evaluate(node=>node.getBoundingClientRect().top-node.closest('[data-testid="question-bank-ai-messages"]')!.getBoundingClientRect().top);
+  await page.getByTestId('calculation-scratchpad-toggle').click();
+  await page.getByTestId('question-bank-original-tab').click();
+  const originalChoiceOffset=await page.getByTestId('question-bank-practice-choice').first().evaluate(node=>node.getBoundingClientRect().top-node.closest('[data-testid="question-bank-practice-question-scroll"]')!.getBoundingClientRect().top);
+  expect(Math.abs(aiChoiceOffset-originalChoiceOffset)).toBeLessThanOrEqual(1);
+  await page.getByTestId('calculation-scratchpad-toggle').click();
+  await expect.poll(()=>inkSnapshot(canvas)).not.toBe(blank);
+  await page.getByTestId('calculation-scratchpad-toggle').click();
+  await page.getByTestId('question-bank-ai-tab').click();
+  await expect(messages).toContainText('解析第 99 行');
+  await messages.evaluate(node=>{node.dispatchEvent(new WheelEvent('wheel',{bubbles:true,deltaY:-10000}));node.scrollTop=0;});
+  await expect.poll(()=>messages.evaluate(node=>node.scrollTop)).toBe(0);
+  await page.getByTestId('calculation-scratchpad-toggle').click();
+  await expect.poll(()=>inkSnapshot(canvas)).not.toBe(blank);
+});
+
+test('open scratchpad follows a live switch from original to AI review',async({page})=>{
+  await page.setViewportSize({width:1133,height:744});
+  let release!:()=>void;
+  const gate=new Promise<void>(resolve=>{release=resolve;});
+  let requests=0;
+  await page.route('**/api/v1/question-bank/practice/questions/*/ai',async route=>{
+    requests++;
+    await gate;
+    const question_id=new URL(route.request().url()).pathname.split('/').at(-2)!;
+    await route.fulfill({json:{question_id,status:'complete',error:null,messages:[{id:1,role:'assistant',content:'简短解析',created_at:1}]}});
+  });
+  await openFixtureReview(page);
+  await expect.poll(()=>requests).toBeGreaterThan(0);
+  const original=page.getByTestId('question-bank-practice-question-scroll');
+  await expect(original).toBeVisible();
+  await page.evaluate(()=>{
+    const sheet=new CSSStyleSheet();
+    sheet.replaceSync('[data-testid="question-bank-practice-question-scroll"]::after {content:"";display:block;height:1400px}');
+    document.adoptedStyleSheets=[...document.adoptedStyleSheets,sheet];
+  });
+  await page.getByTestId('calculation-scratchpad-toggle').click();
+  const canvas=page.getByTestId('calculation-scratchpad-canvas');
+  const blank=await inkSnapshot(canvas), pane=(await original.boundingBox())!;
+  await page.mouse.move(pane.x+55,pane.y+180); await page.mouse.down();
+  await page.mouse.move(pane.x+115,pane.y+200,{steps:6}); await page.mouse.up();
+  await expect.poll(()=>inkSnapshot(canvas)).not.toBe(blank);
+  const drawn=await inkSnapshot(canvas);
+  const inkPosition=()=>canvas.evaluate((node:HTMLCanvasElement)=>{
+    const pixels=node.getContext('2d')!.getImageData(0,0,node.width,node.height).data;
+    let x=node.width,y=node.height;
+    for(let i=3;i<pixels.length;i+=4) if(pixels[i]) { const point=(i-3)/4; x=Math.min(x,point%node.width); y=Math.min(y,Math.floor(point/node.width)); }
+    return {x,y,scale:node.width/node.clientWidth};
+  });
+  const originalInk=await inkPosition();
+  await expect.poll(()=>original.evaluate(node=>node.scrollHeight-node.clientHeight)).toBeGreaterThan(500);
+  await original.evaluate(node=>{node.scrollTop=80;});
+  await expect.poll(()=>original.evaluate(node=>node.scrollTop)).toBe(80);
+  await expect.poll(()=>inkSnapshot(canvas)).not.toBe(drawn);
+  release();
+  const aiMessages=page.getByTestId('question-bank-ai-messages');
+  await expect(aiMessages).toBeVisible();
+  await expect.poll(async()=>{
+    const position=await inkPosition();
+    const scroll=await aiMessages.evaluate(node=>node.scrollTop);
+    return Math.max(Math.abs(position.x-originalInk.x),Math.abs(position.y+scroll*position.scale-originalInk.y));
+  }).toBeLessThanOrEqual(2);
+  await expect(page.getByTestId('calculation-scratchpad-toggle')).toHaveAttribute('aria-label','关闭草稿');
 });

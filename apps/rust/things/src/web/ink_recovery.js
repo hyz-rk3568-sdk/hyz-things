@@ -13,6 +13,17 @@ export function mountInkRecovery(canvas, redraw) {
 
   const surface = canvas.closest('[data-testid="calculation-scratchpad"]');
   surface?.addEventListener('training-split-resized', schedule);
+  const questionSelector = [
+    "[data-testid='question-bank-practice-question-scroll']",
+    "[data-testid='collection-review-question-scroll']",
+    "[data-testid='question-bank-ai-messages']",
+  ].join(', ');
+  let questionPane = surface?.querySelector(questionSelector) ?? null;
+  const paneObserver = surface && typeof MutationObserver === 'function' ? new MutationObserver(() => {
+    const next = surface.querySelector(questionSelector);
+    if (next !== questionPane) { questionPane = next; schedule(); }
+  }) : null;
+  paneObserver?.observe(surface, { childList: true, subtree: true });
   const observer = typeof ResizeObserver === 'function' ? new ResizeObserver(schedule) : null;
   observer?.observe(canvas);
   window.addEventListener('resize', schedule);
@@ -23,6 +34,7 @@ export function mountInkRecovery(canvas, redraw) {
 
   return () => {
     observer?.disconnect();
+    paneObserver?.disconnect();
     surface?.removeEventListener('training-split-resized', schedule);
     window.removeEventListener('resize', schedule);
     window.visualViewport?.removeEventListener('resize', schedule);

@@ -1830,7 +1830,7 @@ pub(crate) fn question_ai_review(props: &QuestionAiReviewProps) -> Html {
         });
     html! {
         <section class="flex min-h-0 min-w-0 flex-1 flex-col" data-testid="question-bank-ai-review" ref={diagram_root}>
-            <div class="min-h-0 flex-1 space-y-3 overflow-y-auto overscroll-contain touch-pan-y px-4 py-3" ref={messages_ref} onscroll={on_messages_scroll} data-testid="question-bank-ai-messages" role="log" aria-label="AI 对话记录" aria-live="polite">
+            <div class="min-h-0 flex-1 space-y-3 overflow-y-auto overscroll-contain touch-pan-y p-4" ref={messages_ref} onscroll={on_messages_scroll} data-testid="question-bank-ai-messages" role="log" aria-label="AI 对话记录" aria-live="polite">
             <div class="space-y-4" data-testid="question-bank-ai-question-content">{props.question_content.clone()}</div>
             <div class="flex items-center justify-between gap-2">
                 <strong>{"AI 解析与追问"}</strong>
