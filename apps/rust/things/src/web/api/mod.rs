@@ -266,6 +266,34 @@ pub(crate) async fn put_json_response<T: serde::Serialize, R: serde::de::Deseria
         .map_err(|error| error.to_string())
 }
 
+pub(crate) async fn delete_json_body_response_typed<
+    T: serde::Serialize,
+    R: serde::de::DeserializeOwned,
+>(
+    endpoint: &str,
+    csrf: &str,
+    body: &T,
+    label: &str,
+) -> Result<R, ApiError> {
+    let request = Request::delete(endpoint)
+        .credentials(RequestCredentials::SameOrigin)
+        .header("Accept", "application/json")
+        .header("X-HYZ-CSRF", csrf)
+        .json(body)
+        .map_err(|error| ApiError::local(format!("无法编码{label}请求：{error}")))?;
+    let response = request
+        .send()
+        .await
+        .map_err(|error| ApiError::local(format!("无法连接{label}接口：{error}")))?;
+    if !response.ok() {
+        return Err(response_error(response, label).await);
+    }
+    response
+        .json::<R>()
+        .await
+        .map_err(|error| ApiError::local(format!("{label}响应格式无效：{error}")))
+}
+
 pub(crate) async fn delete_json_response_typed<R: serde::de::DeserializeOwned>(
     endpoint: &str,
     csrf: &str,
