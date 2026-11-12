@@ -1239,10 +1239,14 @@ pub(crate) fn question_ai_review(props: &QuestionAiReviewProps) -> Html {
                             request_error.set(None);
                             request_info.set(Some(info));
                         }
-                        Err(error) if alive.get() && error.is_code("question_bank_ai_request_not_found") => {
+                        Err(error)
+                            if alive.get()
+                                && error.is_code("question_bank_ai_request_not_found") =>
+                        {
                             // Do not discard a missing ID on the strength of one 404: a
                             // server task may still be active after a lost response.
-                            let review = fetch_json::<AiReviewState>(&endpoint, "AI 复盘记录").await;
+                            let review =
+                                fetch_json::<AiReviewState>(&endpoint, "AI 复盘记录").await;
                             if alive.get() {
                                 request_info.set(None);
                                 match review {
@@ -1705,7 +1709,9 @@ pub(crate) fn question_ai_review(props: &QuestionAiReviewProps) -> Html {
                 let result = delete_json_body_response_typed::<_, AiReviewState>(
                     &endpoint,
                     &csrf,
-                    &AiDeleteRequest { confirm_uncertain: confirmed },
+                    &AiDeleteRequest {
+                        confirm_uncertain: confirmed,
+                    },
                     "删除 AI 解析",
                 )
                 .await;
