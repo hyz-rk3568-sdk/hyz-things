@@ -7,6 +7,7 @@ const SCRATCH_WIDTH: u32 = 900;
 const SCRATCH_HEIGHT: u32 = 450;
 const INK_COLOR: &str = "#e11d48";
 const INK_LINE_WIDTH: f64 = 2.6;
+const INK_SURFACE_SELECTOR: &str = "[data-testid='calculation-scratchpad']";
 
 type InkPoint = (f64, f64);
 
@@ -185,14 +186,15 @@ fn pane_selector(pane: InkPane) -> &'static str {
             "[data-testid='logic-answer-scroll'], ",
             "[data-testid='quant-answer-scroll'], ",
             "[data-testid='question-bank-practice-question-scroll'], ",
-            "[data-testid='collection-review-question-scroll']",
+            "[data-testid='collection-review-question-scroll'], ",
+            "[data-testid='question-bank-ai-messages']",
         ),
     }
 }
 
 fn pane_viewport(canvas: &HtmlCanvasElement, pane: InkPane) -> Option<PaneViewport> {
-    let document = web_sys::window()?.document()?;
-    let element = document.query_selector(pane_selector(pane)).ok()??;
+    let surface = canvas.closest(INK_SURFACE_SELECTOR).ok()??;
+    let element = surface.query_selector(pane_selector(pane)).ok()??;
     let canvas_rect = canvas.get_bounding_client_rect();
     let rect = element.get_bounding_client_rect();
     Some(PaneViewport {
@@ -699,41 +701,53 @@ pub(crate) fn ink_overlay(props: &InkOverlayProps) -> Html {
         });
     }
 
-    // Scroll while the pencil overlay is open: redraw at the new content offset
-    // without changing pen history or triggering a Yew rerender.
+    // Capture scroll events on the stable overlay as question panes are replaced.
     {
         let canvas_ref = canvas_ref.clone();
         let strokes = strokes.clone();
         let scroll_linked = props.scroll_linked;
         use_effect_with((scroll_linked, *enabled), move |(_, opened)| {
-            let handler = Closure::<dyn FnMut(web_sys::Event)>::new(move |_| {
-                if let Some(canvas) = canvas_ref.cast::<HtmlCanvasElement>() {
-                    redraw_state(&canvas, &strokes.borrow(), true);
-                }
-            });
-            let mut listeners = Vec::new();
-            if scroll_linked && *opened {
-                if let Some(document) = web_sys::window().and_then(|w| w.document()) {
-                    for pane in [InkPane::Material, InkPane::Question] {
-                        if let Ok(Some(element)) = document.query_selector(pane_selector(pane)) {
-                            if element
-                                .add_event_listener_with_callback(
-                                    "scroll",
-                                    handler.as_ref().unchecked_ref(),
-                                )
-                                .is_ok()
-                            {
-                                listeners.push(element);
-                            }
-                        }
+            let redraw_canvas = canvas_ref.clone();
+            let handler =
+                Closure::<dyn FnMut(web_sys::Event)>::new(move |event: web_sys::Event| {
+                    let Some(target) = event
+                        .target()
+                        .and_then(|target| target.dyn_into::<web_sys::Element>().ok())
+                    else {
+                        return;
+                    };
+                    if ![InkPane::Material, InkPane::Question]
+                        .iter()
+                        .any(|pane| target.matches(pane_selector(*pane)).unwrap_or(false))
+                    {
+                        return;
                     }
-                }
-            }
+                    if let Some(canvas) = redraw_canvas.cast::<HtmlCanvasElement>() {
+                        redraw_state(&canvas, &strokes.borrow(), true);
+                    }
+                });
+            let surface = if scroll_linked && *opened {
+                canvas_ref
+                    .cast::<HtmlCanvasElement>()
+                    .and_then(|canvas| canvas.closest(INK_SURFACE_SELECTOR).ok().flatten())
+                    .filter(|element| {
+                        element
+                            .add_event_listener_with_callback_and_bool(
+                                "scroll",
+                                handler.as_ref().unchecked_ref(),
+                                true,
+                            )
+                            .is_ok()
+                    })
+            } else {
+                None
+            };
             move || {
-                for element in listeners {
-                    let _ = element.remove_event_listener_with_callback(
+                if let Some(surface) = surface {
+                    let _ = surface.remove_event_listener_with_callback_and_bool(
                         "scroll",
                         handler.as_ref().unchecked_ref(),
+                        true,
                     );
                 }
             }

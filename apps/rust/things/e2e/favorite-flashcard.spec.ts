@@ -1,4 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
+import { inkSnapshot } from './ink-fixtures';
 import { expectNoHorizontalOverflow, loginAsAdmin, resetHarness } from './fixtures';
 
 const root = '/api/v1/question-bank';
@@ -892,3 +893,35 @@ for (const viewport of [{width:1133,height:744},{width:390,height:844}]) {
     await expect.poll(async()=>Number(await review.getByTestId('training-split-handle').getAttribute('aria-valuenow'))).toBeCloseTo(adjusted,0);
   });
 }
+
+
+test('collection AI review allows scratch ink on choices and follows scrolling',async({page})=>{
+  await page.setViewportSize({width:1133,height:744});
+  await page.addInitScript(()=>{ (window as any).EventSource=class extends EventTarget { onmessage=null; onerror=null; close() {} }; });
+  await install(page);
+  await page.route(`**${root}/practice/questions/supported/ai`,route=>route.fulfill({json:{question_id:'supported',status:'complete',error:null,messages:[{id:1,role:'assistant',content:Array.from({length:100},(_,i)=>`解析第 ${i} 行`).join('\n\n'),created_at:1}]}}));
+  const review=await openReview(page);
+  const messages=review.getByTestId('question-bank-ai-messages');
+  await expect(messages).toBeVisible();
+  await expect(messages).toContainText('解析第 99 行');
+  await messages.evaluate(node=>{node.dispatchEvent(new WheelEvent('wheel',{bubbles:true,deltaY:-10000}));node.scrollTop=0;});
+  await expect.poll(()=>messages.evaluate(node=>node.scrollTop)).toBe(0);
+  await review.getByTestId('calculation-scratchpad-toggle').click();
+  const canvas=review.getByTestId('calculation-scratchpad-canvas');
+  await expect(canvas).toBeVisible();
+  const blank=await inkSnapshot(canvas), choice=(await review.getByTestId('collection-review-choice').first().boundingBox())!;
+  await page.mouse.move(choice.x+30,choice.y+24); await page.mouse.down();
+  await page.mouse.move(choice.x+90,choice.y+34,{steps:6}); await page.mouse.up();
+  await expect(review.getByTestId('calculation-scratchpad-undo')).toBeEnabled();
+  await expect.poll(()=>inkSnapshot(canvas)).not.toBe(blank);
+  const drawn=await inkSnapshot(canvas);
+  const down=review.getByRole('button',{name:'题目向下滚动'});
+  await expect(down).toBeEnabled();
+  await down.click();
+  await expect.poll(()=>messages.evaluate(node=>node.scrollTop)).toBe(32);
+  await expect.poll(()=>inkSnapshot(canvas)).not.toBe(drawn);
+  expect(await inkSnapshot(canvas)).not.toBe(blank);
+  await review.getByRole('button',{name:'题目向上滚动'}).click();
+  await expect.poll(()=>messages.evaluate(node=>node.scrollTop)).toBe(0);
+  await expect.poll(()=>inkSnapshot(canvas)).toBe(drawn);
+});
