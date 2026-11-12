@@ -55,7 +55,7 @@ pub(super) fn question_navigation(
     };
 
     html! {
-        <footer class="flex shrink-0 items-center justify-between gap-2 py-2" data-testid={test_id}>
+        <footer class="relative z-40 flex shrink-0 items-center justify-between gap-2 border-t border-base-content/10 py-2" data-testid={test_id}>
             <button type="button" class="btn btn-outline btn-sm" disabled={index==0} onclick={previous}>{"上一题"}</button>
             <nav class="flex min-w-0 flex-1 items-center justify-center gap-1 overflow-x-auto" aria-label="题号导航">
                 {for group.into_iter().flat_map(|size| 0..total.div_ceil(size)).map(|g| {
@@ -91,8 +91,45 @@ pub(super) fn question_navigation(
                     }
                 })}
             </nav>
+            <TrainingGeneratedAnswerSheet current={current.clone()} markers={markers.to_vec()} is_review={is_review} group_size={group}/>
             <button type="button" class="btn btn-primary btn-sm" disabled={index+1>=total} onclick={next}>{"下一题"}</button>
         </footer>
+    }
+}
+
+
+#[derive(Properties, PartialEq)]
+struct TrainingGeneratedAnswerSheetProps {
+    current: UseStateHandle<usize>,
+    markers: Vec<Option<bool>>,
+    is_review: bool,
+    group_size: Option<usize>,
+}
+
+/// AI exercises use the same source-paper answer sheet widget, but only for
+/// navigation and grading; this component never creates persistent wrong items.
+#[function_component(TrainingGeneratedAnswerSheet)]
+fn training_generated_answer_sheet(props: &TrainingGeneratedAnswerSheetProps) -> Html {
+    let total = props.markers.len();
+    let size = props.group_size.filter(|size| *size > 0).unwrap_or(total.max(1));
+    let groups = (0..total.div_ceil(size))
+        .map(|g| NavigationGroup {
+            label: if props.group_size.is_some() {
+                format!("材料{}", g + 1)
+            } else {
+                "全部题目".to_owned()
+            },
+            subtitle: None,
+            start: g * size,
+            end: ((g + 1) * size).min(total),
+        })
+        .collect::<Vec<_>>();
+    html! {
+        <TrainingAnswerSheet current={props.current.clone()}
+            numbers={(1..=total).map(|i|i as u32).collect::<Vec<_>>()}
+            answered={props.markers.iter().map(Option::is_some).collect::<Vec<_>>()}
+            grades={props.is_review.then(|| props.markers.clone())}
+            groups={groups} source_paper={false}/>
     }
 }
 
@@ -576,8 +613,23 @@ pub(super) struct CompactQuestionNavigationProps {
     pub(super) navigation_allowed: Option<Callback<(), bool>>,
 }
 
-#[function_component(CompactQuestionNavigation)]
-pub(super) fn compact_question_navigation(props: &CompactQuestionNavigationProps) -> Html {
+#[derive(Properties, PartialEq)]
+struct TrainingAnswerSheetProps {
+    current: UseStateHandle<usize>,
+    numbers: Vec<u32>,
+    answered: Vec<bool>,
+    grades: Option<Vec<Option<bool>>>,
+    groups: Vec<NavigationGroup>,
+    #[prop_or_default]
+    navigation_allowed: Option<Callback<(), bool>>,
+    #[prop_or(true)]
+    source_paper: bool,
+}
+
+/// One answer-sheet component shared by source papers and generated drills.
+/// Open/scroll state lives here; the caller owns answers, grades and navigation.
+#[function_component(TrainingAnswerSheet)]
+fn training_answer_sheet(props: &TrainingAnswerSheetProps) -> Html {
     let open = use_state(|| false);
     let sheet_ref = use_node_ref();
     let sheet_scroll_top = use_mut_ref(|| 0i32);
@@ -602,49 +654,28 @@ pub(super) fn compact_question_navigation(props: &CompactQuestionNavigationProps
     };
     let total = props.numbers.len();
     let index = (*props.current).min(total.saturating_sub(1));
-    let previous = {
-        let current = props.current.clone();
-        let navigation_allowed = props.navigation_allowed.clone();
-        Callback::from(move |_| {
-            if allows_navigation(&navigation_allowed) {
-                current.set(index.saturating_sub(1));
-            }
-        })
-    };
-    let next = {
-        let current = props.current.clone();
-        let navigation_allowed = props.navigation_allowed.clone();
-        Callback::from(move |_| {
-            if allows_navigation(&navigation_allowed) {
-                current.set((index + 1).min(total.saturating_sub(1)));
-            }
-        })
-    };
     let toggle = {
         let open = open.clone();
-        let navigation_allowed = props.navigation_allowed.clone();
+        let allowed = props.navigation_allowed.clone();
         Callback::from(move |_| {
-            if allows_navigation(&navigation_allowed) {
+            if allows_navigation(&allowed) {
                 open.set(!*open);
             }
         })
     };
     html! {
-        <footer class="training-compact-footer relative z-40 flex shrink-0 items-center justify-between gap-2 border-t border-base-content/10 py-2"
-            data-testid="question-bank-practice-navigation">
-            <button type="button" class="btn btn-outline btn-sm" disabled={index==0} onclick={previous}>{"上一题"}</button>
-            <button type="button" class="btn btn-ghost btn-sm" aria-expanded={open.to_string()}
+        <div class="contents">
+            <button type="button" class="btn btn-ghost btn-sm shrink-0" aria-expanded={open.to_string()}
                 aria-controls="training-question-sheet" data-testid="training-answer-sheet-toggle" onclick={toggle.clone()}>
-                {format!("答题卡 · {}/{}",index+1,total)}
+                {format!("答题卡 · {}/{}", index+1, total)}
             </button>
-            <button type="button" class="btn btn-primary btn-sm" disabled={index+1>=total} onclick={next}>{"下一题"}</button>
             if *open {
                 <nav id="training-question-sheet" aria-label="答题卡" data-testid="training-answer-sheet"
                     ref={sheet_ref} onscroll={on_sheet_scroll}
-                    class="absolute bottom-full left-0 right-0 max-h-[min(55dvh,28rem)] overflow-y-auto overscroll-contain rounded-t-box border border-base-content/15 bg-base-100 p-3 shadow-xl">
+                    class="absolute bottom-full left-0 right-0 z-50 max-h-[min(55dvh,28rem)] overflow-y-auto overscroll-contain rounded-t-box border border-base-content/15 bg-base-100 p-3 shadow-xl">
                     <div class="mb-3 flex items-center justify-between">
                         <strong>{"答题卡"}</strong>
-                        <button class="btn btn-ghost btn-xs" onclick={toggle.clone()}>{"收起"}</button>
+                        <button type="button" class="btn btn-ghost btn-xs" onclick={toggle.clone()}>{"收起"}</button>
                     </div>
                     {for props.groups.iter().map(|group| {
                         let start = group.start.min(total);
@@ -655,17 +686,20 @@ pub(super) fn compact_question_navigation(props: &CompactQuestionNavigationProps
                                 <div class="mb-1.5 flex items-baseline justify-between gap-2">
                                     <div class="min-w-0">
                                         if let Some(subtitle) = &group.subtitle {
-                                            <span class="block text-[10px] text-base-content/45" data-testid="question-bank-practice-group-module">{subtitle.clone()}</span>
+                                            <span class="block text-[10px] text-base-content/45"
+                                                data-testid="question-bank-practice-group-module">{subtitle.clone()}</span>
                                         }
                                         <strong class="text-xs text-base-content/70">{group.label.clone()}</strong>
                                     </div>
-                                    <span class="text-[11px] text-base-content/45">{format!("第 {}—{} 题 · {} 题", start + 1, end, end.saturating_sub(start))}</span>
+                                    <span class="text-[11px] text-base-content/45">
+                                        {format!("第 {}—{} 题 · {} 题",start+1,end,end-start)}
+                                    </span>
                                 </div>
                                 <div class="grid grid-cols-6 gap-2 sm:grid-cols-10" data-testid="question-bank-practice-group-grid">
                                     {for (start..end).map(|i| {
                                         let current = props.current.clone();
                                         let open = open.clone();
-                                        let navigation_allowed = props.navigation_allowed.clone();
+                                        let allowed = props.navigation_allowed.clone();
                                         let number = props.numbers.get(i).copied().unwrap_or_default();
                                         let done = props.answered.get(i).copied().unwrap_or(false);
                                         let is_review = props.grades.is_some();
@@ -679,24 +713,27 @@ pub(super) fn compact_question_navigation(props: &CompactQuestionNavigationProps
                                         } else if i == index { "btn-primary" }
                                         else if done { "btn-outline border-primary/40" }
                                         else { "btn-ghost" };
+                                        let prefix = if props.source_paper { "原卷第" } else { "第" };
                                         let label = if is_review {
                                             match grade {
-                                                Some(true) => format!("原卷第 {number} 题 正确"),
-                                                Some(false) => format!("原卷第 {number} 题 错误"),
-                                                None => format!("原卷第 {number} 题"),
+                                                Some(true) => format!("{prefix} {number} 题 正确"),
+                                                Some(false) => format!("{prefix} {number} 题 错误"),
+                                                None => format!("{prefix} {number} 题"),
                                             }
-                                        } else { format!("原卷第 {number} 题") };
-                                        html! {<button type="button"
-                                            class={classes!("btn","btn-sm",style,if i==index && is_review {"ring-2 ring-primary"} else {""})}
-                                            data-testid="question-bank-practice-number"
-                                            aria-current={(i==index).to_string()}
-                                            aria-label={label}
-                                            onclick={Callback::from(move |_|{
-                                                if allows_navigation(&navigation_allowed) {
-                                                    current.set(i);
-                                                    open.set(false);
-                                                }
-                                            })}>{number}</button>}
+                                        } else { format!("{prefix} {number} 题") };
+                                        html! {
+                                            <button type="button"
+                                                class={classes!("btn","btn-sm",style,if i==index && is_review {"ring-2 ring-primary"} else {""})}
+                                                data-testid={if props.source_paper {"question-bank-practice-number"} else {"training-answer-sheet-number"}}
+                                                aria-current={(i==index).to_string()}
+                                                aria-label={label}
+                                                onclick={Callback::from(move |_| {
+                                                    if allows_navigation(&allowed) {
+                                                        current.set(i);
+                                                        open.set(false);
+                                                    }
+                                                })}>{number}</button>
+                                        }
                                     })}
                                 </div>
                             </section>
@@ -704,6 +741,40 @@ pub(super) fn compact_question_navigation(props: &CompactQuestionNavigationProps
                     })}
                 </nav>
             }
+        </div>
+    }
+}
+
+#[function_component(CompactQuestionNavigation)]
+pub(super) fn compact_question_navigation(props: &CompactQuestionNavigationProps) -> Html {
+    let total = props.numbers.len();
+    let index = (*props.current).min(total.saturating_sub(1));
+    let previous = {
+        let current = props.current.clone();
+        let allowed = props.navigation_allowed.clone();
+        Callback::from(move |_| {
+            if allows_navigation(&allowed) {
+                current.set(index.saturating_sub(1));
+            }
+        })
+    };
+    let next = {
+        let current = props.current.clone();
+        let allowed = props.navigation_allowed.clone();
+        Callback::from(move |_| {
+            if allows_navigation(&allowed) {
+                current.set((index + 1).min(total.saturating_sub(1)));
+            }
+        })
+    };
+    html! {
+        <footer class="training-compact-footer relative z-40 flex shrink-0 items-center justify-between gap-2 border-t border-base-content/10 py-2"
+            data-testid="question-bank-practice-navigation">
+            <button type="button" class="btn btn-outline btn-sm" disabled={index==0} onclick={previous}>{"上一题"}</button>
+            <TrainingAnswerSheet current={props.current.clone()} numbers={props.numbers.clone()}
+                answered={props.answered.clone()} grades={props.grades.clone()}
+                groups={props.groups.clone()} navigation_allowed={props.navigation_allowed.clone()}/>
+            <button type="button" class="btn btn-primary btn-sm" disabled={index+1>=total} onclick={next}>{"下一题"}</button>
         </footer>
     }
 }

@@ -56,7 +56,8 @@ fn analysis_panes(props: &AnalysisPanesProps) -> Html {
         );
     }
     html! {
-        <TrainingSplitWorkspace test_id="analysis-shared-workspace"
+        <TrainingSplitWorkspace test_id="analysis-shared-workspace" resizable={true}
+            separator_label="调整材料与题目比例"
             left={html! {
                 <article class="flex min-h-0 min-w-0 flex-col overflow-hidden rounded-box bg-base-100" data-testid="analysis-material">
                 <div class={TRAINING_PANE_HEADER}>
@@ -987,7 +988,7 @@ pub(crate) fn comprehensive_training(props: &ComprehensiveProps) -> Html {
                     <span>{format!("本材料第 {}/5 题 · {}",local_index+1,q.skill)}</span>
                     <span data-testid="analysis-review-status">{grade}</span>
                 </div>
-                <h2 class="text-lg font-semibold leading-relaxed">{q.question.clone()}</h2>
+                <h2 class="text-base font-normal leading-8">{q.question.clone()}</h2>
                 <div class="grid gap-2">{for review_options}</div>
                 <div class="border-t border-base-content/10 pt-4">
                     <p class="text-base font-semibold">{format!("你的答案：{}",
@@ -1215,7 +1216,7 @@ pub(crate) fn comprehensive_training(props: &ComprehensiveProps) -> Html {
                     <span>{format!("本材料第 {}/5 题",local_index+1)}</span>
                     <span>{"作答中"}</span>
                 </div>
-                <h2 class="text-lg font-semibold leading-relaxed">{q.question.clone()}</h2>
+                <h2 class="text-base font-normal leading-8">{q.question.clone()}</h2>
                 <div class="grid gap-3">{for answers}</div>
             </div>
         };

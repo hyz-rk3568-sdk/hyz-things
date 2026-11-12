@@ -302,14 +302,14 @@ jobs:
             npm run test:e2e
             exit 0
           fi
-          # Focus the PR suite on the Flashcard and question-bank code family.
-          # Other kinds of changes use the established broader PR suite.
+          # Focus source-paper-only PRs on their matching suite; shared study-workspace
+          # changes cover all affected training modes and layouts in one CI run.
           changed="$(git -c core.quotepath=false diff --name-only "origin/$GITHUB_BASE_REF...HEAD")"
           unrelated="$(printf '%s\n' "$changed" | grep -vE '^((apps/rust/things/src/web/pages/(question_navigation|favorite_flashcard|question_bank_practice|collection_review|training|training_statistics)\.rs)|(apps/rust/things/e2e/(question-bank|favorite-flashcard|question-bank-drill|flashcards)\.spec\.ts)|(apps/rust/things/e2e/support\.ts)|(apps/rust/things/tests/question_bank_drill\.rs)|(apps/rust/things/tools/(check-e2e-suites|frontend-bundle-cache|test-portal-ci)\.py)|(question_bank/collections/xiaop-2026-shuliang/(06-行程问题（二）|07-溶液问题)\.md)|(\.github/workflows/portal-ci\.yml))$' || true)"
           if [[ -z "$unrelated" ]]; then
             npm run test:e2e -- e2e/question-bank.spec.ts e2e/favorite-flashcard.spec.ts e2e/question-bank-drill.spec.ts e2e/flashcards.spec.ts
           else
-            npm run test:e2e -- e2e/question-bank.spec.ts e2e/comprehensive.spec.ts e2e/logic-judgment.spec.ts e2e/training-subjects.spec.ts e2e/training-time.spec.ts
+            npm run test:e2e -- e2e/question-bank.spec.ts e2e/question-bank-drill.spec.ts e2e/comprehensive.spec.ts e2e/logic-judgment.spec.ts e2e/training-subjects.spec.ts e2e/training-time.spec.ts e2e/training-width.spec.ts e2e/favorite-flashcard.spec.ts
           fi
 
       - name: Upload Playwright failure artifacts

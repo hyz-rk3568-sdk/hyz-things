@@ -533,3 +533,32 @@ test("logic judgment keeps controls inside PWA safe areas across viewports", asy
     await page.getByRole('button',{name:'上一题',exact:true}).click();
   }
 });
+
+
+for (const subject of ["logic","quant"] as const) {
+  test(subject+" generated questions share the draggable workspace and answer sheet",async ({page})=>{
+    await page.setViewportSize({width:1180,height:820});
+    const {open}=await logicFixture(page,subject);
+    await open();
+    await page.getByTestId(subject+"-resume").click();
+    const screen=page.getByTestId(subject+"-run");
+    const split=screen.getByTestId(subject+"-scroll-workspace");
+    await expect(split).toHaveAttribute("data-split-resizable","true");
+    const handle=split.getByTestId("training-split-handle");
+    await expect(handle).toHaveAttribute("aria-label","调整题目与选项比例");
+    await handle.focus();
+    const initial=await handle.getAttribute("aria-valuenow");
+    await handle.press("ArrowRight");
+    await expect.poll(async()=>handle.getAttribute("aria-valuenow")).not.toBe(initial);
+    await handle.press("Home");
+    await screen.getByTestId("training-answer-sheet-toggle").click();
+    const sheet=screen.getByTestId("training-answer-sheet");
+    await expect(sheet).toBeVisible();
+    await expect(sheet.getByTestId("question-bank-practice-group")).toHaveCount(1);
+    await expect(sheet.getByTestId("training-answer-sheet-number")).toHaveCount(10);
+    await sheet.getByTestId("training-answer-sheet-number").nth(2).click();
+    await expect(screen.getByTestId(subject+"-question")).toContainText("单题 3");
+    await expect(screen.getByRole("button",{name:/收藏|创建 Flashcard/})).toHaveCount(0);
+    await expect(screen.getByText("Codex 限额")).toHaveCount(0);
+  });
+}
