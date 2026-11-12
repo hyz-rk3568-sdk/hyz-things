@@ -332,6 +332,9 @@ test("comprehensive headers and navigation stay inside PWA safe areas at every v
   await page.getByRole("button",{name:"交卷",exact:true}).click();
   await expect(page.getByTestId("analysis-result")).toBeVisible();
   await expect(page.getByTestId("analysis-result").getByTestId("training-workspace-header")).toBeVisible();
+  await expect(page.getByTestId("analysis-result-correct")).toHaveAttribute("aria-label", "正确 0");
+  await expect(page.getByTestId("analysis-result-wrong")).toHaveAttribute("aria-label", "错误 0");
+  await expect(page.getByTestId("analysis-result-unanswered")).toHaveAttribute("aria-label", "未答 20");
   for(const viewport of [{width:1180,height:820},{width:820,height:1180},{width:360,height:800}]){
     await page.setViewportSize(viewport);
     const header=page.getByTestId("analysis-result").locator("header");
@@ -731,6 +734,8 @@ test("iPad comprehensive 20-question flow with answer save and submit", async ({
   await page.getByTestId("analysis-enter").click();
   await expect(page.getByTestId("analysis-run")).toBeVisible();
   await expect(page.getByTestId("analysis-run").getByTestId("training-workspace-header")).toBeVisible();
+  await expect(page.getByTestId("analysis-answered")).toHaveAttribute("aria-label", "已答 0");
+  await expect(page.getByTestId("analysis-unanswered")).toHaveAttribute("aria-label", "未答 20");
   // Starting a comprehensive paper removes the parent mode navigation,
   // fixes the paper to the visible viewport and keeps document scroll locked.
   await expect(page.getByRole("group",{name:"训练模式"})).toHaveCount(0);
@@ -908,7 +913,7 @@ test("iPad comprehensive 20-question flow with answer save and submit", async ({
   await expect(page.getByTestId("analysis-choice").first()).toHaveClass(/btn-primary/);
   await page.getByRole("button",{name:"交卷"}).click();
   await expect(page.getByTestId("analysis-result")).toBeVisible();
-  await expect(page.getByTestId("analysis-result")).toContainText("1 / 20");
+  await expect(page.getByTestId("analysis-result")).toContainText("1/20");
   await expect(page.getByTestId("analysis-result")).toContainText("第1题");
   // Answer review uses the same held-scroll controls as the active paper.
   const reviewToggle=page.getByTestId("analysis-result").getByTestId("calculation-scratchpad-toggle");
@@ -942,7 +947,7 @@ test("iPad comprehensive 20-question flow with answer save and submit", async ({
   await page.getByRole("button",{name:"查看练习记录"}).click();
   await expect(page.getByTestId("analysis-history")).toBeVisible();
   await page.getByRole("button",{name:"查看原题与解析"}).first().click();
-  await expect(page.getByTestId("analysis-result")).toContainText("1 / 20");
+  await expect(page.getByTestId("analysis-result")).toContainText("1/20");
   await expect(page.getByTestId("analysis-shared-workspace")).toBeVisible();
   await expect(page.getByTestId("analysis-review-choice").nth(0)).toHaveAttribute("data-state","correct");
   await page.getByTestId("analysis-exit").click();
@@ -958,11 +963,14 @@ test("iPad comprehensive 20-question flow with answer save and submit", async ({
   await page.getByTestId("analysis-choice").nth(1).click();
   await expect(page.getByTestId("analysis-choice").nth(1)).toHaveClass(/btn-primary/);
   await page.getByRole("button",{name:"交卷"}).click();
-  await expect(page.getByTestId("analysis-result")).toContainText("0 / 20");
+  await expect(page.getByTestId("analysis-result")).toContainText("1/20");
+  await expect(page.getByTestId("analysis-result-correct")).toHaveAttribute("aria-label", "正确 0");
+  await expect(page.getByTestId("analysis-result-wrong")).toHaveAttribute("aria-label", "错误 1");
+  await expect(page.getByTestId("analysis-result-unanswered")).toHaveAttribute("aria-label", "未答 19");
   await page.getByRole("button",{name:"查看练习记录"}).click();
   await expect(page.getByTestId("analysis-history")).toBeVisible();
   await page.getByRole("button",{name:"查看原题与解析"}).first().click();
-  await expect(page.getByTestId("analysis-result")).toContainText("1 / 20");
+  await expect(page.getByTestId("analysis-result")).toContainText("1/20");
   await page.getByTestId("analysis-exit").click();
   await page.getByRole("button",{name:"返回训练"}).click();
   await expect(page.getByRole("group",{name:"训练模式"})).toBeVisible();

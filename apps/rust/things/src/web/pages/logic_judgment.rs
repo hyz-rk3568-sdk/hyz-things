@@ -570,6 +570,14 @@ pub(crate) fn logic_judgment_training(props: &LogicJudgmentProps) -> Html {
         let paused = active.paused_remaining_ms.is_some();
         let index = (*current).min(active.questions.len().saturating_sub(1));
         let question = &active.questions[index];
+        let active_status = TrainingStatusCounts::active(
+            active
+                .answers
+                .iter()
+                .filter(|answer| answer.is_some())
+                .count(),
+            active.answers.len(),
+        );
         return html! {
             <section class="analysis-fullscreen fixed inset-0 z-[70] flex h-dvh w-screen min-w-0 flex-col overflow-hidden bg-base-200" data-testid={format!("{prefix}-run")}>
                 <TrainingHeader class="analysis-header flex shrink-0 flex-wrap items-center justify-between gap-2 border-b border-base-content/10 pb-2">
@@ -578,8 +586,9 @@ pub(crate) fn logic_judgment_training(props: &LogicJudgmentProps) -> Html {
                         <strong class="truncate text-sm">{title}</strong>
                         <span class="hidden text-xs text-base-content/60 sm:inline">{format!("第 {}/10 题",index+1)}</span>
                     </div>
-                    <div class="ml-auto flex shrink-0 items-center gap-2">
+                    <div class="ml-auto flex w-full shrink-0 flex-wrap items-center justify-end gap-2 sm:w-auto">
                         <StudyGoalBars />
+                        <TrainingStatusBar prefix={format!("{prefix}")} counts={active_status} mode={TrainingStatusMode::Active}/>
                         <button type="button" role="timer" class={if remaining<=60 {"btn btn-ghost font-mono text-xl text-error"} else {"btn btn-ghost font-mono text-xl"}} data-testid={format!("{prefix}-clock")} title={if paused {"点击继续计时"} else {"点击暂停计时"}} disabled={*busy || (remaining==0 && !paused)} onclick={invoke(LogicAction::Pause)}>{format!("{:02}:{:02}",remaining/60,remaining%60)}</button>
                         <button class="btn btn-sm btn-error btn-outline" data-testid={format!("{prefix}-submit")} disabled={*busy || paused} onclick={invoke(LogicAction::Submit)}>{"交卷"}</button>
                     </div>
@@ -645,6 +654,26 @@ pub(crate) fn logic_judgment_training(props: &LogicJudgmentProps) -> Html {
         } else {
             "未答"
         };
+        let answered = score
+            .questions
+            .iter()
+            .filter(|question| question.chosen.is_some())
+            .count();
+        let wrong = score
+            .questions
+            .iter()
+            .filter(|question| {
+                question
+                    .chosen
+                    .is_some_and(|chosen| chosen != question.correct_index)
+            })
+            .count();
+        let review_status = TrainingStatusCounts::review(
+            score.correct,
+            wrong,
+            score.total.saturating_sub(answered),
+            0,
+        );
         let show_records = {
             let history_forced = history_forced.clone();
             Callback::from(move |_| history_forced.set(true))
@@ -655,7 +684,7 @@ pub(crate) fn logic_judgment_training(props: &LogicJudgmentProps) -> Html {
                     <button class="btn btn-ghost btn-sm" disabled={*busy} onclick={invoke(LogicAction::Back)}>{"← 返回训练"}</button>
                     <div class="ml-auto flex flex-wrap items-center justify-end gap-2">
                         <StudyGoalBars />
-                        <strong class="text-sm">{format!("{} / {} 正确",score.correct,score.total)}</strong>
+                        <TrainingStatusBar prefix={format!("{prefix}-result")} counts={review_status} mode={TrainingStatusMode::Review}/>
                         <button class="btn btn-outline btn-sm" data-testid={format!("{prefix}-records")} onclick={show_records}>{"查看练习记录"}</button>
                         <button class="btn btn-primary btn-sm" data-testid={format!("{prefix}-retry")} disabled={*busy} onclick={invoke(LogicAction::Retry(score.id.clone()))}>{"重做原题"}</button>
                     </div>

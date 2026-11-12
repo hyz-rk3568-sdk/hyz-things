@@ -43,6 +43,9 @@ test("logic judgment persists answers, recovers deadline and reviews exact-paper
   await expect(page.getByText('仅交卷后可见的解析')).toHaveCount(0);
   await page.getByTestId('logic-choice').first().click();
   await expect(page.getByTestId('logic-choice').first()).toHaveClass(/btn-primary/);
+  await expect(page.getByTestId('logic-status-bar')).toBeVisible();
+  await expect(page.getByTestId('logic-answered')).toHaveAttribute('aria-label', '已答 1');
+  await expect(page.getByTestId('logic-unanswered')).toHaveAttribute('aria-label', '未答 9');
   await page.getByRole('button',{name:'下一题',exact:true}).click();
   await expect(page.getByTestId('logic-question')).toHaveText('独立逻辑题 2');
   await expectNoHorizontalOverflow(page);
@@ -54,7 +57,10 @@ test("logic judgment persists answers, recovers deadline and reviews exact-paper
   await expect(page.getByTestId('calculation-scratchpad-canvas')).toBeVisible();
   await page.getByTestId('logic-submit').click();
   await expect(page.getByTestId('logic-result').getByTestId('training-workspace-header')).toBeVisible();
-  await expect(page.getByTestId('logic-result')).toContainText('1 / 10');
+  await expect(page.getByTestId('logic-result')).toContainText('1/10');
+  await expect(page.getByTestId('logic-result-correct')).toHaveAttribute('aria-label', '正确 1');
+  await expect(page.getByTestId('logic-result-wrong')).toHaveAttribute('aria-label', '错误 0');
+  await expect(page.getByTestId('logic-result-unanswered')).toHaveAttribute('aria-label', '未答 9');
   await expect(page.getByTestId('logic-review-choice').first()).toHaveAttribute('data-state','correct');
   await expect(page.getByTestId('logic-result')).toContainText('仅交卷后可见的解析');
   await expect(page.getByTestId('logic-review-content').locator('.study-markdown').filter({hasText:'仅交卷后可见的解析'})).toHaveCSS('font-size','16px');
@@ -73,7 +79,7 @@ test("logic judgment persists answers, recovers deadline and reviews exact-paper
   await page.getByTestId('logic-history-open').click();
   await expect(page.getByTestId('logic-history')).toContainText('1/10 正确');
   await page.getByRole('button',{name:'查看原题与解析',exact:true}).click();
-  await expect(page.getByTestId('logic-result')).toContainText('1 / 10');
+  await expect(page.getByTestId('logic-result')).toContainText('1/10');
   await page.getByTestId('logic-retry').click();
   await expect(page.getByTestId('logic-run')).toBeVisible();
   expect(prepared).toBe(0);

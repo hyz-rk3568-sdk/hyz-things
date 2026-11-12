@@ -25,6 +25,32 @@ test('drill collection practice keeps ungradable questions and reports separate 
   await expect(page.getByTestId('training-workspace-header')).toBeVisible();
   await expect(page.getByTestId('codex-limit-five-hour')).toContainText('72%');
   await expect(page.getByTestId('codex-limit-week')).toContainText('38%');
+  const progressDimensions = await page.evaluate(() => {
+    const goal = document.querySelector('[data-testid="study-goal-bars"]')?.closest('.training-progress-bars');
+    const codex = document.querySelector('[data-testid="codex-limit-bars"]');
+    if (!goal || !codex) throw new Error('shared progress groups are missing');
+    const goalLabel = goal.querySelector('.training-progress-label');
+    const codexLabel = codex.querySelector('.training-progress-label');
+    const goalTrack = goal.querySelector('.training-progress-track');
+    const codexTrack = codex.querySelector('.training-progress-track');
+    if (!goalLabel || !codexLabel || !goalTrack || !codexTrack) throw new Error('shared progress styles are missing');
+    return {
+      goalWidth: goal.getBoundingClientRect().width,
+      codexWidth: codex.getBoundingClientRect().width,
+      goalFont: getComputedStyle(goalLabel).fontSize,
+      codexFont: getComputedStyle(codexLabel).fontSize,
+      goalHeight: Math.round(goalTrack.getBoundingClientRect().height),
+      codexHeight: Math.round(codexTrack.getBoundingClientRect().height),
+      goalMargin: getComputedStyle(goalTrack).marginTop,
+      codexMargin: getComputedStyle(codexTrack).marginTop,
+    };
+  });
+  expect(Math.abs(progressDimensions.goalWidth - progressDimensions.codexWidth)).toBeLessThanOrEqual(1);
+  expect(progressDimensions.goalFont).toBe('10px');
+  expect(progressDimensions.codexFont).toBe('10px');
+  expect(progressDimensions.goalHeight).toBe(6);
+  expect(progressDimensions.codexHeight).toBe(6);
+  expect(progressDimensions.goalMargin).toBe(progressDimensions.codexMargin);
   await page.getByRole('button', {name: 'Codex 限额详情'}).click();
   await expect(page.getByTestId('codex-limit-details')).toContainText('重置');
   await page.getByRole('button', {name: 'Codex 限额详情'}).click();
@@ -45,7 +71,7 @@ test('drill collection practice keeps ungradable questions and reports separate 
   await expect(score.getByLabel('正确 1')).toBeVisible();
   await expect(score.getByLabel('错误 0')).toBeVisible();
   await expect(score.getByLabel('不可判分 1')).toBeVisible();
-  await expect(score.getByLabel(/未答/)).toHaveCount(0);
+  await expect(score.getByLabel('未答 0')).toBeVisible();
   await expect(score.getByLabel('正确 1')).toHaveCSS('flex-direction', 'column');
   await page.setViewportSize({width:390,height:844});
   await expect(page.getByTestId('codex-limit-five-hour')).toBeVisible();
