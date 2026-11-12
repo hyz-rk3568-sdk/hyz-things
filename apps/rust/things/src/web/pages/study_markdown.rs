@@ -1,6 +1,6 @@
 use super::*;
 use pulldown_cmark::{
-    CowStr, Event as MarkdownEvent, Options, Parser, Tag, TagEnd, html::push_html,
+    html::push_html, CowStr, Event as MarkdownEvent, Options, Parser, Tag, TagEnd,
 };
 
 #[wasm_bindgen::prelude::wasm_bindgen(module = "/src/web/ai_diagram.js")]
@@ -308,10 +308,10 @@ mod question_bank_markdown_tests {
         let nested = question_bank_markdown_html(&format!("![](../../assets/{hash}.jpg)"));
         assert!(nested.contains(&format!("/api/v1/question-bank/assets/{hash}.jpg")));
         assert!(!nested.contains("../../assets"));
-        assert!(
-            !question_bank_markdown_html(&format!("![](https://example.com/assets/{hash}.png)"))
-                .contains("/api/v1/question-bank/assets/")
-        );
+        assert!(!question_bank_markdown_html(&format!(
+            "![](https://example.com/assets/{hash}.png)"
+        ))
+        .contains("/api/v1/question-bank/assets/"));
     }
 
     #[test]

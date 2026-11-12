@@ -1,12 +1,12 @@
 //! Persistent question-and-stem-scoped AI review.
 use super::data_analysis::CodexConfig;
 use crate::application::question_bank::{
-    BankError, QuestionBankApplication,
-    attachments::{MAX_IMAGES_PER_MESSAGE, validate_image},
+    attachments::{validate_image, MAX_IMAGES_PER_MESSAGE},
     practice::{
         AiAttachmentRelay, AiReviewBackend, AiReviewEventSink, AiReviewProgress, AiReviewTurn,
         QuestionAiLocator,
     },
+    BankError, QuestionBankApplication,
 };
 use crate::domain::question_bank::{AiReviewMessage, AiReviewState};
 use sha2::{Digest, Sha256};
@@ -16,7 +16,7 @@ use std::{
     sync::{Arc, Mutex as StdMutex},
     time::{Duration, Instant},
 };
-use tokio::sync::{Mutex, Semaphore, broadcast, watch};
+use tokio::sync::{broadcast, watch, Mutex, Semaphore};
 
 const MAX_FOLLOW_UP: usize = 2000;
 const MAX_ACTIVE: usize = 2;

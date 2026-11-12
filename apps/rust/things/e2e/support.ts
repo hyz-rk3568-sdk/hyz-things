@@ -1,5 +1,5 @@
-// expected-tests: 161
-// expected-runnable-tests: 160
+// expected-tests: 164
+// expected-runnable-tests: 163
 import type { Page } from "@playwright/test";
 
 export async function installCountdownVideoPipMock(page: Page) {

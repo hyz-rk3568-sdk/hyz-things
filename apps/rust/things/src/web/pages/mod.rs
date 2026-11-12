@@ -36,6 +36,7 @@ mod training_split_workspace;
 mod training_statistics;
 mod training_time;
 
+use ai_reply::AiReply;
 pub(crate) use calculation::*;
 pub(crate) use camera::*;
 pub(crate) use collection_review::*;
@@ -45,7 +46,6 @@ pub(crate) use devices::*;
 pub(crate) use logic_judgment::*;
 pub(crate) use network::*;
 pub(crate) use overview::*;
-use ai_reply::AiReply;
 use practice_status::*;
 pub(crate) use proxy::*;
 use question_bank_setup::*;

@@ -1,11 +1,11 @@
 //! Review of a saved wrong or favorite question. The timed training
 //! sessions stay separate; this view only reads one question at a time and
 //! lets the reader swipe through the filtered collection.
-use super::favorite_flashcard::{FavoriteFlashcardWorkspace, FavoritePreview, favorite_can_create};
-use super::material_scroll::{ScrollEdges, scroll_edges};
+use super::favorite_flashcard::{favorite_can_create, FavoriteFlashcardWorkspace, FavoritePreview};
+use super::material_scroll::{scroll_edges, ScrollEdges};
 use super::question_bank_practice::{
-    QUESTION_BANK_PANE_HEADER, QuestionAiHeaderActions, QuestionAiReview,
-    QuestionBankQuestionHeader, answer_options, use_practice_favorite, use_question_ai_tab,
+    answer_options, use_practice_favorite, use_question_ai_tab, QuestionAiHeaderActions,
+    QuestionAiReview, QuestionBankQuestionHeader, QUESTION_BANK_PANE_HEADER,
 };
 use super::*;
 use hyz_things::domain::question_bank::{

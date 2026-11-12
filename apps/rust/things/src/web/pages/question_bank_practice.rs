@@ -1,12 +1,12 @@
 //! Browse original papers and categories; share one workspace for practice and review.
-use super::favorite_flashcard::{FavoriteFlashcardWorkspace, FavoritePreview, favorite_can_create};
-use super::material_scroll::{MaterialScrollButton, ScrollEdges, scroll_edges};
+use super::favorite_flashcard::{favorite_can_create, FavoriteFlashcardWorkspace, FavoritePreview};
+use super::material_scroll::{scroll_edges, MaterialScrollButton, ScrollEdges};
 use super::*;
 use hyz_things::domain::question_bank::{
-    AiReviewState, CreatePracticeRequest, DrillCollection, FavoriteState, ModulePracticeFilters,
-    PaperSummary, PracticeBrowseItem, PracticeCatalog, PracticeMode, PracticeQuestion,
-    PracticeReview, PracticeSession, PracticeWorkspace, SavePracticeAnswer, SetFavorite,
-    SetPracticePaused, primary_module,
+    primary_module, AiReviewState, CreatePracticeRequest, DrillCollection, FavoriteState,
+    ModulePracticeFilters, PaperSummary, PracticeBrowseItem, PracticeCatalog, PracticeMode,
+    PracticeQuestion, PracticeReview, PracticeSession, PracticeWorkspace, SavePracticeAnswer,
+    SetFavorite, SetPracticePaused,
 };
 
 #[wasm_bindgen::prelude::wasm_bindgen(module = "/src/web/review_scroll.js")]
@@ -1099,7 +1099,11 @@ pub(crate) fn question_ai_review(props: &QuestionAiReviewProps) -> Html {
     let request_key = ai_draft_key(&props.question_id, "request-id");
     let request_id = use_state(|| {
         let value = ai_draft_read(&request_key);
-        if value.is_empty() { None } else { Some(value) }
+        if value.is_empty() {
+            None
+        } else {
+            Some(value)
+        }
     });
     let request_info = use_state(|| None::<AiRequestInfo>);
     let request_check = use_state(|| 0u64);

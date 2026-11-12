@@ -34,6 +34,11 @@ if name == "node":
     print("v22.0.0" if args == ["--version"] else "22")
 elif name == "npm" and args == ["--version"]:
     print("10.0.0")
+elif name == "npm" and args == ["run", "build:ts"]:
+    record("npm build:ts")
+    bridge = Path("frontend/ts-dist/browser-bridge.js")
+    bridge.parent.mkdir(parents=True, exist_ok=True)
+    bridge.write_text("// fake TypeScript browser bridge")
 elif name == "npm" and args == ["run", "build:css"]:
     record("npm build:css")
     Path("frontend/router.css").write_text("/* generated */")
@@ -61,6 +66,8 @@ elif name == "trunk" and args and args[0] == "build":
         '<script type="module">import init from "/app.js"; await init();</script></head><body></body></html>')
     (dist / "app.css").write_text(".app {color: black}")
     (dist / "app.js").write_text("// " + revision)
+    (dist / "ts-dist").mkdir(exist_ok=True)
+    (dist / "ts-dist/browser-bridge.js").write_text("// fake TypeScript browser bridge")
     if os.environ.get("FAKE_MUTATE_INPUT"):
         Path(os.environ["FAKE_MUTATE_INPUT"]).write_text("changed during build")
 elif name == "cargo" and args and args[0] == "run":

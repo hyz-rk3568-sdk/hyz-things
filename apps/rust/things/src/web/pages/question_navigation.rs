@@ -97,7 +97,6 @@ pub(super) fn question_navigation(
     }
 }
 
-
 #[derive(Properties, PartialEq)]
 struct TrainingGeneratedAnswerSheetProps {
     current: UseStateHandle<usize>,
@@ -111,7 +110,10 @@ struct TrainingGeneratedAnswerSheetProps {
 #[function_component(TrainingGeneratedAnswerSheet)]
 fn training_generated_answer_sheet(props: &TrainingGeneratedAnswerSheetProps) -> Html {
     let total = props.markers.len();
-    let size = props.group_size.filter(|size| *size > 0).unwrap_or(total.max(1));
+    let size = props
+        .group_size
+        .filter(|size| *size > 0)
+        .unwrap_or(total.max(1));
     let groups = (0..total.div_ceil(size))
         .map(|g| NavigationGroup {
             label: if props.group_size.is_some() {
