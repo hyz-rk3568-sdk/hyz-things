@@ -299,14 +299,10 @@ jobs:
             echo "error: zero runnable E2E tests selected" >&2
             exit 1
           fi
-          if (( count <= 20 )); then
+          if (( count <= 60 )); then
             total=1
-          elif (( count <= 40 )); then
-            total=2
-          elif (( count <= 80 )); then
-            total=4
           else
-            total=8
+            total=2
           fi
           shards="[$(seq -s, 1 "$total")]"
           echo "shards=$shards" >> "$GITHUB_OUTPUT"
@@ -319,7 +315,7 @@ jobs:
     needs: [frontend, e2e-plan]
     strategy:
       fail-fast: false
-      max-parallel: 8
+      max-parallel: 2
       matrix:
         shard: ${{ fromJSON(needs.e2e-plan.outputs.shards) }}
     runs-on: ubuntu-latest
