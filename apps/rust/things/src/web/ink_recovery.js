@@ -11,6 +11,8 @@ export function mountInkRecovery(canvas, redraw) {
     });
   };
 
+  const surface = canvas.closest('[data-testid="calculation-scratchpad"]');
+  surface?.addEventListener('training-split-resized', schedule);
   const observer = typeof ResizeObserver === 'function' ? new ResizeObserver(schedule) : null;
   observer?.observe(canvas);
   window.addEventListener('resize', schedule);
@@ -21,6 +23,7 @@ export function mountInkRecovery(canvas, redraw) {
 
   return () => {
     observer?.disconnect();
+    surface?.removeEventListener('training-split-resized', schedule);
     window.removeEventListener('resize', schedule);
     window.visualViewport?.removeEventListener('resize', schedule);
     document.removeEventListener('visibilitychange', schedule);

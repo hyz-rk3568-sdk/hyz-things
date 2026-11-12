@@ -3126,7 +3126,7 @@ pub(crate) fn question_bank_training(props: &QuestionBankTrainingProps) -> Html 
                 }
             };
             let main = html! {
-                <TrainingSplitWorkspace test_id="question-bank-practice-split" split_at_md={true}
+                <TrainingSplitWorkspace test_id="question-bank-practice-split" split_at_md={true} resizable={true}
                     left={left_pane} right={body}/>
             };
             let navigation_allowed = {

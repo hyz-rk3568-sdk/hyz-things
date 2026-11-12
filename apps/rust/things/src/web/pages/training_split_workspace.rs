@@ -2,6 +2,16 @@
 //! Each caller owns the content and independent scrolling of its panes.
 use super::*;
 
+#[wasm_bindgen::prelude::wasm_bindgen(module = "/src/web/split_resize.js")]
+extern "C" {
+    #[wasm_bindgen::prelude::wasm_bindgen(js_name = mountSplitResize)]
+    fn mount_split_resize(
+        root: &HtmlElement,
+        handle: &HtmlElement,
+        breakpoint: u32,
+    ) -> js_sys::Function;
+}
+
 pub(super) const TRAINING_PANE_HEADER: &str =
     "relative z-30 flex min-h-12 shrink-0 items-center justify-between gap-2 px-3 py-2";
 
@@ -72,21 +82,65 @@ pub(super) struct TrainingSplitWorkspaceProps {
     pub(super) test_id: &'static str,
     #[prop_or_default]
     pub(super) split_at_md: bool,
+    #[prop_or_default]
+    pub(super) resizable: bool,
 }
 
 #[function_component(TrainingSplitWorkspace)]
 pub(super) fn training_split_workspace(props: &TrainingSplitWorkspaceProps) -> Html {
-    // Keep data analysis' 60:40 geometry and portrait stacking unchanged.
-    // Logic uses the same geometry but activates the split on iPad widths.
-    let layout = if props.split_at_md {
-        "grid h-full min-h-0 min-w-0 grid-cols-1 grid-rows-[minmax(0,3fr)_minmax(0,2fr)] gap-2 md:grid-cols-[minmax(0,3fr)_minmax(0,2fr)] md:grid-rows-1"
+    let root = use_node_ref();
+    let handle = use_node_ref();
+    {
+        let root = root.clone();
+        let handle = handle.clone();
+        use_effect_with(
+            (props.resizable, props.split_at_md),
+            move |(resizable, split_at_md)| {
+                let cleanup = if *resizable {
+                    root.cast::<HtmlElement>()
+                        .zip(handle.cast::<HtmlElement>())
+                        .map(|(root, handle)| {
+                            mount_split_resize(
+                                &root,
+                                &handle,
+                                if *split_at_md { 768 } else { 1024 },
+                            )
+                        })
+                } else {
+                    None
+                };
+                move || {
+                    if let Some(cleanup) = cleanup {
+                        let _ = cleanup.call0(&wasm_bindgen::JsValue::NULL);
+                    }
+                }
+            },
+        );
+    }
+    if props.resizable {
+        html! {
+            <div ref={root} class="training-split-resizable grid h-full min-h-0 min-w-0"
+                data-testid={props.test_id} data-split-resizable="true"
+                data-split-breakpoint={if props.split_at_md {"md"} else {"lg"}}>
+                {props.left.clone()}
+                <div ref={handle} class="training-split-handle" role="separator" tabindex="0"
+                    aria-label="调整题目与解析区域比例" title="长按拖动；方向键调整，Home 恢复默认"
+                    data-testid="training-split-handle" data-swipe-ignore="true"></div>
+                {props.right.clone()}
+            </div>
+        }
     } else {
-        "grid h-full min-h-0 min-w-0 grid-cols-1 grid-rows-[minmax(0,3fr)_minmax(0,2fr)] gap-2 lg:grid-cols-[minmax(0,3fr)_minmax(0,2fr)] lg:grid-rows-1"
-    };
-    html! {
-        <div class={layout} data-testid={props.test_id}>
-            {props.left.clone()}
-            {props.right.clone()}
-        </div>
+        // Data analysis and reasoning retain their existing split geometry.
+        let layout = if props.split_at_md {
+            "grid h-full min-h-0 min-w-0 grid-cols-1 grid-rows-[minmax(0,3fr)_minmax(0,2fr)] gap-2 md:grid-cols-[minmax(0,3fr)_minmax(0,2fr)] md:grid-rows-1"
+        } else {
+            "grid h-full min-h-0 min-w-0 grid-cols-1 grid-rows-[minmax(0,3fr)_minmax(0,2fr)] gap-2 lg:grid-cols-[minmax(0,3fr)_minmax(0,2fr)] lg:grid-rows-1"
+        };
+        html! {
+            <div class={layout} data-testid={props.test_id}>
+                {props.left.clone()}
+                {props.right.clone()}
+            </div>
+        }
     }
 }
