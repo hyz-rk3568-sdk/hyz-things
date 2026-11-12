@@ -54,6 +54,11 @@ struct AiRequestReceipt {
 }
 
 #[derive(serde::Serialize)]
+struct AiDeleteRequest {
+    confirm_uncertain: bool,
+}
+
+#[derive(serde::Serialize)]
 struct AiRetryRequest {
     request_id: String,
     confirm_uncertain: bool,
@@ -1109,6 +1114,7 @@ pub(crate) fn question_ai_review(props: &QuestionAiReviewProps) -> Html {
     let request_check = use_state(|| 0u64);
     let request_busy = use_mut_ref(|| false);
     let request_error = use_state(|| None::<String>);
+    let request_not_found = use_state(|| false);
     let retry_open = use_state(|| false);
     let confirm_uncertain = use_state(|| false);
     let confirm_new_thread = use_state(|| false);
@@ -1149,11 +1155,20 @@ pub(crate) fn question_ai_review(props: &QuestionAiReviewProps) -> Html {
         });
     }
     let deleting = use_state(|| false);
+    let delete_confirmation_required = use_state(|| false);
+    let confirm_delete_uncertain = use_state(|| false);
+    let delete_error = use_state(|| None::<String>);
     {
         let previous = use_mut_ref(|| props.delete_signal);
         let deleting = deleting.clone();
+        let delete_confirmation_required = delete_confirmation_required.clone();
+        let confirm_delete_uncertain = confirm_delete_uncertain.clone();
+        let delete_error = delete_error.clone();
         use_effect_with(props.delete_signal, move |signal| {
             if *signal != *previous.borrow() {
+                delete_confirmation_required.set(false);
+                confirm_delete_uncertain.set(false);
+                delete_error.set(None);
                 deleting.set(true);
             }
             *previous.borrow_mut() = *signal;
@@ -1195,6 +1210,8 @@ pub(crate) fn question_ai_review(props: &QuestionAiReviewProps) -> Html {
     {
         let request_info = request_info.clone();
         let request_error = request_error.clone();
+        let request_not_found = request_not_found.clone();
+        let state = state.clone();
         let endpoint = endpoint.clone();
         let key = (
             (*request_id).clone(),
@@ -1208,6 +1225,8 @@ pub(crate) fn question_ai_review(props: &QuestionAiReviewProps) -> Html {
                 let alive = alive.clone();
                 let request_info = request_info.clone();
                 let request_error = request_error.clone();
+                let request_not_found = request_not_found.clone();
+                let state = state.clone();
                 spawn_local(async move {
                     match fetch_json_typed::<AiRequestInfo>(
                         &format!("{endpoint}/requests/{id}"),
@@ -1216,10 +1235,35 @@ pub(crate) fn question_ai_review(props: &QuestionAiReviewProps) -> Html {
                     .await
                     {
                         Ok(info) if alive.get() => {
+                            request_not_found.set(false);
                             request_error.set(None);
                             request_info.set(Some(info));
                         }
+                        Err(error)
+                            if alive.get()
+                                && error.is_code("question_bank_ai_request_not_found") =>
+                        {
+                            // Do not discard a missing ID on the strength of one 404: a
+                            // server task may still be active after a lost response.
+                            let review =
+                                fetch_json::<AiReviewState>(&endpoint, "AI 复盘记录").await;
+                            if alive.get() {
+                                request_info.set(None);
+                                match review {
+                                    Ok(value) => {
+                                        state.set(Some(value));
+                                        request_not_found.set(true);
+                                        request_error.set(Some("服务端不存在这条 AI 请求记录，已重新核对题目状态。若决定放弃追踪原请求，可手动清除失效标识；不会自动重发。".into()));
+                                    }
+                                    Err(review_error) => {
+                                        request_not_found.set(false);
+                                        request_error.set(Some(format!("AI 请求不存在，但无法核对题目状态：{review_error}。请重新查询。")));
+                                    }
+                                }
+                            }
+                        }
                         Err(error) if alive.get() => {
+                            request_not_found.set(false);
                             request_info.set(None);
                             request_error.set(Some(format!(
                                 "请求结果尚未确认：{error}。可再次查询，不会自动重发。"
@@ -1626,50 +1670,50 @@ pub(crate) fn question_ai_review(props: &QuestionAiReviewProps) -> Html {
         let history_generation = history_generation.clone();
         let request_id = request_id.clone();
         let request_info = request_info.clone();
+        let request_not_found = request_not_found.clone();
+        let request_error = request_error.clone();
         let request_key = request_key.clone();
         let reconnect_stream = reconnect_stream.clone();
         let revision = revision.clone();
-        let failure = failure.clone();
         let submitting = submitting.clone();
         let deleting = deleting.clone();
+        let delete_confirmation_required = delete_confirmation_required.clone();
+        let confirm_delete_uncertain = confirm_delete_uncertain.clone();
+        let delete_error = delete_error.clone();
         let endpoint = endpoint.clone();
         let csrf = props.csrf.clone();
         Callback::from(move |_| {
-            if *submitting {
+            if *submitting || (*delete_confirmation_required && !*confirm_delete_uncertain) {
                 return;
             }
             submitting.set(true);
-            failure.set(None);
+            delete_error.set(None);
             let state = state.clone();
             let history_generation = history_generation.clone();
             let request_id = request_id.clone();
             let request_info = request_info.clone();
+            let request_not_found = request_not_found.clone();
+            let request_error = request_error.clone();
             let request_key = request_key.clone();
             let reconnect_stream = reconnect_stream.clone();
             let revision = revision.clone();
-            let failure = failure.clone();
             let submitting = submitting.clone();
             let deleting = deleting.clone();
+            let delete_confirmation_required = delete_confirmation_required.clone();
+            let confirm_delete_uncertain = confirm_delete_uncertain.clone();
+            let delete_error = delete_error.clone();
             let endpoint = endpoint.clone();
             let csrf = csrf.clone();
+            let confirmed = *confirm_delete_uncertain;
             spawn_local(async move {
-                let result = async {
-                    let response = Request::delete(&endpoint)
-                        .credentials(RequestCredentials::SameOrigin)
-                        .header("Accept", "application/json")
-                        .header("Content-Type", "application/json")
-                        .header("X-HYZ-CSRF", &csrf)
-                        .send()
-                        .await
-                        .map_err(|e| format!("无法连接删除 AI 解析接口：{e}"))?;
-                    if !response.ok() {
-                        return Err(format!("删除 AI 解析失败（HTTP {}）", response.status()));
-                    }
-                    response
-                        .json::<AiReviewState>()
-                        .await
-                        .map_err(|e| format!("删除 AI 解析响应无效：{e}"))
-                }
+                let result = delete_json_body_response_typed::<_, AiReviewState>(
+                    &endpoint,
+                    &csrf,
+                    &AiDeleteRequest {
+                        confirm_uncertain: confirmed,
+                    },
+                    "删除 AI 解析",
+                )
                 .await;
                 *revision.borrow_mut() += 1;
                 match result {
@@ -1679,9 +1723,18 @@ pub(crate) fn question_ai_review(props: &QuestionAiReviewProps) -> Html {
                         ai_draft_write(&request_key, "");
                         request_id.set(None);
                         request_info.set(None);
+                        request_not_found.set(false);
+                        request_error.set(None);
+                        delete_confirmation_required.set(false);
+                        confirm_delete_uncertain.set(false);
                         deleting.set(false);
                     }
-                    Err(error) => failure.set(Some(error)),
+                    Err(error) if error.is_code("question_bank_ai_confirmation_required") => {
+                        delete_confirmation_required.set(true);
+                        confirm_delete_uncertain.set(false);
+                        delete_error.set(None);
+                    }
+                    Err(error) => delete_error.set(Some(error.to_string())),
                 }
                 reconnect_stream.emit(());
                 submitting.set(false);
@@ -1864,6 +1917,31 @@ pub(crate) fn question_ai_review(props: &QuestionAiReviewProps) -> Html {
                     <p>{request_error.as_deref().unwrap_or("正在查询此前请求；结果确认前不会再次发送。")}</p>
                     <button type="button" class="btn btn-outline btn-sm" data-testid="question-bank-ai-request-check"
                         disabled={*submitting} onclick={Callback::from({let request_check=request_check.clone(); move |_| request_check.set(*request_check + 1)})}>{"查询请求状态"}</button>
+                    if *request_not_found {
+                        if !running {
+                            <p class="text-xs text-warning">{"清除仅放弃追踪该请求 ID，不会删除服务端 AI 解析，也不会自动重发；原有输入草稿将保留。"}</p>
+                            <button type="button" class="btn btn-outline btn-sm" data-testid="question-bank-ai-request-discard"
+                                disabled={*submitting}
+                                onclick={Callback::from({
+                                    let request_key=request_key.clone();
+                                    let request_id=request_id.clone();
+                                    let request_info=request_info.clone();
+                                    let request_not_found=request_not_found.clone();
+                                    let request_error=request_error.clone();
+                                    let failure=failure.clone();
+                                    move |_| {
+                                        ai_draft_write(&request_key, "");
+                                        request_id.set(None);
+                                        request_info.set(None);
+                                        request_not_found.set(false);
+                                        request_error.set(None);
+                                        failure.set(None);
+                                    }
+                                })}>{"清除失效请求标识"}</button>
+                        } else {
+                            <p class="text-xs text-warning">{"当前题目仍在生成，不能清除请求标识；请先停止或查询任务状态。"}</p>
+                        }
+                    }
                 </div>
             }
             if *disconnected && request_id.is_some() && !request_unresolved {
@@ -1943,10 +2021,31 @@ pub(crate) fn question_ai_review(props: &QuestionAiReviewProps) -> Html {
                 <div class="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 p-4" role="dialog" aria-modal="true" aria-label="确认删除 AI 解析">
                     <div class="w-full max-w-sm space-y-4 rounded-box bg-base-100 p-5 shadow-xl">
                         <p>{"确定删除这道题的 AI 解析和全部追问吗？"}</p>
+                        if *delete_confirmation_required {
+                            <p class="text-sm text-warning" role="alert">{"远端执行结果不确定，可能仍在运行；删除将清空本地 AI 解析和追问记录，请确认后继续。"}</p>
+                            <label class="flex items-start gap-2 text-sm">
+                                <input type="checkbox" class="checkbox checkbox-sm"
+                                    checked={*confirm_delete_uncertain}
+                                    data-testid="question-bank-ai-delete-confirm-uncertain"
+                                    onchange={Callback::from({
+                                        let confirm_delete_uncertain=confirm_delete_uncertain.clone();
+                                        move |event: Event| {
+                                            let input: HtmlInputElement=event.target_unchecked_into();
+                                            confirm_delete_uncertain.set(input.checked());
+                                        }
+                                    })}/>
+                                <span>{"我确认清除可能仍在远端执行的 AI 请求记录。"}</span>
+                            </label>
+                        }
+                        if let Some(error) = delete_error.as_ref() {
+                            <p class="text-sm text-error" role="alert" data-testid="question-bank-ai-delete-error">{error.clone()}</p>
+                        }
                         <div class="flex justify-end gap-2">
                             <button type="button" class="btn btn-ghost btn-sm" data-testid="question-bank-ai-delete-cancel" disabled={*submitting}
                                 onclick={Callback::from({let deleting=deleting.clone(); move |_|deleting.set(false)})}>{"取消"}</button>
-                            <button type="button" class="btn btn-error btn-sm" data-testid="question-bank-ai-delete-confirm" disabled={*submitting} onclick={on_delete}>{"确认删除"}</button>
+                            <button type="button" class="btn btn-error btn-sm" data-testid="question-bank-ai-delete-confirm"
+                                disabled={*submitting || (*delete_confirmation_required && !*confirm_delete_uncertain)}
+                                onclick={on_delete}>{"确认删除"}</button>
                         </div>
                     </div>
                 </div>

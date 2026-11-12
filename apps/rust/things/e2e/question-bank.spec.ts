@@ -184,7 +184,7 @@ test('paper practice hides numbering and scroll tools until they are needed',asy
   await expect(page.getByTestId('question-bank-practice-records')).toBeVisible();
   await expect(page.getByTestId('question-bank-practice-repeat')).toBeVisible();
   await expect(page.getByTestId('question-bank-practice-ungradable')).toHaveCount(0);
-  await expect(page.getByTestId('question-bank-practice-score')).not.toContainText('待核验');
+  await expect(page.getByTestId('question-bank-practice-score').last()).not.toContainText('待核验');
   await expect(page.getByTestId('question-bank-practice-workspace')).not.toContainText('ungradable');
   await expect(page.getByTestId('question-bank-practice-workspace')).not.toContainText('正确率');
   await expect(page.getByTestId('question-bank-practice-number').first()).toHaveClass(/btn-error/);
@@ -433,7 +433,7 @@ test('returning to module training updates progress from another device',async({
     await saved;
     await second.getByTestId('question-bank-practice-submit').click();
     if(await second.getByTestId('question-bank-submit-confirm').isVisible()) await second.getByRole('button',{name:'确认交卷'}).click();
-    await expect(second.getByTestId('question-bank-practice-score')).toBeVisible();
+    await expect(second.getByTestId('question-bank-practice-score').last()).toBeVisible();
     await page.getByTestId('training-mode-question-bank-module').click();
     await expect(page.getByTestId('question-bank-cross-module').filter({hasText:'资料分析'})).toContainText('1/3');
   } finally { await other.close(); }
@@ -544,7 +544,7 @@ test('module filter settings persist, apply server-side, and reflect answered/to
   await page.getByTestId('question-bank-practice-choice').first().click();
   await answerSaved;
   await page.getByTestId('question-bank-practice-submit').click();
-  await expect(page.getByTestId('question-bank-practice-score')).toBeVisible();
+  await expect(page.getByTestId('question-bank-practice-score').last()).toBeVisible();
   const today=await page.evaluate(async()=>{
     const response=await fetch('/api/v1/study/training-time/stats');
     if(!response.ok) throw new Error(`statistics failed: ${response.status}`);
@@ -872,6 +872,61 @@ test('deleting saved AI analysis sends a same-origin JSON request', async ({page
   expect((await deleted).status()).toBe(200);
   await expect(page.getByTestId('question-bank-ai-status')).toContainText('未生成');
   await expect(page.getByTestId('question-bank-ai-message')).toHaveCount(0);
+});
+
+
+test('AI delete 409 requires explicit uncertainty confirmation before clearing history',async({page})=>{
+  const deletes:Array<{confirm_uncertain:boolean}>=[];
+  let deleted=false;
+  await page.route('**/api/v1/question-bank/practice/questions/*/ai',async route=>{
+    const question_id=new URL(route.request().url()).pathname.split('/').at(-2)!;
+    if(route.request().method()==='DELETE'){
+      const body=route.request().postDataJSON() as {confirm_uncertain:boolean};
+      deletes.push(body);
+      if (!body.confirm_uncertain) {
+        await route.fulfill({status:409,json:{error:{code:'question_bank_ai_confirmation_required',message:'远端运行状态不确定，请确认后重试'}}});
+        return;
+      }
+      deleted=true;
+    }
+    await route.fulfill({json:{question_id,status:deleted?'idle':'stopped',error:null,messages:deleted?[]:[{id:1,role:'assistant',content:'保留的旧解析',created_at:1}]}});
+  });
+  await openFixtureReview(page);
+  await expect(page.getByTestId('question-bank-ai-message')).toContainText('保留的旧解析');
+  await page.getByRole('button',{name:'更多解析操作'}).click();
+  await page.getByTestId('question-bank-ai-delete').click();
+  const submit=page.getByTestId('question-bank-ai-delete-confirm');
+  await submit.click();
+  await expect(page.getByTestId('question-bank-ai-delete-confirm-uncertain')).toBeVisible();
+  await expect(submit).toBeDisabled();
+  expect(deletes).toEqual([{confirm_uncertain:false}]);
+  await page.getByTestId('question-bank-ai-delete-confirm-uncertain').check();
+  await submit.click();
+  await expect(page.getByTestId('question-bank-ai-message')).toHaveCount(0);
+  await expect(page.getByTestId('question-bank-ai-status')).toContainText('未生成');
+  expect(deletes).toEqual([{confirm_uncertain:false},{confirm_uncertain:true}]);
+});
+
+test('AI delete busy conflict remains visible and cannot bypass uncertainty confirmation',async({page})=>{
+  let count=0;
+  await page.route('**/api/v1/question-bank/practice/questions/*/ai',async route=>{
+    const question_id=new URL(route.request().url()).pathname.split('/').at(-2)!;
+    if(route.request().method()==='DELETE'){
+      count++;
+      await route.fulfill({status:409,json:{error:{code:'question_bank_ai_busy',message:'当前题目正在生成或无法追问'}}});
+      return;
+    }
+    await route.fulfill({json:{question_id,status:'complete',error:null,messages:[{id:1,role:'assistant',content:'不可删除的解析',created_at:1}]}});
+  });
+  await openFixtureReview(page);
+  await page.getByRole('button',{name:'更多解析操作'}).click();
+  await page.getByTestId('question-bank-ai-delete').click();
+  await page.getByTestId('question-bank-ai-delete-confirm').click();
+  await expect(page.getByTestId('question-bank-ai-delete-error')).toContainText('question_bank_ai_busy');
+  await expect(page.getByTestId('question-bank-ai-delete-confirm-uncertain')).toHaveCount(0);
+  expect(count).toBe(1);
+  await page.getByTestId('question-bank-ai-delete-cancel').click();
+  await expect(page.getByTestId('question-bank-ai-message')).toContainText('不可删除的解析');
 });
 
 test('AI review keeps running across navigation and restores follow-ups', async ({page}) => {
@@ -1501,7 +1556,7 @@ test('AI unknown send keeps the same request ID for status lookup across tab cha
   await openFixtureReview(page);
   await page.getByTestId('question-bank-ai-input').fill('保留这次追问');
   await page.getByTestId('question-bank-ai-send').click();
-  await expect(page.getByTestId('question-bank-ai-request-unknown')).toContainText('尚未确认');
+  await expect(page.getByTestId('question-bank-ai-request-unknown')).toContainText('服务端不存在');
   expect(sentId).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/);
   await expect(page.getByTestId('question-bank-ai-send')).toBeDisabled();
   await page.getByTestId('question-bank-original-tab').click();
@@ -1512,6 +1567,51 @@ test('AI unknown send keeps the same request ID for status lookup across tab cha
   await expect(page.getByTestId('question-bank-ai-request-unknown')).toHaveCount(0);
   expect(lookups.length).toBeGreaterThan(1);
   expect(lookups.every(id=>id===sentId)).toBe(true);
+});
+
+
+test('missing AI request can be discarded only after reconciling the server state',async({page})=>{
+  let sentId='', retriedId='', requestCount=0;
+  let currentStatus='complete';
+  await page.route('**/api/v1/question-bank/practice/questions/*/ai',async route=>{
+    const question_id=new URL(route.request().url()).pathname.split('/').at(-2)!;
+    await route.fulfill({json:{question_id,status:currentStatus,error:null,messages:currentStatus==='idle'?[]:[{id:1,role:'assistant',content:'已有解析',created_at:1}]}});
+  });
+  await page.route('**/api/v1/question-bank/practice/questions/*/ai/events',route=>route.fulfill({status:503}));
+  await page.route('**/api/v1/question-bank/practice/questions/*/ai/messages',async route=>{
+    requestCount++;
+    if(requestCount===1){
+      sentId=route.request().postDataJSON().request_id;
+      currentStatus='running';
+      await route.abort('connectionreset');
+    } else {
+      retriedId=route.request().postDataJSON().request_id;
+      const question_id=new URL(route.request().url()).pathname.split('/').at(-3)!;
+      await route.fulfill({status:202,json:{question_id,status:'running',error:null,messages:[],request:aiRequestInfo(retriedId,'follow_up','running')}});
+    }
+  });
+  await page.route('**/api/v1/question-bank/practice/questions/*/ai/requests/*',async route=>{
+    const id=new URL(route.request().url()).pathname.split('/').at(-1)!;
+    if(id===sentId){
+      await route.fulfill({status:404,json:{error:{code:'question_bank_ai_request_not_found',message:'AI 请求不存在'}}});
+    } else await route.fulfill({json:aiRequestInfo(id,'follow_up','running')});
+  });
+  await openFixtureReview(page);
+  await page.getByTestId('question-bank-ai-input').fill('保留原有追问草稿');
+  // The server reports a running task when reconciling the lost request.
+  await page.getByTestId('question-bank-ai-send').click();
+  await expect(page.getByTestId('question-bank-ai-request-unknown')).toContainText('服务端不存在');
+  await expect(page.getByTestId('question-bank-ai-request-discard')).toHaveCount(0);
+  await expect(page.getByTestId('question-bank-ai-send')).toHaveCount(0);
+  currentStatus='complete';
+  await page.getByTestId('question-bank-ai-request-check').click();
+  await expect(page.getByTestId('question-bank-ai-request-discard')).toBeVisible();
+  await page.getByTestId('question-bank-ai-request-discard').click();
+  await expect(page.getByTestId('question-bank-ai-request-unknown')).toHaveCount(0);
+  await expect(page.getByTestId('question-bank-ai-input')).toHaveValue('保留原有追问草稿');
+  await page.getByTestId('question-bank-ai-send').click();
+  await expect.poll(()=>requestCount).toBe(2);
+  expect(retriedId).not.toBe(sentId);
 });
 
 test('AI retry requires uncertainty and new-thread confirmation and replaces expired images',async({page})=>{

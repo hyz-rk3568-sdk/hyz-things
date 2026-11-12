@@ -377,7 +377,7 @@ test("daily practice statistics count real submissions, exclude blanks and inclu
   await page.getByTestId('question-bank-practice-submit').click();
   await page.getByRole('button',{name:'确认交卷',exact:true}).click();
   const submission=await submitted;
-  await expect(page.getByTestId('question-bank-practice-score')).toBeVisible();
+  await expect(page.getByTestId('question-bank-practice-score').last()).toBeVisible();
   expect((await readToday()).answered_count).toBe(before.answered_count+1);
   expect((await readToday()).answered_modules.question_bank).toBe((before.answered_modules.question_bank??0)+1);
   expect((await readToday()).question_bank.papers['行测真题训练端到端样卷']).toBeGreaterThanOrEqual(1);
@@ -400,7 +400,7 @@ test("daily practice statistics count real submissions, exclude blanks and inclu
   await expect(choices.nth(1)).toHaveAttribute('aria-pressed','true');
   await page.getByTestId('question-bank-practice-submit').click();
   await page.getByRole('button',{name:'确认交卷',exact:true}).click();
-  await expect(page.getByTestId('question-bank-practice-score')).toBeVisible();
+  await expect(page.getByTestId('question-bank-practice-score').last()).toBeVisible();
   expect((await readToday()).answered_count).toBe(before.answered_count+2);
   await page.getByRole('button',{name:'← 返回训练',exact:true}).click();
   await page.getByTestId('training-mode-statistics').click();
