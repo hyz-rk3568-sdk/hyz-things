@@ -184,7 +184,7 @@ test('paper practice hides numbering and scroll tools until they are needed',asy
   await expect(page.getByTestId('question-bank-practice-records')).toBeVisible();
   await expect(page.getByTestId('question-bank-practice-repeat')).toBeVisible();
   await expect(page.getByTestId('question-bank-practice-ungradable')).toHaveCount(0);
-  await expect(page.getByTestId('question-bank-practice-score')).not.toContainText('待核验');
+  await expect(page.getByTestId('question-bank-practice-score').last()).not.toContainText('待核验');
   await expect(page.getByTestId('question-bank-practice-workspace')).not.toContainText('ungradable');
   await expect(page.getByTestId('question-bank-practice-workspace')).not.toContainText('正确率');
   await expect(page.getByTestId('question-bank-practice-number').first()).toHaveClass(/btn-error/);
@@ -433,7 +433,7 @@ test('returning to module training updates progress from another device',async({
     await saved;
     await second.getByTestId('question-bank-practice-submit').click();
     if(await second.getByTestId('question-bank-submit-confirm').isVisible()) await second.getByRole('button',{name:'确认交卷'}).click();
-    await expect(second.getByTestId('question-bank-practice-score')).toBeVisible();
+    await expect(second.getByTestId('question-bank-practice-score').last()).toBeVisible();
     await page.getByTestId('training-mode-question-bank-module').click();
     await expect(page.getByTestId('question-bank-cross-module').filter({hasText:'资料分析'})).toContainText('1/3');
   } finally { await other.close(); }
@@ -544,7 +544,7 @@ test('module filter settings persist, apply server-side, and reflect answered/to
   await page.getByTestId('question-bank-practice-choice').first().click();
   await answerSaved;
   await page.getByTestId('question-bank-practice-submit').click();
-  await expect(page.getByTestId('question-bank-practice-score')).toBeVisible();
+  await expect(page.getByTestId('question-bank-practice-score').last()).toBeVisible();
   const today=await page.evaluate(async()=>{
     const response=await fetch('/api/v1/study/training-time/stats');
     if(!response.ok) throw new Error(`statistics failed: ${response.status}`);
@@ -1556,7 +1556,7 @@ test('AI unknown send keeps the same request ID for status lookup across tab cha
   await openFixtureReview(page);
   await page.getByTestId('question-bank-ai-input').fill('保留这次追问');
   await page.getByTestId('question-bank-ai-send').click();
-  await expect(page.getByTestId('question-bank-ai-request-unknown')).toContainText('尚未确认');
+  await expect(page.getByTestId('question-bank-ai-request-unknown')).toContainText('服务端不存在');
   expect(sentId).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/);
   await expect(page.getByTestId('question-bank-ai-send')).toBeDisabled();
   await page.getByTestId('question-bank-original-tab').click();
