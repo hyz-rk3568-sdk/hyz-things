@@ -113,17 +113,18 @@ if [[ "${0##*/}" == make || "${1:-}" == fmt ]]; then exit 1; fi
             self.assertIn(f"e2e/{spec}", selection)
         self.assertNotIn("HYZ_THINGS_E2E_BROWSER=", e2e)
 
-    def test_adaptive_e2e_shards_scale_to_four_runners(self):
+    def test_adaptive_e2e_shards_scale_to_eight_runners(self):
         planner = self.jobs["e2e-plan"]
         e2e = self.jobs["e2e"]
         self.assertIn("playwright test", planner)
         self.assertIn("--list", planner)
-        for threshold in ("count > 60", "count > 120", "count > 180"):
+        for threshold in ("count <= 20", "count <= 40", "count <= 80"):
             self.assertIn(threshold, planner)
-        for shards in ("[1]", "[1,2]", "[1,2,3]", "[1,2,3,4]"):
-            self.assertIn(shards, planner)
+        for count in (1, 2, 4, 8):
+            self.assertIn(f"total={count}", planner)
+        self.assertIn('shards="[$(seq -s, 1 "$total")]"', planner)
         self.assertIn("fail-fast: false", e2e)
-        self.assertIn("max-parallel: 4", e2e)
+        self.assertIn("max-parallel: 8", e2e)
         self.assertIn("shard: ${{ fromJSON(needs.e2e-plan.outputs.shards) }}", e2e)
         self.assertIn("E2E_SHARD_TOTAL: ${{ needs.e2e-plan.outputs.total }}", e2e)
         self.assertIn('--shard="${E2E_SHARD}/${E2E_SHARD_TOTAL}"', e2e)
