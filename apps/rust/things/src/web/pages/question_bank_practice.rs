@@ -1258,7 +1258,12 @@ pub(crate) fn question_ai_review(props: &QuestionAiReviewProps) -> Html {
         );
         use_effect_with(key, move |_| {
             if let Some(element) = messages_ref.cast::<HtmlElement>() {
-                if *follow_bottom.borrow() {
+                if element.has_attribute("data-review-scroll-restoring") {
+                    // Returning to a review question restores its saved position
+                    // after AI history arrives; never override it with chat autoscroll.
+                    *follow_bottom.borrow_mut() = false;
+                    new_content.set(false);
+                } else if *follow_bottom.borrow() {
                     element.set_scroll_top(element.scroll_height());
                     new_content.set(false);
                 } else {
@@ -2359,8 +2364,8 @@ pub(crate) fn question_bank_training(props: &QuestionBankTrainingProps) -> Html 
             .and_then(|workspace| workspace.questions.get(*index))
             .map(|question| question.item.question_id.clone());
         use_effect_with(
-            (session, question, *flashcard_open),
-            move |(session, question, panel_open)| {
+            (session, question, *flashcard_open, *ai_tab),
+            move |(session, question, panel_open, _)| {
                 let mut memory = review_scrolls.borrow_mut();
                 if memory.session != *session {
                     memory.session = session.clone();

@@ -299,22 +299,30 @@ jobs:
             echo "error: zero runnable E2E tests selected" >&2
             exit 1
           fi
-          if (( count > 60 )); then
-            echo 'shards=[1,2]' >> "$GITHUB_OUTPUT"
-            echo 'total=2' >> "$GITHUB_OUTPUT"
+          if (( count > 180 )); then
+            total=4
+            shards='[1,2,3,4]'
+          elif (( count > 120 )); then
+            total=3
+            shards='[1,2,3]'
+          elif (( count > 60 )); then
+            total=2
+            shards='[1,2]'
           else
-            echo 'shards=[1]' >> "$GITHUB_OUTPUT"
-            echo 'total=1' >> "$GITHUB_OUTPUT"
+            total=1
+            shards='[1]'
           fi
+          echo "shards=$shards" >> "$GITHUB_OUTPUT"
+          echo "total=$total" >> "$GITHUB_OUTPUT"
           echo "test_count=$count" >> "$GITHUB_OUTPUT"
-          echo "Selected $count runnable E2E tests; using $([[ $count -gt 60 ]] && echo 2 || echo 1) runner(s)"
+          echo "Selected $count runnable E2E tests; using $total runner(s)"
 
   e2e:
     name: Playwright E2E (shard ${{ matrix.shard }}/${{ needs.e2e-plan.outputs.total }})
     needs: [frontend, e2e-plan]
     strategy:
       fail-fast: false
-      max-parallel: 2
+      max-parallel: 4
       matrix:
         shard: ${{ fromJSON(needs.e2e-plan.outputs.shards) }}
     runs-on: ubuntu-latest

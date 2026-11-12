@@ -5,15 +5,20 @@ export function restoreReviewScroll(element, offset) {
   const pane = element.closest('[data-testid="question-bank-practice-material-pane"], [data-testid="question-bank-practice-question-pane"]') || element;
   const surface = element.closest('[data-testid="training-swipe-surface"]') || pane;
   const intent = event => {
-    if (event.target === surface || pane.contains(event.target)) cancel();
+    if (event.target === surface || pane.contains(event.target)) cancel(true);
   };
-  const cancel = () => {
+  const cancel = (userIntent = false) => {
     pending = false;
     element.removeAttribute('data-review-scroll-restoring');
     observer?.disconnect();
     element.removeEventListener('load', retry, true);
     for (const name of ['pointerdown', 'wheel', 'touchstart', 'keydown']) {
       surface.removeEventListener(name, intent, true);
+    }
+    // A user interrupting restoration also replaces the saved offset. Merely
+    // unmounting/rebinding a pane must not reset the previously saved offset.
+    if (userIntent && element.isConnected) {
+      element.dispatchEvent(new Event('scroll'));
     }
   };
   const retry = () => {
