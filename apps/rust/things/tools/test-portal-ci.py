@@ -32,17 +32,27 @@ class PortalCiTests(unittest.TestCase):
         self.assertIn("checks", self.jobs)
         return named_blocks(self.jobs["checks"], r"^      - name: ([^\n]+)\n")
 
-    def test_format_static_and_unit_checks_share_one_failure_collecting_job(self):
-        steps = self.checks()
-        for name in ("Check contract formatting", "Check things formatting", "Run source and configuration checks",
-                     "Test contract", "Test native", "Test web unit logic", "Clippy contract", "Clippy native"):
-            with self.subTest(step=name):
-                self.assertIn(name, steps)
-                self.assertIn("!cancelled()", steps[name])
+    def preflight(self):
+        self.assertIn("preflight", self.jobs)
+        return named_blocks(self.jobs["preflight"], r"^      - name: ([^\n]+)\n")
+
+    def test_format_static_and_unit_checks_are_independent_failure_collecting_jobs(self):
+        preflight, checks = self.preflight(), self.checks()
+        for steps, names in (
+            (preflight, ("Check contract formatting", "Check things formatting",
+                         "Run source and configuration checks", "Validate capability Playwright suite layout",
+                         "Check committed diff")),
+            (checks, ("Test contract", "Test native", "Test web unit logic",
+                      "Clippy contract", "Clippy native")),
+        ):
+            for name in names:
+                with self.subTest(step=name):
+                    self.assertIn(name, steps)
+                    self.assertIn("!cancelled()", steps[name])
         self.assertNotIn("continue-on-error:", self.text)
 
     def test_failed_formatting_and_static_checks_still_run_all_unit_suites(self):
-        steps = self.checks()
+        steps = {**self.preflight(), **self.checks()}
         with tempfile.TemporaryDirectory(prefix="hyz-ci-test-") as temporary:
             directory = Path(temporary)
             log = directory / "commands.log"
@@ -69,10 +79,12 @@ if [[ "${0##*/}" == make || "${1:-}" == fmt ]]; then exit 1; fi
             self.assertEqual(sum(line.startswith("cargo clippy ") for line in calls), 2, calls)
 
     def test_e2e_and_checks_depend_only_on_frontend(self):
-        self.assertEqual(set(self.jobs), {"frontend", "checks", "e2e"})
-        self.assertNotRegex(self.jobs["frontend"], r"(?m)^    needs:")
+        self.assertEqual(set(self.jobs), {"frontend", "preflight", "checks", "e2e", "e2e-summary"})
+        for name in ("frontend", "preflight"):
+            self.assertNotRegex(self.jobs[name], r"(?m)^    needs:")
         for name in ("checks", "e2e"):
             self.assertRegex(self.jobs[name], r"(?m)^    needs: frontend$")
+        self.assertRegex(self.jobs["e2e-summary"], r"(?m)^    needs: e2e$")
         self.assertIn("!cancelled()", self.jobs["checks"])
 
     def test_frontend_cache_and_artifact_include_fingerprint_metadata(self):
@@ -98,6 +110,16 @@ if [[ "${0##*/}" == make || "${1:-}" == fmt ]]; then exit 1; fi
                      "question-bank-drill.spec.ts", "flashcards.spec.ts"):
             self.assertIn(f"e2e/{spec}", e2e)
         self.assertNotIn("HYZ_THINGS_E2E_BROWSER=", e2e)
+
+    def test_four_shards_use_independent_runners_and_test_level_distribution(self):
+        e2e = self.jobs["e2e"]
+        self.assertIn("shard: [1, 2, 3, 4]", e2e)
+        self.assertIn("fail-fast: false", e2e)
+        self.assertIn("HYZ_THINGS_E2E_TEST_SHARD:", e2e)
+        self.assertIn('E2E_SHARD: ${{ matrix.shard }}', e2e)
+        self.assertEqual(e2e.count('--shard="${E2E_SHARD}/4"'), 3)
+        self.assertIn("shard-${{ matrix.shard }}", e2e)
+        self.assertIn("test '${{ needs.e2e.result }}' = 'success'", self.jobs["e2e-summary"])
 
     def test_verified_cache_hit_skips_dependency_target_and_bundle_build(self):
         steps = named_blocks(self.jobs["frontend"], r"^      - name: ([^\n]+)\n")

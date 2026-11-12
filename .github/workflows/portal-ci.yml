@@ -128,6 +128,61 @@ jobs:
           retention-days: 1
           compression-level: 0
 
+  preflight:
+    name: Fast format and static checks
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Install Rust 1.88 with rustfmt
+        shell: bash
+        run: |
+          rustup toolchain install 1.88.0 --profile minimal --component rustfmt
+          rustup default 1.88.0
+
+      - name: Setup Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: apps/rust/things/package-lock.json
+
+      - name: Check committed diff
+        if: ${{ !cancelled() }}
+        shell: bash
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          BASE_REF: ${{ github.base_ref }}
+        run: |
+          if [[ "$EVENT_NAME" == "pull_request" ]]; then
+            git diff --check "origin/$BASE_REF...HEAD"
+          elif git rev-parse HEAD^ >/dev/null 2>&1; then
+            git diff --check HEAD^ HEAD
+          else
+            git diff --check
+          fi
+
+      - name: Validate capability Playwright suite layout
+        if: ${{ !cancelled() }}
+        run: python3 apps/rust/things/tools/check-e2e-suites.py
+
+      - name: Run source and configuration checks
+        if: ${{ !cancelled() }}
+        run: make check-static
+
+      - name: Check contract formatting
+        if: ${{ !cancelled() }}
+        run: cargo fmt --manifest-path apps/rust/contract/Cargo.toml --all -- --check
+
+      - name: Check things formatting
+        if: ${{ !cancelled() }}
+        run: cargo fmt --manifest-path apps/rust/things/Cargo.toml --all -- --check
+
+
   checks:
     name: Format, static, unit tests and Clippy
     needs: frontend
@@ -150,15 +205,6 @@ jobs:
           rustup default 1.88.0
           rustc --version
           cargo --version
-
-      - name: Setup Node.js 20
-        id: node
-        if: ${{ !cancelled() }}
-        uses: actions/setup-node@v4
-        with:
-          node-version: "20"
-          cache: npm
-          cache-dependency-path: apps/rust/things/package-lock.json
 
       - name: Cache Cargo
         if: ${{ !cancelled() && steps.rust.outcome == 'success' }}
@@ -186,37 +232,6 @@ jobs:
         if: ${{ !cancelled() && needs.frontend.result == 'success' }}
         run: python3 apps/rust/things/tools/frontend-bundle-cache.py check
 
-      - name: Check committed diff
-        if: ${{ !cancelled() }}
-        shell: bash
-        env:
-          EVENT_NAME: ${{ github.event_name }}
-          BASE_REF: ${{ github.base_ref }}
-        run: |
-          if [[ "$EVENT_NAME" == "pull_request" ]]; then
-            git diff --check "origin/$BASE_REF...HEAD"
-          elif git rev-parse HEAD^ >/dev/null 2>&1; then
-            git diff --check HEAD^ HEAD
-          else
-            git diff --check
-          fi
-
-      - name: Validate capability Playwright suite layout
-        if: ${{ !cancelled() }}
-        run: python3 apps/rust/things/tools/check-e2e-suites.py
-
-      - name: Run source and configuration checks
-        if: ${{ !cancelled() && steps.node.outcome == 'success' }}
-        run: make check-static
-
-      - name: Check contract formatting
-        if: ${{ !cancelled() && steps.rust.outcome == 'success' }}
-        run: cargo fmt --manifest-path apps/rust/contract/Cargo.toml --all -- --check
-
-      - name: Check things formatting
-        if: ${{ !cancelled() && steps.rust.outcome == 'success' }}
-        run: cargo fmt --manifest-path apps/rust/things/Cargo.toml --all -- --check
-
       - name: Test contract
         if: ${{ !cancelled() && steps.rust.outcome == 'success' }}
         run: cargo test --locked --manifest-path apps/rust/contract/Cargo.toml
@@ -240,8 +255,12 @@ jobs:
         run: timeout --signal=TERM --kill-after=5s 12m cargo test --locked --manifest-path apps/rust/things/Cargo.toml --features native -- --nocapture
 
   e2e:
-    name: Playwright E2E
+    name: Playwright E2E (shard ${{ matrix.shard }}/4)
     needs: frontend
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3, 4]
     runs-on: ubuntu-latest
     timeout-minutes: 30
 
@@ -299,9 +318,11 @@ jobs:
         shell: bash
         env:
           HYZ_THINGS_E2E_REUSE_FRONTEND_BUNDLE: "1"
+          HYZ_THINGS_E2E_TEST_SHARD: "1"
+          E2E_SHARD: ${{ matrix.shard }}
         run: |
           if [[ "$GITHUB_EVENT_NAME" != "pull_request" ]]; then
-            npm run test:e2e
+            npm run test:e2e -- --shard="${E2E_SHARD}/4"
             exit 0
           fi
           # For study workspace changes exercise the affected source-paper and AI
@@ -309,18 +330,29 @@ jobs:
           changed="$(git -c core.quotepath=false diff --name-only "origin/$GITHUB_BASE_REF...HEAD")"
           unrelated="$(printf '%s\n' "$changed" | grep -vE '^((apps/rust/things/src/web/pages/(question_navigation|favorite_flashcard|question_bank_practice|collection_review|training|training_statistics)\.rs)|(apps/rust/things/e2e/(question-bank|favorite-flashcard|question-bank-drill|flashcards)\.spec\.ts)|(apps/rust/things/e2e/support\.ts)|(apps/rust/things/tests/question_bank_drill\.rs)|(apps/rust/things/tools/(check-e2e-suites|frontend-bundle-cache|test-portal-ci)\.py)|(question_bank/collections/xiaop-2026-shuliang/(06-行程问题（二）|07-溶液问题)\.md)|(\.github/workflows/portal-ci\.yml))$' || true)"
           if [[ -z "$unrelated" ]]; then
-            npm run test:e2e -- e2e/question-bank.spec.ts e2e/favorite-flashcard.spec.ts e2e/question-bank-drill.spec.ts e2e/flashcards.spec.ts
+            npm run test:e2e -- e2e/question-bank.spec.ts e2e/favorite-flashcard.spec.ts e2e/question-bank-drill.spec.ts e2e/flashcards.spec.ts --shard="${E2E_SHARD}/4"
           else
-            npm run test:e2e -- e2e/question-bank.spec.ts e2e/question-bank-drill.spec.ts e2e/comprehensive.spec.ts e2e/logic-judgment.spec.ts e2e/training-subjects.spec.ts e2e/training-time.spec.ts e2e/training-width.spec.ts e2e/favorite-flashcard.spec.ts
+            npm run test:e2e -- e2e/question-bank.spec.ts e2e/question-bank-drill.spec.ts e2e/comprehensive.spec.ts e2e/logic-judgment.spec.ts e2e/training-subjects.spec.ts e2e/training-time.spec.ts e2e/training-width.spec.ts e2e/favorite-flashcard.spec.ts --shard="${E2E_SHARD}/4"
           fi
 
       - name: Upload Playwright failure artifacts
         if: failure()
         uses: actions/upload-artifact@v4
         with:
-          name: hyz-things-playwright-failure-${{ github.run_id }}
+          name: hyz-things-playwright-failure-${{ github.run_id }}-shard-${{ matrix.shard }}
           if-no-files-found: ignore
           retention-days: 7
           path: |
             apps/rust/things/playwright-report/
             apps/rust/things/test-results/
+
+  e2e-summary:
+    # Keep the historical required-check name while matrix jobs run independently.
+    name: Playwright E2E
+    if: ${{ always() }}
+    needs: e2e
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - name: Require all four E2E shards
+        run: test '${{ needs.e2e.result }}' = 'success'

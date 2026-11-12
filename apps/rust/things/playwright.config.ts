@@ -51,7 +51,9 @@ export default defineConfig({
   grep: focusedRegressionFilter(),
   testDir: './e2e',
   workers: 1,
-  fullyParallel: false,
+  // Each CI shard has its own isolated E2E backend. Test-level sharding keeps
+  // large spec files from dominating a single runner; local runs remain serial.
+  fullyParallel: process.env.HYZ_THINGS_E2E_TEST_SHARD === '1',
   timeout: 30_000,
   expect: {
     timeout: 7_500,
