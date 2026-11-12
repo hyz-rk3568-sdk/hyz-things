@@ -254,12 +254,12 @@ class FrontendBundleTests(unittest.TestCase):
         self.run_script()
         self.run_script("start-e2e-server.sh", HYZ_THINGS_E2E_REUSE_FRONTEND_BUNDLE="1",
                         FAKE_FORBID_BUILD_TOOLS="1")
-        self.assertEqual(self.build_calls(), ["npm build:css", "trunk build", "cargo run"])
+        self.assertEqual(self.build_calls(), ["npm build:ts", "npm build:css", "trunk build", "cargo run"])
 
     def test_default_e2e_start_uses_validated_cache(self):
         self.run_script()
         self.run_script("start-e2e-server.sh")
-        self.assertEqual(self.build_calls(), ["npm build:css", "trunk build", "cargo run"])
+        self.assertEqual(self.build_calls(), ["npm build:ts", "npm build:css", "trunk build", "cargo run"])
 
     def test_changed_archive_is_replaced(self):
         self.run_script()

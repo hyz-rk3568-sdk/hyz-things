@@ -135,7 +135,7 @@ test(`drill history restores scroll after saved AI analysis loads at ${scenario.
   await expect(page.getByTestId('question-bank-ai-tab')).toHaveAttribute('aria-pressed','true');
   await expect(page.getByTestId('question-bank-ai-message')).toContainText('第 80 段');
   armed=true;
-  const question=page.getByTestId('question-bank-practice-question-scroll');
+  const question=page.getByTestId('question-bank-ai-messages');
   await question.evaluate(node=>{node.scrollTop=450});
   await expect.poll(()=>question.evaluate(node=>node.scrollTop)).toBe(450);
   const swipe=async(direction:'next'|'previous')=>{
