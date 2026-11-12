@@ -254,13 +254,69 @@ jobs:
         # regressions fail with a named assertion instead of exhausting the job.
         run: timeout --signal=TERM --kill-after=5s 12m cargo test --locked --manifest-path apps/rust/things/Cargo.toml --features native -- --nocapture
 
+
+  e2e-plan:
+    name: Count related E2E tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    outputs:
+      shards: ${{ steps.scope.outputs.shards }}
+      total: ${{ steps.scope.outputs.total }}
+      test_count: ${{ steps.scope.outputs.test_count }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: apps/rust/things/package-lock.json
+
+      - name: Install test dependencies
+        working-directory: apps/rust/things
+        run: npm ci
+
+      - name: Select related specs and count runnable tests
+        id: scope
+        working-directory: apps/rust/things
+        shell: bash
+        env:
+          FORCE_COLOR: "0"
+        run: |
+          selected="$(bash tools/select-related-e2e.sh)"
+          specs=()
+          if [[ -n "$selected" ]]; then
+            mapfile -t specs <<< "$selected"
+          fi
+          listing="$(./node_modules/.bin/playwright test "${specs[@]}" --list)"
+          printf '%s\n' "$listing"
+          count="$(printf '%s\n' "$listing" | python3 -c 'import re,sys; value=sys.stdin.read(); match=re.search(r"Total:\s*(\d+)\s+tests?\b",value); sys.exit("Cannot parse Playwright test count") if match is None else None; print(match.group(1))')"
+          if (( count < 1 )); then
+            echo "error: zero runnable E2E tests selected" >&2
+            exit 1
+          fi
+          if (( count > 60 )); then
+            echo 'shards=[1,2]' >> "$GITHUB_OUTPUT"
+            echo 'total=2' >> "$GITHUB_OUTPUT"
+          else
+            echo 'shards=[1]' >> "$GITHUB_OUTPUT"
+            echo 'total=1' >> "$GITHUB_OUTPUT"
+          fi
+          echo "test_count=$count" >> "$GITHUB_OUTPUT"
+          echo "Selected $count runnable E2E tests; using $([[ $count -gt 60 ]] && echo 2 || echo 1) runner(s)"
+
   e2e:
-    name: Playwright E2E (shard ${{ matrix.shard }}/4)
-    needs: frontend
+    name: Playwright E2E (shard ${{ matrix.shard }}/${{ needs.e2e-plan.outputs.total }})
+    needs: [frontend, e2e-plan]
     strategy:
       fail-fast: false
+      max-parallel: 2
       matrix:
-        shard: [1, 2, 3, 4]
+        shard: ${{ fromJSON(needs.e2e-plan.outputs.shards) }}
     runs-on: ubuntu-latest
     timeout-minutes: 30
 
@@ -320,20 +376,15 @@ jobs:
           HYZ_THINGS_E2E_REUSE_FRONTEND_BUNDLE: "1"
           HYZ_THINGS_E2E_TEST_SHARD: "1"
           E2E_SHARD: ${{ matrix.shard }}
+          E2E_SHARD_TOTAL: ${{ needs.e2e-plan.outputs.total }}
         run: |
-          if [[ "$GITHUB_EVENT_NAME" != "pull_request" ]]; then
-            npm run test:e2e -- --shard="${E2E_SHARD}/4"
-            exit 0
+          selected="$(bash tools/select-related-e2e.sh)"
+          specs=()
+          if [[ -n "$selected" ]]; then
+            mapfile -t specs <<< "$selected"
           fi
-          # For study workspace changes exercise the affected source-paper and AI
-          # review surfaces together. Never suppress failing AI tests via grep.
-          changed="$(git -c core.quotepath=false diff --name-only "origin/$GITHUB_BASE_REF...HEAD")"
-          unrelated="$(printf '%s\n' "$changed" | grep -vE '^((apps/rust/things/src/web/pages/(question_navigation|favorite_flashcard|question_bank_practice|collection_review|training|training_statistics)\.rs)|(apps/rust/things/e2e/(question-bank|favorite-flashcard|question-bank-drill|flashcards)\.spec\.ts)|(apps/rust/things/e2e/support\.ts)|(apps/rust/things/tests/question_bank_drill\.rs)|(apps/rust/things/tools/(check-e2e-suites|frontend-bundle-cache|test-portal-ci)\.py)|(question_bank/collections/xiaop-2026-shuliang/(06-行程问题（二）|07-溶液问题)\.md)|(\.github/workflows/portal-ci\.yml))$' || true)"
-          if [[ -z "$unrelated" ]]; then
-            npm run test:e2e -- e2e/question-bank.spec.ts e2e/favorite-flashcard.spec.ts e2e/question-bank-drill.spec.ts e2e/flashcards.spec.ts --shard="${E2E_SHARD}/4"
-          else
-            npm run test:e2e -- e2e/question-bank.spec.ts e2e/question-bank-drill.spec.ts e2e/comprehensive.spec.ts e2e/logic-judgment.spec.ts e2e/training-subjects.spec.ts e2e/training-time.spec.ts e2e/training-width.spec.ts e2e/favorite-flashcard.spec.ts --shard="${E2E_SHARD}/4"
-          fi
+          echo "E2E shard ${E2E_SHARD}/${E2E_SHARD_TOTAL} with ${#specs[@]} explicit spec filters (zero means all)"
+          npm run test:e2e -- "${specs[@]}" --shard="${E2E_SHARD}/${E2E_SHARD_TOTAL}"
 
       - name: Upload Playwright failure artifacts
         if: failure()
@@ -354,5 +405,5 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 2
     steps:
-      - name: Require all four E2E shards
+      - name: Require all selected E2E shards
         run: test '${{ needs.e2e.result }}' = 'success'

@@ -226,8 +226,10 @@ check: check-static
 	bash "$(THINGS_APP)/tools/test-deploy-app.sh"
 
 check-static:
+	test -x "$(THINGS_APP)/tools/build-frontend-bundle.sh"
 	sh -n "$(THINGS_APP)/tools/build-frontend-bundle.sh"
 	bash -n "$(THINGS_APP)/tools/start-e2e-server.sh"
+	bash -n "$(THINGS_APP)/tools/select-related-e2e.sh"
 	python3 "$(THINGS_APP)/tools/test-frontend-bundle.py"
 	python3 "$(THINGS_APP)/tools/test-portal-ci.py"
 	python3 "$(CURDIR)/.agents/skills/hyz-image-ocr/scripts/test_ocr_client.py"
