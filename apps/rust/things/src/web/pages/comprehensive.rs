@@ -968,6 +968,26 @@ pub(crate) fn comprehensive_training(props: &ComprehensiveProps) -> Html {
             Some(_) => "错误",
             None => "未答",
         };
+        let answered = score
+            .questions
+            .iter()
+            .filter(|question| question.chosen.is_some())
+            .count();
+        let wrong = score
+            .questions
+            .iter()
+            .filter(|question| {
+                question
+                    .chosen
+                    .is_some_and(|chosen| chosen != question.correct_index)
+            })
+            .count();
+        let review_status = TrainingStatusCounts::review(
+            score.correct,
+            wrong,
+            score.total.saturating_sub(answered),
+            0,
+        );
         let review_options = q.options.iter().enumerate().map(|(i, option)| {
             let state = ReviewChoiceState::for_single_choice(i, q.correct_index, q.chosen);
             let hint = match state {
@@ -1067,7 +1087,7 @@ pub(crate) fn comprehensive_training(props: &ComprehensiveProps) -> Html {
                     </div>
                     <div class="flex min-w-0 flex-wrap items-center gap-2 sm:justify-end">
                         <StudyGoalBars />
-                        <span class="text-sm font-bold">{format!("{} / {} 正确",score.correct,score.total)}</span>
+                        <TrainingStatusBar prefix="analysis-result" counts={review_status} mode={TrainingStatusMode::Review}/>
                         <button type="button" class="btn btn-outline btn-sm" onclick={show_history}>{"查看练习记录"}</button>
                         <button type="button" class="btn btn-outline btn-sm" data-testid="analysis-retry-result" disabled={*busy} onclick={redo_from_result}>{"重做原题"}</button>
                         <button type="button" class="btn btn-primary btn-sm" onclick={again}>{"再出一套"}</button>
@@ -1170,6 +1190,14 @@ pub(crate) fn comprehensive_training(props: &ComprehensiveProps) -> Html {
         let group_index = index / 5;
         let local_index = index % 5;
         let group = &active.groups[group_index];
+        let active_status = TrainingStatusCounts::active(
+            active
+                .answers
+                .iter()
+                .filter(|answer| answer.is_some())
+                .count(),
+            active.answers.len(),
+        );
         let q = &group.questions[local_index];
         let remaining = paused_remaining
             .map(|ms| (ms.max(0) as u64).div_ceil(1000))
@@ -1237,6 +1265,7 @@ pub(crate) fn comprehensive_training(props: &ComprehensiveProps) -> Html {
                     </div>
                     <div class="flex shrink-0 items-center gap-2">
                         <StudyGoalBars />
+                        <TrainingStatusBar prefix="analysis" counts={active_status} mode={TrainingStatusMode::Active}/>
                         <button type="button" class={if remaining<=60 {"btn btn-ghost font-mono text-xl text-error"}else{"btn btn-ghost font-mono text-xl"}}
                             data-testid="analysis-clock" title={if paused {"点击继续计时"} else {"点击暂停计时"}}
                             disabled={*busy || (remaining==0 && !paused)} onclick={toggle_pause.clone()}>{clock.clone()}</button>

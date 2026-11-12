@@ -248,25 +248,30 @@ pub(super) fn study_goal_bars(props: &StudyGoalBarsProps) -> Html {
         .as_ref()
         .map(|ctx| ctx.csrf.clone())
         .unwrap_or_default();
+    let progress_width = if props.wide {
+        "training-progress-bars-wide"
+    } else {
+        ""
+    };
     html! {
-        <div class={classes!("study-goal-bars", "grid", "gap-1", if props.wide {"w-full"} else {"w-32 shrink-0 sm:w-44"})}>
-            <button type="button" class="grid gap-1 rounded-lg text-left" data-testid="study-goal-bars"
+        <div class={classes!("training-progress-bars", "study-goal-bars", progress_width)}>
+            <button type="button" class="grid w-full gap-1 rounded-lg text-left" data-testid="study-goal-bars"
                 data-today-ms={today_ms.to_string()} aria-label="查看学习统计"
                 onclick={Callback::from({let open=open.clone();move |_|open.set(true)})}>
             <div data-testid="study-goal-questions">
-                <div class="flex items-baseline justify-between gap-2 text-[10px] leading-none text-base-content/60">
+                <div class="training-progress-label flex items-baseline justify-between gap-2 text-base-content/60">
                     <span class="sm:hidden">{"刷题"}</span><span class="hidden sm:inline">{"今日刷题"}</span>
                     <span class="tabular-nums" data-testid="study-goal-questions-value">{format!("{today_questions}/{}", goals.daily_questions)}</span>
                 </div>
-                <progress class="progress progress-primary study-goal-bar mt-0.5 block w-full" max={goals.daily_questions.max(1).to_string()}
+                <progress class="progress training-progress-track progress-primary study-goal-bar mt-0.5" max={goals.daily_questions.max(1).to_string()}
                     value={today_questions.max(0).to_string()} aria-label="今日刷题进度"/>
             </div>
             <div data-testid="study-goal-time">
-                <div class="flex items-baseline justify-between gap-2 text-[10px] leading-none text-base-content/60">
+                <div class="training-progress-label flex items-baseline justify-between gap-2 text-base-content/60">
                     <span class="sm:hidden">{"时长"}</span><span class="hidden sm:inline">{"今日时长"}</span>
                     <span class="tabular-nums" data-testid="study-goal-time-value">{format!("{}/{}h", hours(today_ms), hours(goals.daily_study_ms))}</span>
                 </div>
-                <progress class="progress progress-primary study-goal-bar mt-0.5 block w-full" max={goals.daily_study_ms.max(1).to_string()}
+                <progress class="progress training-progress-track progress-primary study-goal-bar mt-0.5" max={goals.daily_study_ms.max(1).to_string()}
                     value={today_ms.max(0).to_string()} aria-label="今日学习时长进度"/>
             </div>
             </button>

@@ -3199,6 +3199,14 @@ pub(crate) fn question_bank_training(props: &QuestionBankTrainingProps) -> Html 
                 Some(scope) => format!("{subtitle_base} · {scope}"),
                 None => subtitle_base.to_string(),
             };
+            let active_status = TrainingStatusCounts::active(
+                current
+                    .questions
+                    .iter()
+                    .filter(|question| !question.item.answer.is_empty())
+                    .count(),
+                current.questions.len(),
+            );
             if !*history_forced {
                 return html! {
                     <section class={WORKSPACE} data-testid="question-bank-practice-workspace">
@@ -3226,6 +3234,9 @@ pub(crate) fn question_bank_training(props: &QuestionBankTrainingProps) -> Html 
                             <div class="flex min-w-0 flex-wrap items-center gap-2 sm:flex-nowrap sm:justify-end">
                                 <StudyGoalBars />
                                 <CodexLimitBars />
+                                if !completed {
+                                    <TrainingStatusBar prefix="question-bank-practice" counts={active_status} mode={TrainingStatusMode::Active}/>
+                                }
                                 <button type="button" class="btn btn-ghost px-2 font-mono text-xl font-semibold tabular-nums"
                                     role="timer" data-testid="question-bank-practice-timer"
                                     title={if completed {"训练已结束"} else if paused {"点击继续计时"} else {"点击暂停计时"}}
