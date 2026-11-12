@@ -3222,7 +3222,9 @@ mod tests {
         assert!(is_post_path(&retry));
         assert!(!is_question_bank_ai_path(&retry, false));
         assert!(!is_post_path(&format!("{base}/requests/{request}")));
-        assert!(!is_post_path(&format!("{base}/requests/{request}/retry/extra")));
+        assert!(!is_post_path(&format!(
+            "{base}/requests/{request}/retry/extra"
+        )));
         assert!(!is_post_path(&format!("{base}/requests/not-a-uuid/retry")));
         assert!(!is_post_path(&format!("{base}/requests/{request}/delete")));
     }
