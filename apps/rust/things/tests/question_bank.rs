@@ -2013,23 +2013,29 @@ async fn ai_tool_history_is_authorized_paginated_and_deleted() {
     assert_eq!(all["items"][4]["kind"], "tool_progress");
     assert_eq!(all["items"][4]["payload"]["message"], "working");
     release.send(()).unwrap();
-    for _ in 0..100 {
-        let status: String =
-            sqlx::query_scalar("SELECT status FROM question_ai_requests WHERE run_id=?")
-                .bind(run)
-                .fetch_one(&pool)
-                .await
-                .unwrap();
-        if status != "running" {
-            break;
+    tokio::time::timeout(std::time::Duration::from_secs(5), async {
+        loop {
+            let status: String =
+                sqlx::query_scalar("SELECT status FROM question_ai_requests WHERE run_id=?")
+                    .bind(run)
+                    .fetch_one(&pool)
+                    .await
+                    .unwrap();
+            if status != "running" {
+                assert_eq!(status, "complete");
+                break;
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(10)).await;
         }
-        tokio::task::yield_now().await;
-    }
+    })
+    .await
+    .expect("AI stream completion timed out");
     assert_eq!(
         client
             .delete(&endpoint)
             .header("cookie", &cookie)
             .header("origin", &base)
+            .header("content-type", "application/json")
             .header("x-hyz-csrf", "qb-csrf")
             .send()
             .await
@@ -2233,6 +2239,7 @@ async fn ai_request_id_is_idempotent_and_conflicting_payload_is_rejected() {
             .delete(&endpoint)
             .header("cookie", &cookie)
             .header("origin", &base)
+            .header("content-type", "application/json")
             .header("x-hyz-csrf", "qb-csrf")
             .send()
             .await
@@ -2284,20 +2291,28 @@ async fn ai_request_insert_failure_rolls_back_review_and_user_message() {
     server.abort();
 }
 
+type AiTestTurn = (
+    Option<String>,
+    String,
+    tokio::sync::oneshot::Sender<Result<String, String>>,
+);
+
+async fn ai_test_recv<T>(
+    receiver: &mut tokio::sync::mpsc::UnboundedReceiver<T>,
+    context: &str,
+) -> T {
+    tokio::time::timeout(std::time::Duration::from_secs(5), receiver.recv())
+        .await
+        .unwrap_or_else(|_| panic!("AI test timed out waiting for {context}"))
+        .expect("AI backend channel closed")
+}
+
 struct RetryAi {
-    turns: tokio::sync::mpsc::UnboundedSender<(
-        Option<String>,
-        String,
-        tokio::sync::oneshot::Sender<Result<String, String>>,
-    )>,
+    turns: tokio::sync::mpsc::UnboundedSender<AiTestTurn>,
 }
 struct RetryTurn {
     previous: Option<String>,
-    turns: tokio::sync::mpsc::UnboundedSender<(
-        Option<String>,
-        String,
-        tokio::sync::oneshot::Sender<Result<String, String>>,
-    )>,
+    turns: tokio::sync::mpsc::UnboundedSender<AiTestTurn>,
 }
 #[async_trait]
 impl hyz_things::application::question_bank::practice::AiReviewBackend for RetryAi {
@@ -2381,6 +2396,7 @@ async fn ai_retry_requires_confirmation_and_reuses_input_and_user_message() {
             .delete(&endpoint)
             .header("cookie", &cookie)
             .header("origin", &base)
+            .header("content-type", "application/json")
             .header("x-hyz-csrf", "qb-csrf")
             .send()
             .await
@@ -2448,11 +2464,7 @@ async fn ai_retry_requires_confirmation_and_reuses_input_and_user_message() {
 
 struct FailingResumeAi {
     calls: tokio::sync::mpsc::UnboundedSender<Option<String>>,
-    turns: tokio::sync::mpsc::UnboundedSender<(
-        Option<String>,
-        String,
-        tokio::sync::oneshot::Sender<Result<String, String>>,
-    )>,
+    turns: tokio::sync::mpsc::UnboundedSender<AiTestTurn>,
 }
 #[async_trait]
 impl hyz_things::application::question_bank::practice::AiReviewBackend for FailingResumeAi {
@@ -2506,7 +2518,9 @@ async fn ai_failed_thread_resume_requires_explicit_new_thread_confirmation() {
         .await
         .unwrap();
     assert_eq!(
-        connections.recv().await.unwrap().as_deref(),
+        ai_test_recv(&mut connections, "initial thread resume")
+            .await
+            .as_deref(),
         Some("old-thread")
     );
     tokio::time::timeout(std::time::Duration::from_secs(5), async {
@@ -2543,11 +2557,20 @@ async fn ai_failed_thread_resume_requires_explicit_new_thread_confirmation() {
         .await
         .unwrap();
     assert_eq!(
-        connections.recv().await.unwrap().as_deref(),
+        retry["request"]["new_thread_requested"], true,
+        "retry response: {retry}"
+    );
+    assert_eq!(
+        ai_test_recv(&mut connections, "retry thread resume")
+            .await
+            .as_deref(),
         Some("old-thread")
     );
-    assert_eq!(connections.recv().await.unwrap(), None);
-    let (_, prompt, finish) = started.recv().await.unwrap();
+    assert_eq!(
+        ai_test_recv(&mut connections, "new thread connection").await,
+        None
+    );
+    let (_, prompt, finish) = ai_test_recv(&mut started, "retry turn").await;
     assert_eq!(prompt, "继续讲解");
     assert_eq!(retry["request"]["new_thread_requested"], true);
     assert_eq!(

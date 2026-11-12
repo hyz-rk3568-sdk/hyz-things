@@ -5,7 +5,10 @@ use web_sys::HtmlElement;
 #[wasm_bindgen(module = "/src/web/bindings/browser_bridge.js")]
 extern "C" {
     #[wasm_bindgen(catch, js_name = mountFloatingMenu)]
-    fn mount_floating_menu_js(reference: &HtmlElement, floating: &HtmlElement) -> Result<js_sys::Promise, JsValue>;
+    fn mount_floating_menu_js(
+        reference: &HtmlElement,
+        floating: &HtmlElement,
+    ) -> Result<js_sys::Promise, JsValue>;
 }
 
 /// Holds the floating menu's listeners. Drop when the menu closes or unmounts.

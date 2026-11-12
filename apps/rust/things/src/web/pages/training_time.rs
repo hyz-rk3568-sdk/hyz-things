@@ -249,7 +249,7 @@ pub(super) fn study_goal_bars(props: &StudyGoalBarsProps) -> Html {
         .map(|ctx| ctx.csrf.clone())
         .unwrap_or_default();
     html! {
-        <div class={classes!("grid", "gap-1", if props.wide {"w-full"} else {"w-32 shrink-0 sm:w-44"})}>
+        <div class={classes!("study-goal-bars", "grid", "gap-1", if props.wide {"w-full"} else {"w-32 shrink-0 sm:w-44"})}>
             <button type="button" class="grid gap-1 rounded-lg text-left" data-testid="study-goal-bars"
                 data-today-ms={today_ms.to_string()} aria-label="查看学习统计"
                 onclick={Callback::from({let open=open.clone();move |_|open.set(true)})}>

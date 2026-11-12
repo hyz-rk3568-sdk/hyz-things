@@ -135,7 +135,7 @@ test(`drill history restores scroll after saved AI analysis loads at ${scenario.
   await expect(page.getByTestId('question-bank-ai-tab')).toHaveAttribute('aria-pressed','true');
   await expect(page.getByTestId('question-bank-ai-message')).toContainText('第 80 段');
   armed=true;
-  const question=page.getByTestId('question-bank-practice-question-scroll');
+  const question=page.getByTestId('question-bank-ai-messages');
   await question.evaluate(node=>{node.scrollTop=450});
   await expect.poll(()=>question.evaluate(node=>node.scrollTop)).toBe(450);
   const swipe=async(direction:'next'|'previous')=>{
@@ -152,13 +152,23 @@ test(`drill history restores scroll after saved AI analysis loads at ${scenario.
   await reloadStarted;
   await expect(page.getByTestId('question-bank-practice-heading')).toContainText('原卷第 1 题');
   if (scenario.cancel) {
-    await expect(question).toHaveAttribute('data-review-scroll-restoring','');
-    await question.dispatchEvent('wheel',{deltaY:40});
+    // While the saved history request is pending the original pane is mounted;
+    // the AI conversation pane only mounts after its response has arrived.
+    const pendingPane=page.getByTestId('question-bank-practice-question-scroll');
+    await expect(pendingPane).toHaveAttribute('data-review-scroll-restoring','');
+    await pendingPane.dispatchEvent('wheel',{deltaY:40});
+    await expect(pendingPane).not.toHaveAttribute('data-review-scroll-restoring','');
   }
   armed=false;
   releaseReload();
   await expect(page.getByTestId('question-bank-ai-message')).toContainText('第 80 段');
-  await expect.poll(()=>question.evaluate(node=>node.scrollTop)).toBe(scenario.cancel?0:450);
+  if (scenario.cancel) {
+    // User intent invalidated the saved offset. The newly mounted chat may
+    // choose its normal bottom-follow position, but must not restore 450px.
+    await expect.poll(()=>question.evaluate(node=>node.scrollTop)).not.toBe(450);
+  } else {
+    await expect.poll(()=>question.evaluate(node=>node.scrollTop)).toBe(450);
+  }
   if (!scenario.cancel) {
     await question.dispatchEvent('wheel',{deltaY:30});
     await question.evaluate(node=>{node.scrollTop=220;node.append(document.createElement('span'))});

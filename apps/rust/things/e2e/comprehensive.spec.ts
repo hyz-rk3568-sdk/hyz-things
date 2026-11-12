@@ -1253,3 +1253,33 @@ test("foreground restore repaints stored ink after WebKit canvas buffer loss",as
   await page.getByTestId("calculation-scratchpad-undo").click();
   await expect.poll(()=>inkSnapshot(page)).toEqual(original);
 });
+
+
+test("generated data analysis shares resizable workspace and grouped answer sheet without source-only actions", async ({page}) => {
+  await page.setViewportSize({width:1180,height:820});
+  await openHeldScrollWorkspace(page,false);
+  const screen=page.getByTestId("analysis-run");
+  const workspace=screen.getByTestId("analysis-shared-workspace");
+  await expect(workspace).toHaveAttribute("data-split-resizable","true");
+  const handle=workspace.getByTestId("training-split-handle");
+  await expect(handle).toHaveAttribute("aria-label","调整材料与题目比例");
+  await handle.focus();
+  const initial=await handle.getAttribute("aria-valuenow");
+  await handle.press("ArrowRight");
+  await expect.poll(async()=>handle.getAttribute("aria-valuenow")).not.toBe(initial);
+  await handle.press("Home");
+  await expect.poll(async()=>handle.getAttribute("aria-valuenow")).toBe(initial);
+
+  await screen.getByTestId("training-answer-sheet-toggle").click();
+  const sheet=screen.getByTestId("training-answer-sheet");
+  await expect(sheet).toBeVisible();
+  const groups=sheet.getByTestId("question-bank-practice-group");
+  await expect(groups).toHaveCount(4);
+  await expect(groups.first()).toHaveAttribute("data-group-label","材料1");
+  await expect(groups.first().getByTestId("training-answer-sheet-number")).toHaveCount(5);
+  await sheet.getByTestId("training-answer-sheet-number").nth(6).click();
+  await expect(sheet).toHaveCount(0);
+  await expect(screen.getByTestId("analysis-question")).toContainText("第7题");
+  await expect(screen.getByRole("button",{name:/收藏|创建 Flashcard/})).toHaveCount(0);
+  await expect(screen.getByText("Codex 限额")).toHaveCount(0);
+});

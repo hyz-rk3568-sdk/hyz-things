@@ -77,7 +77,8 @@ fn logic_scroll_pane(props: &LogicScrollPaneProps) -> Html {
         });
     }
     html! {
-        <TrainingSplitWorkspace test_id={if props.prefix == "logic" {"logic-scroll-workspace"} else {"quant-scroll-workspace"}} split_at_md={true}
+        <TrainingSplitWorkspace test_id={if props.prefix == "logic" {"logic-scroll-workspace"} else {"quant-scroll-workspace"}} split_at_md={true} resizable={true}
+            separator_label="调整题目与选项比例"
             left={html! {
                 <section class="flex min-h-0 min-w-0 flex-col overflow-hidden rounded-box bg-base-100"
                     data-testid={format!("{prefix}-question-pane")}>
@@ -601,7 +602,7 @@ pub(crate) fn logic_judgment_training(props: &LogicJudgmentProps) -> Html {
                         <TrainingSwipeSurface current={current.clone()} total={active.questions.len()}><InkOverlay question_index={index} responsive={true} scroll_linked={true} persist_key={format!("{prefix}-{}-{index}",active.id)}>
                             <LogicScrollPane prefix={prefix} question_index={index} status="作答中" right_title="选项"
                                 question={html! {
-                                    <div class="study-markdown whitespace-pre-wrap break-words text-lg font-semibold leading-8" data-testid={format!("{prefix}-question")}>
+                                    <div class="study-markdown whitespace-pre-wrap break-words text-base font-normal leading-8" data-testid={format!("{prefix}-question")}>
                                         {render_markdown(&question.question, "")}
                                     </div>
                                 }}
@@ -664,7 +665,7 @@ pub(crate) fn logic_judgment_training(props: &LogicJudgmentProps) -> Html {
                     <TrainingSwipeSurface current={current.clone()} total={score.questions.len()}><InkOverlay question_index={index} responsive={true} scroll_linked={true} persist_key={format!("{prefix}-{}-{index}",score.id)}>
                         <LogicScrollPane prefix={prefix} question_index={index} status={grade} right_title="答案与解析"
                             question={html! {
-                                <div class="study-markdown whitespace-pre-wrap break-words text-lg font-semibold leading-8" data-testid={format!("{prefix}-question")}>
+                                <div class="study-markdown whitespace-pre-wrap break-words text-base font-normal leading-8" data-testid={format!("{prefix}-question")}>
                                     {render_markdown(&q.question, "")}
                                 </div>
                             }}

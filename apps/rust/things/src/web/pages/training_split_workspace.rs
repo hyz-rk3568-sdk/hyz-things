@@ -84,6 +84,8 @@ pub(super) struct TrainingSplitWorkspaceProps {
     pub(super) split_at_md: bool,
     #[prop_or_default]
     pub(super) resizable: bool,
+    #[prop_or("调整两栏比例")]
+    pub(super) separator_label: &'static str,
 }
 
 #[function_component(TrainingSplitWorkspace)]
@@ -124,7 +126,7 @@ pub(super) fn training_split_workspace(props: &TrainingSplitWorkspaceProps) -> H
                 data-split-breakpoint={if props.split_at_md {"md"} else {"lg"}}>
                 {props.left.clone()}
                 <div ref={handle} class="training-split-handle" role="separator" tabindex="0"
-                    aria-label="调整题目与解析区域比例" title="长按拖动；方向键调整，Home 恢复默认"
+                    aria-label={props.separator_label} title="长按拖动；方向键调整，Home 恢复默认"
                     data-testid="training-split-handle" data-swipe-ignore="true"></div>
                 {props.right.clone()}
             </div>

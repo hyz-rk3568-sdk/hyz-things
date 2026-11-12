@@ -3057,7 +3057,12 @@ fn is_question_bank_ai_path(path: &str, allow_action: bool) -> bool {
     (parts.len() == 8
         || allow_action
             && parts.len() == 9
-            && matches!(parts[8], "messages" | "stop" | "attachments"))
+            && matches!(parts[8], "messages" | "stop" | "attachments")
+        || allow_action
+            && parts.len() == 11
+            && parts[8] == "requests"
+            && crate::application::question_bank::document::valid_id(parts[9])
+            && parts[10] == "retry")
         && parts[..6] == ["", "api", "v1", "question-bank", "practice", "questions"]
         && crate::application::question_bank::document::valid_id(parts[6])
         && parts[7] == "ai"
@@ -3206,6 +3211,22 @@ mod tests {
             camera_ipv6_candidate(CameraAccessScope::Lan, true, &unavailable),
             None
         );
+    }
+
+    #[test]
+    fn ai_retry_post_allows_only_exact_question_and_request_ids() {
+        let question = "019a3d8e-1b32-7a60-9c83-f34217a6e210";
+        let request = "019a3d8e-1b32-7a60-9c83-f34217a6e211";
+        let base = format!("/api/v1/question-bank/practice/questions/{question}/ai");
+        let retry = format!("{base}/requests/{request}/retry");
+        assert!(is_post_path(&retry));
+        assert!(!is_question_bank_ai_path(&retry, false));
+        assert!(!is_post_path(&format!("{base}/requests/{request}")));
+        assert!(!is_post_path(&format!(
+            "{base}/requests/{request}/retry/extra"
+        )));
+        assert!(!is_post_path(&format!("{base}/requests/not-a-uuid/retry")));
+        assert!(!is_post_path(&format!("{base}/requests/{request}/delete")));
     }
 
     #[test]

@@ -226,8 +226,10 @@ check: check-static
 	bash "$(THINGS_APP)/tools/test-deploy-app.sh"
 
 check-static:
+	test -x "$(THINGS_APP)/tools/build-frontend-bundle.sh"
 	sh -n "$(THINGS_APP)/tools/build-frontend-bundle.sh"
 	bash -n "$(THINGS_APP)/tools/start-e2e-server.sh"
+	bash -n "$(THINGS_APP)/tools/select-related-e2e.sh"
 	python3 "$(THINGS_APP)/tools/test-frontend-bundle.py"
 	python3 "$(THINGS_APP)/tools/test-portal-ci.py"
 	python3 "$(CURDIR)/.agents/skills/hyz-image-ocr/scripts/test_ocr_client.py"
@@ -271,7 +273,8 @@ endif
 	grep -q "mv '\$$target_next' '\$$target' && sync" "$(THINGS_APP)/tools/deploy-app.sh"
 	grep -q 'protocol_versions' "$(THINGS_APP)/tools/deploy-app.sh"
 	grep -q 'registry\.json' "$(THINGS_APP)/tools/deploy-app.sh"
-	grep -q 'npm run build:css' "$(THINGS_APP)/tools/build-frontend-bundle.sh"
+	grep -q 'command_arguments = \["run", "build:css"\]' "$(THINGS_APP)/Trunk.toml"
+	! grep -q 'npm run build:css' "$(THINGS_APP)/tools/build-frontend-bundle.sh"
 	grep -q 'data-bin="hyz-things-web"' "$(THINGS_APP)/frontend/index.html"
 	grep -q '^hyz-contract = { path = "\.\./contract", default-features = false, optional = true }' "$(THINGS_APP)/Cargo.toml"
 	! grep -q 'pbkdf2\|url = ' "$(ROUTER_APP)/Cargo.toml"

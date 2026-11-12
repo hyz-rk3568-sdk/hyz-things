@@ -1,17 +1,17 @@
 //! Fixed-LAN Codex App Server adapter for the single-user study site.
 //! Codex signs in once on the PC; this device only holds a capability token.
 use crate::application::question_bank::practice::{AiReviewEventSink, AiReviewProgress};
-use base64::{Engine as _, engine::general_purpose::STANDARD};
-use serde_json::{Value, json};
+use base64::{engine::general_purpose::STANDARD, Engine as _};
+use serde_json::{json, Value};
 use sha1::{Digest, Sha1};
 use std::{sync::Arc, time::Duration};
 use tokio::{
     io::{AsyncReadExt, AsyncWrite, AsyncWriteExt},
     net::{
-        TcpStream,
         tcp::{OwnedReadHalf, OwnedWriteHalf},
+        TcpStream,
     },
-    sync::{Mutex, watch},
+    sync::{watch, Mutex},
 };
 
 pub const SERVER: &str = "192.168.8.202:1457";
@@ -951,24 +951,18 @@ mod tests {
                 "threadId":thread,"turnId":turn,"itemId":"item-1","delta":"正文"
             }})
         };
-        assert!(
-            mapper
-                .map(&delta("thread", "turn"), "thread", "turn")
-                .is_none()
-        );
+        assert!(mapper
+            .map(&delta("thread", "turn"), "thread", "turn")
+            .is_none());
         let started = json!({"method":"item/started","params":{"threadId":"thread","turnId":"turn",
             "item":{"id":"item-1","type":"agentMessage"}}});
         assert!(mapper.map(&started, "thread", "turn").is_none());
-        assert!(
-            mapper
-                .map(&delta("other", "turn"), "thread", "turn")
-                .is_none()
-        );
-        assert!(
-            mapper
-                .map(&delta("thread", "other"), "thread", "turn")
-                .is_none()
-        );
+        assert!(mapper
+            .map(&delta("other", "turn"), "thread", "turn")
+            .is_none());
+        assert!(mapper
+            .map(&delta("thread", "other"), "thread", "turn")
+            .is_none());
         assert!(matches!(
             mapper.map(&delta("thread", "turn"), "thread", "turn"),
             Some(AiReviewProgress::TextDelta { .. })
@@ -1108,13 +1102,11 @@ mod tests {
             schema["properties"]["questions"]["items"]["properties"]["source_kind"]["enum"],
             json!(["wrong", "knowledge"])
         );
-        assert!(
-            schema["properties"]["questions"]["items"]["required"]
-                .as_array()
-                .unwrap()
-                .iter()
-                .any(|name| name == "source_kind")
-        );
+        assert!(schema["properties"]["questions"]["items"]["required"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|name| name == "source_kind"));
         assert_eq!(
             schema["properties"]["questions"]["items"]["additionalProperties"],
             false
@@ -1593,13 +1585,11 @@ mod tests {
             server_message(socket, json!({"id":interrupt["id"],"result":{}})).await;
             complete_test_turn(socket, "interrupted").await;
         }
-        assert!(
-            first_task
-                .await
-                .unwrap()
-                .unwrap_err()
-                .starts_with("Codex 出题超时")
-        );
+        assert!(first_task
+            .await
+            .unwrap()
+            .unwrap_err()
+            .starts_with("Codex 出题超时"));
         assert_eq!(peer_task.await.unwrap().unwrap_err(), CANCELLED_MESSAGE);
     }
 

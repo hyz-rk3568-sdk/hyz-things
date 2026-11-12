@@ -1291,7 +1291,7 @@ test('keeps question drafts and shows pending follow-up without blocking the edi
   release();
   await expect(page.getByTestId('question-bank-ai-pending')).toHaveCount(0);
   await expect(input).toHaveValue('下一条草稿');
-  await expect(page.getByTestId('question-bank-ai-send')).toBeDisabled();
+  await expect(page.getByTestId('question-bank-ai-stop')).toBeVisible();
 });
 
 test('sends an AI follow-up with Ctrl+Enter but not plain Enter',async({page})=>{
@@ -1334,7 +1334,7 @@ test(`starts an AI review with the optional requirements text at ${viewport.widt
       startBody=route.request().postDataJSON();
       await route.fulfill({status:202,json:{question_id,status:'running',error:null,messages:[],request:aiRequestInfo(route.request().postDataJSON().request_id,'initial','running')}});
     } else {
-      await route.fulfill({json:{question_id,status:'idle',error:null,messages:[]}});
+      await route.fulfill({json:{question_id,status:startBody===null?'idle':'running',error:null,messages:[]}});
     }
   });
   await openFixtureReview(page);
