@@ -1892,3 +1892,178 @@ test('review pane headers and all header buttons have equal sizes',async({page})
     expect(Math.abs(size!.height-sizes[0]!.height)).toBeLessThanOrEqual(1);
   }
 });
+
+test('review split resizes horizontally on iPad with a mouse drag',async({page})=>{
+  await page.setViewportSize({width:1133,height:744});
+  await openFixtureReview(page);
+  const split=page.getByTestId('question-bank-practice-split');
+  const handle=split.getByTestId('training-split-handle');
+  await expect(handle).toHaveAttribute('aria-orientation','vertical');
+  const left=page.getByTestId('question-bank-practice-material-pane');
+  const before=await left.boundingBox(), grip=await handle.boundingBox();
+  if (!before || !grip) throw new Error('split geometry is missing');
+  await page.mouse.move(grip.x+grip.width/2,grip.y+grip.height/2);
+  await page.mouse.down();
+  await page.mouse.move(grip.x+grip.width/2+100,grip.y+grip.height/2,{steps:5});
+  await page.mouse.up();
+  await expect.poll(async()=> (await left.boundingBox())!.width).toBeGreaterThan(before.width+60);
+  const afterMouse=(await left.boundingBox())!.width;
+  await page.clock.install();
+  await handle.evaluate(node=>{const r=node.getBoundingClientRect();node.dispatchEvent(new PointerEvent('pointerdown',{bubbles:true,pointerType:'touch',pointerId:78,isPrimary:true,button:0,clientX:r.x+r.width/2,clientY:r.y+r.height/2}));});
+  await page.clock.runFor(300);
+  await handle.evaluate(node=>{const r=node.getBoundingClientRect();for(const type of ['pointermove','pointerup']) node.dispatchEvent(new PointerEvent(type,{bubbles:true,pointerType:'touch',pointerId:78,isPrimary:true,button:0,clientX:r.x+r.width/2-60,clientY:r.y+r.height/2}));});
+  await expect.poll(async()=> (await left.boundingBox())!.width).toBeLessThan(afterMouse-30);
+  await expect(page.getByTestId('question-bank-practice-heading')).toContainText('原卷第 26 题');
+});
+
+test('review split resizes vertically after a touch hold on a phone',async({page})=>{
+  await page.setViewportSize({width:390,height:844});
+  await openFixtureReview(page);
+  const split=page.getByTestId('question-bank-practice-split');
+  const handle=split.getByTestId('training-split-handle');
+  await expect(handle).toHaveAttribute('aria-orientation','horizontal');
+  const top=page.getByTestId('question-bank-practice-material-pane');
+  const before=await top.boundingBox();
+  if (!before) throw new Error('top pane is missing');
+  await page.clock.install();
+  await handle.evaluate(node=>{const rect=node.getBoundingClientRect();node.dispatchEvent(new PointerEvent('pointerdown',{bubbles:true,pointerType:'touch',pointerId:77,isPrimary:true,button:0,clientX:rect.x+rect.width/2,clientY:rect.y+rect.height/2}));});
+  await page.clock.runFor(300);
+  await handle.evaluate(node=>{const rect=node.getBoundingClientRect();for(const type of ['pointermove','pointerup']) node.dispatchEvent(new PointerEvent(type,{bubbles:true,pointerType:'touch',pointerId:77,isPrimary:true,button:0,clientX:rect.x+rect.width/2,clientY:rect.y+rect.height/2-70}));});
+  await expect.poll(async()=> (await top.boundingBox())!.height).toBeLessThan(before.height-20);
+  await expect(page.getByTestId('question-bank-practice-heading')).toContainText('原卷第 26 题');
+});
+
+test('splitter keyboard controls persist separate horizontal and vertical ratios',async({page})=>{
+  await page.setViewportSize({width:1133,height:744});
+  await openFixtureReview(page);
+  const handle=page.getByTestId('training-split-handle');
+  await expect(handle).toHaveAttribute('aria-orientation','vertical');
+  const initial=Number(await handle.getAttribute('aria-valuenow'));
+  await handle.focus();
+  await page.keyboard.press('ArrowLeft');
+  await expect.poll(async()=>Number(await handle.getAttribute('aria-valuenow'))).toBeLessThan(initial);
+  const horizontal=Number(await handle.getAttribute('aria-valuenow'));
+  await page.getByRole('button',{name:'下一题',exact:true}).click();
+  await page.getByRole('button',{name:'上一题',exact:true}).click();
+  await expect.poll(async()=>Number(await handle.getAttribute('aria-valuenow'))).toBeCloseTo(horizontal,0);
+  await page.setViewportSize({width:390,height:844});
+  await expect(handle).toHaveAttribute('aria-orientation','horizontal');
+  const vertical=Number(await handle.getAttribute('aria-valuenow'));
+  await handle.focus();
+  await page.keyboard.press('ArrowUp');
+  await expect.poll(async()=>Number(await handle.getAttribute('aria-valuenow'))).toBeLessThan(vertical);
+  const savedVertical=Number(await handle.getAttribute('aria-valuenow'));
+  await page.setViewportSize({width:1133,height:744});
+  await expect(handle).toHaveAttribute('aria-orientation','vertical');
+  await expect.poll(async()=>Number(await handle.getAttribute('aria-valuenow'))).toBeCloseTo(horizontal,0);
+  await handle.dblclick();
+  await expect.poll(async()=>Number(await handle.getAttribute('aria-valuenow'))).toBe(60);
+  await page.setViewportSize({width:390,height:844});
+  await expect(handle).toHaveAttribute('aria-orientation','horizontal');
+  await expect.poll(async()=>Number(await handle.getAttribute('aria-valuenow'))).toBeCloseTo(savedVertical,0);
+});
+
+test('splitter cancels a short touch and clamps large drags',async({page})=>{
+  await page.setViewportSize({width:1133,height:744});
+  await openFixtureReview(page);
+  const handle=page.getByTestId('training-split-handle');
+  const left=page.getByTestId('question-bank-practice-material-pane');
+  const right=page.getByTestId('question-bank-practice-question-pane');
+  await expect(handle).toHaveAttribute('aria-orientation','vertical');
+  const before=(await left.boundingBox())!.width;
+  await page.clock.install();
+  await handle.evaluate(node=>{const r=node.getBoundingClientRect();for(const [type,dx] of [['pointerdown',0],['pointermove',35]] as const) node.dispatchEvent(new PointerEvent(type,{bubbles:true,pointerType:'touch',pointerId:79,isPrimary:true,button:0,clientX:r.x+r.width/2+dx,clientY:r.y+r.height/2}));});
+  await page.clock.runFor(300);
+  await handle.evaluate(node=>{const r=node.getBoundingClientRect();node.dispatchEvent(new PointerEvent('pointerup',{bubbles:true,pointerType:'touch',pointerId:79,isPrimary:true,button:0,clientX:r.x+r.width/2+35,clientY:r.y+r.height/2}));});
+  expect((await left.boundingBox())!.width).toBeCloseTo(before,0);
+  await expect(page.getByTestId('question-bank-practice-heading')).toContainText('原卷第 26 题');
+  const grip=(await handle.boundingBox())!;
+  await page.mouse.move(grip.x+grip.width/2,grip.y+grip.height/2);
+  await page.mouse.down();
+  await page.mouse.move(grip.x+grip.width/2+4000,grip.y+grip.height/2);
+  await page.mouse.up();
+  expect((await right.boundingBox())!.width).toBeGreaterThanOrEqual(119);
+  expect(Number(await handle.getAttribute('aria-valuenow'))).toBeLessThanOrEqual(Number(await handle.getAttribute('aria-valuemax')));
+});
+
+test('splitter works with the scratchpad open and keeps ink attached to the question',async({page})=>{
+  await page.setViewportSize({width:1133,height:744});
+  await openFixtureReview(page);
+  const pen=page.getByTestId('calculation-scratchpad-toggle');
+  await pen.click();
+  const canvas=page.getByTestId('calculation-scratchpad-canvas');
+  await expect(canvas).toBeVisible();
+  const question=page.getByTestId('question-bank-practice-question-scroll');
+  const q=(await question.boundingBox())!;
+  const readInk=async()=>canvas.evaluate((node:HTMLCanvasElement)=>{
+    const ctx=node.getContext('2d')!, pixels=ctx.getImageData(0,0,node.width,node.height).data;
+    let min=node.width,max=-1; for(let y=0;y<node.height;y++) for(let x=0;x<node.width;x++) if(pixels[(y*node.width+x)*4+3]>0){min=Math.min(min,x);max=Math.max(max,x);}
+    return {min,max,width:node.width};
+  });
+  await page.mouse.move(q.x+45,q.y+45); await page.mouse.down(); await page.mouse.move(q.x+85,q.y+70,{steps:5}); await page.mouse.up();
+  await expect.poll(async()=> (await readInk()).max).toBeGreaterThan(0);
+  const before=await readInk();
+  const handle=page.getByTestId('training-split-handle'), grip=(await handle.boundingBox())!;
+  await page.mouse.move(grip.x+grip.width/2,grip.y+grip.height/2); await page.mouse.down();
+  await page.mouse.move(grip.x+grip.width/2+80,grip.y+grip.height/2,{steps:4}); await page.mouse.up();
+  await expect.poll(async()=> (await readInk()).min).toBeGreaterThan(before.min+40);
+  await expect(pen).toHaveAttribute('aria-label','关闭草稿');
+  await expect(page.getByTestId('question-bank-practice-heading')).toContainText('原卷第 26 题');
+});
+
+test('phone splitter preserves the AI input focus layout and draft',async({page})=>{
+  await page.setViewportSize({width:390,height:844});
+  await page.route('**/api/v1/question-bank/practice/questions/*/ai',async route=>{
+    const question_id=new URL(route.request().url()).pathname.split('/').at(-2)!;
+    await route.fulfill({json:{question_id,status:'complete',error:null,messages:[{id:1,role:'assistant',content:'解析',created_at:1}]}});
+  });
+  await openFixtureReview(page);
+  const pane=page.getByTestId('question-bank-practice-material-pane');
+  const input=page.getByTestId('question-bank-ai-input');
+  await input.fill('保留的追问草稿');
+  await expect.poll(async()=> (await pane.boundingBox())!.height).toBeLessThanOrEqual(2);
+  await input.blur();
+  await expect.poll(async()=> (await pane.boundingBox())!.height).toBeGreaterThan(20);
+  await expect(input).toHaveValue('保留的追问草稿');
+  await expect(page.getByTestId('training-split-handle')).toHaveAttribute('aria-orientation','horizontal');
+});
+
+test('dragging the split keeps both pane scroll positions',async({page})=>{
+  await page.setViewportSize({width:1133,height:744});
+  await openFixtureReview(page);
+  const left=page.getByTestId('question-bank-practice-material-scroll');
+  const right=page.getByTestId('question-bank-practice-question-scroll');
+  await page.evaluate(()=>{
+    const sheet=new CSSStyleSheet();
+    sheet.replaceSync('[data-testid="question-bank-practice-material-scroll"]::after,[data-testid="question-bank-practice-question-scroll"]::after {content:"";display:block;height:1800px}');
+    document.adoptedStyleSheets=[...document.adoptedStyleSheets,sheet];
+  });
+  await expect(page.getByTestId('training-split-handle')).toHaveAttribute('aria-orientation','vertical');
+  await expect.poll(()=>left.evaluate(node=>node.scrollHeight-node.clientHeight)).toBeGreaterThan(1000);
+  await expect.poll(()=>right.evaluate(node=>node.scrollHeight-node.clientHeight)).toBeGreaterThan(1000);
+  await left.evaluate(node=>{node.scrollTop=240;});
+  await right.evaluate(node=>{node.scrollTop=200;});
+  await expect.poll(()=>left.evaluate(node=>node.scrollTop)).toBe(240);
+  await expect.poll(()=>right.evaluate(node=>node.scrollTop)).toBe(200);
+  const handle=page.getByTestId('training-split-handle'), grip=(await handle.boundingBox())!;
+  await page.mouse.move(grip.x+grip.width/2,grip.y+grip.height/2); await page.mouse.down();
+  await page.mouse.move(grip.x+grip.width/2+80,grip.y+grip.height/2,{steps:4}); await page.mouse.up();
+  await expect.poll(()=>left.evaluate(node=>node.scrollTop)).toBe(240);
+  await expect.poll(()=>right.evaluate(node=>node.scrollTop)).toBe(200);
+});
+
+test('split ratio is restored after reloading and opening another review',async({page})=>{
+  await page.setViewportSize({width:1133,height:744});
+  await openFixtureReview(page);
+  const handle=page.getByTestId('training-split-handle');
+  await handle.focus(); await page.keyboard.press('ArrowLeft'); await page.keyboard.press('ArrowLeft');
+  const saved=Number(await handle.getAttribute('aria-valuenow'));
+  expect(saved).toBeLessThan(60);
+  await page.reload();
+  await page.getByTestId('training-mode-question-bank-paper').click();
+  await chooseFixturePaper(page);
+  await page.getByTestId('question-bank-practice-start').click();
+  await page.getByTestId('question-bank-practice-submit').click();
+  await page.getByRole('button',{name:'确认交卷'}).click();
+  await expect.poll(async()=>Number(await page.getByTestId('training-split-handle').getAttribute('aria-valuenow'))).toBeCloseTo(saved,0);
+});

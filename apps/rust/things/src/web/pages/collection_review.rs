@@ -372,7 +372,7 @@ pub(crate) fn collection_question_review(props: &CollectionQuestionReviewProps) 
             </section>
         };
         html! {
-            <TrainingSplitWorkspace test_id="collection-review-split" split_at_md={true}
+            <TrainingSplitWorkspace test_id="collection-review-split" split_at_md={true} resizable={true}
                 left={left} right={right}/>
         }
     } else if let Some(message) = &*error {

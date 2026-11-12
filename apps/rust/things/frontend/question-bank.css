@@ -148,6 +148,52 @@
   @media (min-width: 1024px) {
     .question-bank-collections-layout { grid-template-columns: minmax(0,1.35fr) minmax(0,1fr); }
   }
+  .training-split-resizable {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: minmax(0, var(--training-split-user-first, var(--training-split-default-first, 3fr))) .5rem minmax(0, var(--training-split-user-second, var(--training-split-default-second, 2fr)));
+  }
+  @media (min-width: 768px) {
+    .training-split-resizable[data-split-breakpoint="md"] {
+      grid-template-columns: minmax(0, var(--training-split-user-first, 3fr)) .5rem minmax(0, var(--training-split-user-second, 2fr));
+      grid-template-rows: minmax(0, 1fr);
+    }
+  }
+  @media (min-width: 1024px) {
+    .training-split-resizable[data-split-breakpoint="lg"] {
+      grid-template-columns: minmax(0, var(--training-split-user-first, 3fr)) .5rem minmax(0, var(--training-split-user-second, 2fr));
+      grid-template-rows: minmax(0, 1fr);
+    }
+  }
+  .training-split-handle {
+    position: relative;
+    z-index: 30;
+    min-width: 0;
+    min-height: 0;
+    cursor: row-resize;
+    touch-action: none;
+    user-select: none;
+    -webkit-touch-callout: none;
+    outline: none;
+  }
+  .training-split-handle::before,
+  .training-split-handle::after {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    content: "";
+    transform: translate(-50%, -50%);
+  }
+  .training-split-handle::before { width: 4rem; height: 1.5rem; }
+  .training-split-handle::after {
+    width: 2.5rem;
+    height: .25rem;
+    border-radius: 999px;
+    background: color-mix(in srgb, var(--color-base-content) 35%, transparent);
+  }
+  .training-split-handle[data-split-axis="horizontal"] { cursor: col-resize; }
+  .training-split-handle[data-split-axis="horizontal"]::before { width: 1.5rem; height: 4rem; }
+  .training-split-handle[data-split-axis="horizontal"]::after { width: .25rem; height: 2.5rem; }
+  .training-split-handle:is(:hover, :focus-visible, [data-dragging="true"])::after { background: var(--color-primary); }
   .question-bank-workspace .question-bank-pane-header {
     border-bottom: 1px solid color-mix(in srgb,var(--color-base-content) 8%,transparent);
   }

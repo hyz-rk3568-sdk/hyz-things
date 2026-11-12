@@ -873,3 +873,22 @@ for (const viewport of [{width:1366,height:900},{width:1133,height:744},{width:3
     expect(send!.y+send!.height).toBeLessThanOrEqual(composer!.y+composer!.height);
   });
 }
+
+for (const viewport of [{width:1133,height:744},{width:390,height:844}]) {
+  test(`collection review splitter adjusts and persists at ${viewport.width}px`,async({page})=>{
+    await page.setViewportSize(viewport);
+    await install(page);
+    const review=await openReview(page);
+    const handle=review.getByTestId('training-split-handle');
+    const horizontal=viewport.width>=768;
+    await expect(handle).toHaveAttribute('aria-orientation',horizontal?'vertical':'horizontal');
+    const before=Number(await handle.getAttribute('aria-valuenow'));
+    await handle.focus();
+    await page.keyboard.press(horizontal?'ArrowLeft':'ArrowUp');
+    await expect.poll(async()=>Number(await handle.getAttribute('aria-valuenow'))).toBeLessThan(before);
+    const adjusted=Number(await handle.getAttribute('aria-valuenow'));
+    await review.getByTestId('collection-review-next').click();
+    await review.getByTestId('collection-review-previous').click();
+    await expect.poll(async()=>Number(await review.getByTestId('training-split-handle').getAttribute('aria-valuenow'))).toBeCloseTo(adjusted,0);
+  });
+}
