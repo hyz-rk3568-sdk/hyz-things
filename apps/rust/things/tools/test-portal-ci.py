@@ -56,7 +56,7 @@ if [[ "${0##*/}" == make || "${1:-}" == fmt ]]; then exit 1; fi
             environment = dict(os.environ, PATH=f"{directory}:{os.environ['PATH']}", FAKE_CI_LOG=str(log))
             failed = []
             for name, step in steps.items():
-                command = re.search(r"^        run: ((?:cargo|make) [^\n]+)$", step, re.MULTILINE)
+                command = re.search(r"^        run: ((?:cargo|make|timeout) [^\n]+)$", step, re.MULTILINE)
                 if command:
                     self.assertIn("!cancelled()", step)
                     result = subprocess.run(["bash", "-e", "-o", "pipefail"], input=command.group(1),
