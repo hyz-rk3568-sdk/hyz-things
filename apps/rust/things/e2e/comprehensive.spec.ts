@@ -1330,8 +1330,23 @@ test('data analysis shows parallel job activity and clears it when claimed', asy
   await expect(panel).toContainText('第1篇 · cat flashcards/cards.md');
   const toggle=panel.getByRole('button');
   await expect(toggle).toHaveAttribute('aria-expanded','false');
+  const dock=page.getByTestId('training-setup-activity');
+  const footer=page.getByTestId('training-setup-action');
+  await expect(dock).toBeVisible();
+  const dockBox=await dock.boundingBox();
+  const footerBox=await footer.boundingBox();
+  expect(dockBox).not.toBeNull();
+  expect(footerBox).not.toBeNull();
+  expect(Math.abs(dockBox!.y+dockBox!.height-footerBox!.y)).toBeLessThan(2);
   const before=await panel.boundingBox();
-  await page.getByTestId('training-setup-scroll').evaluate(node => { node.scrollTop=node.scrollHeight; });
+  await page.evaluate(() => {
+    const sheet=new CSSStyleSheet();
+    sheet.replaceSync('.training-setup-content { padding-bottom: 1200px !important; }');
+    document.adoptedStyleSheets=[...document.adoptedStyleSheets,sheet];
+  });
+  const scroll=page.getByTestId('training-setup-scroll');
+  await scroll.evaluate(node => { node.scrollTop=node.scrollHeight; });
+  await expect.poll(() => scroll.evaluate(node => node.scrollTop)).toBeGreaterThan(100);
   const after=await panel.boundingBox();
   expect(before).not.toBeNull();
   expect(after).not.toBeNull();
