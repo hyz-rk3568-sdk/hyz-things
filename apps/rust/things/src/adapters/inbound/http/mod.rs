@@ -754,8 +754,7 @@ fn app_with_assets(
         )
         .route(
             "/api/v1/question-bank/shenlun/questions/{id}/ocr",
-            on(MethodFilter::POST, shenlun::ocr)
-                .layer(DefaultBodyLimit::max(8 * 1024)),
+            on(MethodFilter::POST, shenlun::ocr).layer(DefaultBodyLimit::max(8 * 1024)),
         )
         .route(
             "/api/v1/question-bank/shenlun/questions/{id}/source-answer",
