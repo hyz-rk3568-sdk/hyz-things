@@ -1483,6 +1483,77 @@ mod migration_tests {
     }
 
     #[tokio::test]
+    async fn subjective_attempts_are_isolated_versioned_and_idempotently_submitted() {
+        let pool = memory_pool().await;
+        initialize_schema(&pool).await.unwrap();
+        sqlx::query(
+            "INSERT INTO papers(id,metadata,active,kind,subject) VALUES('paper-1','{}',1,'exam','shenlun')",
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
+        sqlx::query(
+            "INSERT INTO questions(id,paper_id,number,source_hash,answer_type) VALUES('question-1','paper-1',1,'hash','subjective')",
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
+        let repository = SqliteQuestionBankRepository { pool: pool.clone() };
+        let attempt = ShenlunAttempt {
+            id: "11111111-1111-4111-8111-111111111111".into(),
+            paper_id: "paper-1".into(),
+            question_id: "question-1".into(),
+            source_hash: "hash".into(),
+            text: String::new(),
+            source_kind: "typed".into(),
+            status: "draft".into(),
+            revision: 0,
+            created_at_ms: 100,
+            updated_at_ms: 100,
+            submitted_at_ms: None,
+        };
+        let first = repository.shenlun_create_attempt(attempt.clone()).await.unwrap();
+        assert_eq!(first, attempt);
+        let duplicate = repository.shenlun_create_attempt(attempt).await.unwrap();
+        assert_eq!(duplicate, first);
+        let saved = repository
+            .shenlun_save_draft(&first.id, first.revision, "初稿内容。")
+            .await
+            .unwrap();
+        assert_eq!(saved.text, "初稿内容。");
+        assert_eq!(saved.revision, 1);
+        assert_eq!(
+            repository.shenlun_save_draft(&first.id, 0, "过时草稿").await,
+            Err(BankError::Conflict)
+        );
+        let submitted = repository.shenlun_submit_attempt(&first.id).await.unwrap();
+        assert_eq!(submitted.status, "submitted");
+        assert!(submitted.submitted_at_ms.is_some());
+        assert_eq!(
+            repository.shenlun_submit_attempt(&first.id).await.unwrap(),
+            submitted
+        );
+        assert_eq!(
+            repository.shenlun_save_draft(&first.id, 1, "篡改已提交稿").await,
+            Err(BankError::Conflict)
+        );
+        let (snapshot, snapshots): (String, i64) = sqlx::query_as(
+            "SELECT answer_text, (SELECT count(*) FROM shenlun_attempt_revisions WHERE attempt_id=?) FROM shenlun_attempt_revisions WHERE attempt_id=?",
+        )
+        .bind(&first.id)
+        .bind(&first.id)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(snapshot, "初稿内容。");
+        assert_eq!(snapshots, 1);
+
+        // Reopening migrations must never erase subjective drafts or submissions.
+        initialize_schema(&pool).await.unwrap();
+        assert_eq!(repository.shenlun_get_attempt(&first.id).await.unwrap(), submitted);
+    }
+
+    #[tokio::test]
     async fn resync_repairs_missing_materials_even_when_the_source_hash_is_unchanged() {
         let repository = SqliteQuestionBankRepository::connect("sqlite::memory:")
             .await
