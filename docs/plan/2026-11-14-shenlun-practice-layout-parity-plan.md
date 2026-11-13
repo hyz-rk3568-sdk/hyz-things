@@ -42,7 +42,33 @@
 3. 参照 `QuestionAiReview::on_delete_availability` 把可删除状态回传父组件；切题、切模式、删除完成、异步响应返回、退出原卷均要清零或校验状态来源，避免旧题会话的按钮泄漏到新题或非 AI 模式。
 4. **后端会话隔离不可遗漏：** 当前 grade/analysis 都指向 `/practice/questions/{id}/ai`，会出现内容交叉。实施时先设计真实 `purpose`/scope 及独立读写/删除（含草稿键和事件流），再允许按各自会话显示和删除。不能只改前端文案就声称隔离完成。将此项纳入同一个代码整改任务的功能验收；如后端隔离未实现，PR 不能宣称已完成。
 
-### C. 复制成熟 E2E 的**几何验收方式**（不是只断言“元素可见”）
+### C. 将「批改」与「解析/追问」拆成不同页面和真正不同的 Codex Thread
+
+**现状证据（已经核对 main）：**
+
+- `shenlun_training.rs` 362—368 行：`grade`、`ai` 都渲染同一个 `QuestionAiReview`，仅通过 `mode` 改变提示词。组件 `key="{question_id}:{mode}"` 只负责前端重挂载，**不隔离服务器会话**。
+- `question_bank_practice.rs` 957 行：两种模式调用同一 URL `/practice/questions/{question_id}/ai`；`follow_key/start_key/request_key` 都未包含 mode，草稿和请求状态也会串。
+- `question_bank_ai.rs` 248、274—279 行：持久化 Key 为 `(question_id, stem_fingerprint)`，`question_ai_reviews.thread_id`、messages、requests、events、stream/stop/delete 都用同一 Key。
+- 现有 `e2e/shenlun.spec.ts` 用例名称甚至是“申论解析和批改入口是同一个 AI 对话工作区”；必须**删掉错误验收假设，替换为隔离断言**。
+
+**明确目标不是“两个 tab 换标题”**，而是在题目右栏分别进入独立的 **AI 批改页面** 与 **AI 解析及追问页面**，同一题目也有独立持久会话和独立 Codex thread：
+
+1. **AI 批改页面：** 输入申论作答（文字/图片）、启动批改、显示评分和逐点反馈；在此页面追问扣分原因、提交二次作答，**只延续批改 thread**。保留复用的 AI Composer、消息流、进度与停止机制。
+2. **AI 解析及追问页面：** 以题目和材料为上下文启动讲解，后续追问继续**解析 thread**；不得自动显示批改历史、批改草稿、评分结果，也不得复用批改上下文。
+3. **服务端持久隔离：** 为申论定义并校验稳定 scope（如 `grade` / `analysis`），贯穿 GET/POST、follow-up、附件、history/runs/events、SSE/流、stop、retry、delete 和 Codex thread 恢复。设计时检查现有 SQLite 表的主键/索引/外键与历史记录迁移；不可仅在前端添加 query 参数、伪造两个页面或拼接未校验 key。其他科目的默认 analysis API 必须向后兼容。
+4. **删除与切换：** 删除按钮由**当前页面 + 当前题目 + 当前 scope 的实际会话状态**共同决定；删除批改不会删除解析，反之亦然；切模式、切题、刷新、恢复未完成任务均只读取正确 scope。独立的客户端草稿、request-id、上传进度和过期附件状态也要按 scope 隔离。
+5. **线程验收：** 启动同题批改和解析后，服务端存储的两个非空 `thread_id` 必须不同；批改追问沿用批改 ID、解析追问沿用解析 ID。交叉查询、历史列表、SSE、停止、删除都不能访问另一 scope；错误/重试及并发场景同样验证。
+
+### D. OCR 必须呈现共享 AI Composer 的完整交互，而不是只嵌入一个上传控件
+
+**现状证据（已经核对 main）：** `shenlun_ai_panel.rs` 157—179 行**确实调用了现有 `ai_composer(AiComposer { ... })`**；`read_only=true`、`max_length=0`、共享 `AiImagePicker` 和发送箭头已经存在。但 OCR 目前被包在普通滚动内容下的 `section.mt-3.space-y-3`，结果、工具活动和 Composer 顺序排列，尚未达到专项练习 AI 面板的**固定底部 Composer + 上方独立可滚动消息区**结构。
+
+1. 继续直接复用 `ai_composer`、`AiImagePicker`、图片预览/移除、上传状态与已有发送箭头；**不新造选择文件按钮或第二个“转写”按钮**。文字框保持只读，不接受文字提交；无图片时发送禁用。
+2. OCR 页面与批改、解析是独立视图。顶部展示题干与必要说明，中间单独滚动显示 OCR 结果及工具过程，**Composer 固定在右栏底部**；软键盘出现、窄屏、iPad 横竖屏及长 Markdown 时不挤出屏幕。不将 OCR 结果自动写入批改答卷。
+3. 图片附件可提交一次临时 OCR 请求，由独立临时 Codex thread 生成 Markdown；不污染批改或解析的持久 thread。核对 `/shenlun/questions/{id}/ocr`、附件上传端点、CSRF、错误恢复/重复提交、防误触和真实 WebKit 图片上传行为，而不仅是 mocked 返回值。
+4. 验收：图片选择→缩略图→发送→工具活动/Markdown→清空已上传图片；只读和禁用状态；OCR 结果不创建批改记录；切到批改/解析时各自 thread 和草稿保持独立。
+
+### E. 复制成熟 E2E 的**几何验收方式**（不是只断言“元素可见”）
 
 在 `e2e/shenlun.spec.ts` 中仅新增相关用例，参考 `e2e/question-bank.spec.ts` 的 `boundingBox`、`toHaveCSS` 与无横向溢出断言；不需要全量测试。
 
@@ -58,4 +84,5 @@
 - 目标是“一次性整改”，不再按失败断言打补丁。先确认所有差异，再由同一后续实现 PR 一并修正。
 - E2E 只跑申论相关用例；CSS/共用组件改动如影响专项练习，另外跑对应的**专项练习相关测试**，而不是盲目全量运行。
 - Rust format / clippy / targeted tests 与 Playwright 通过，**还需 iPad 几何和截图对比**；两项都合格才可称为完成。
+- **批改页与解析/追问页拥有不同 Codex thread**、OCR 共享 AI Composer 并固定底部、四模式菜单不串状态，均为阻断验收条件；任何一个未满足都不能宣布“已全部修复”。
 - 本文档 PR 不包含实际修复，**不合并为已完成整改**，等待用户确认方案后再实施。
