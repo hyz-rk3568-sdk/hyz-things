@@ -199,6 +199,7 @@ pub(crate) fn comprehensive_training(props: &ComprehensiveProps) -> Html {
     let clock = use_context::<StudyClockContext>();
     let status = use_state(|| None::<AnalysisStatus>);
     let progress = use_state(|| None::<PrepareProgress>);
+    let activity_job = use_state(|| None::<String>);
     let run = use_state(|| None::<AnalysisRun>);
     let result = use_state(|| None::<AnalysisResult>);
     let current = use_state(|| 0usize);
@@ -234,6 +235,7 @@ pub(crate) fn comprehensive_training(props: &ComprehensiveProps) -> Html {
         let run = run.clone();
         let history = history.clone();
         let progress = progress.clone();
+        let activity_job = activity_job.clone();
         let ready_id = ready_id.clone();
         let preparing = preparing.clone();
         let loading_status = loading_status.clone();
@@ -285,6 +287,7 @@ pub(crate) fn comprehensive_training(props: &ComprehensiveProps) -> Html {
                 if let Some(id) = saved_ready {
                     ready_id.set(Some(id));
                 } else if let Some(job) = saved_job.or(server_job) {
+                    activity_job.set(Some(job.clone()));
                     remember_preparation(Some(&job));
                     spawn_local(resume_preparation(
                         job,
@@ -603,6 +606,7 @@ pub(crate) fn comprehensive_training(props: &ComprehensiveProps) -> Html {
     };
 
     let start = {
+        let activity_job = activity_job.clone();
         let progress = progress.clone();
         let error = error.clone();
         let busy = busy.clone();
@@ -621,6 +625,7 @@ pub(crate) fn comprehensive_training(props: &ComprehensiveProps) -> Html {
             let busy = busy.clone();
             let preparing = preparing.clone();
             let ready_id = ready_id.clone();
+            let activity_job = activity_job.clone();
             let csrf = csrf.clone();
             spawn_local(async move {
                 match post_json_response_typed::<_, PrepareTask>(
@@ -632,6 +637,7 @@ pub(crate) fn comprehensive_training(props: &ComprehensiveProps) -> Html {
                 .await
                 {
                     Ok(task) => {
+                        activity_job.set(Some(task.job_id.clone()));
                         remember_preparation(Some(&task.job_id));
                         busy.set(false);
                         resume_preparation(task.job_id, progress, ready_id, preparing, error).await;
@@ -647,6 +653,7 @@ pub(crate) fn comprehensive_training(props: &ComprehensiveProps) -> Html {
     // Opening the prepared paper is the *only* action which starts 20 minutes.
     // A background generation result can remain ready for hours without timing.
     let enter_ready = {
+        let activity_job = activity_job.clone();
         let clock_offset_ms = clock_offset_ms.clone();
         let controller = controller.clone();
         let run = run.clone();
@@ -672,6 +679,7 @@ pub(crate) fn comprehensive_training(props: &ComprehensiveProps) -> Html {
             let busy = busy.clone();
             let error = error.clone();
             let csrf = csrf.clone();
+            let activity_job = activity_job.clone();
             spawn_local(async move {
                 match post_json_response_typed::<_, ClaimedRun>(
                     &format!("{ANALYSIS_ROOT}/runs/{id}/claim"),
@@ -682,6 +690,7 @@ pub(crate) fn comprehensive_training(props: &ComprehensiveProps) -> Html {
                 .await
                 {
                     Ok(claim) => {
+                        activity_job.set(None);
                         let active = claim.run;
                         current.set(active.current_question.min(19));
                         clock_offset_ms.set(clock_offset_for_server(active.server_now_ms));
@@ -1448,6 +1457,9 @@ pub(crate) fn comprehensive_training(props: &ComprehensiveProps) -> Html {
                                 </div>
                             </div>
                         </div>
+                    }
+                    if let Some(activity_id)=(*activity_job).as_ref() {
+                        <GenerationActivity module="data-analysis" job_id={activity_id.clone()} test_prefix="analysis"/>
                     }
                     if let Some(p)=(*progress).clone(){
                         <div class="rounded-box bg-base-200 p-3 text-sm" data-testid="analysis-progress">
