@@ -404,7 +404,7 @@ impl ShenlunAiService {
             cloned.run(job, attempt, source, paths, cancel).await;
             cloned.active.lock().await.remove(&task_id);
         });
-        Ok(self.get(&request.request_id).await?)
+        self.get(&request.request_id).await
     }
 
     pub async fn stop(&self, id: &str) -> Result<ShenlunJob, ShenlunAiError> {
@@ -603,7 +603,7 @@ impl ShenlunAiService {
             )
             .await?;
         let value: Value = serde_json::from_str(&raw).map_err(|_| "评分点池响应不是 JSON")?;
-        let rubric = validate_rubric(&value, &source.materials, source.max_score)?;
+        validate_rubric(&value, &source.materials, source.max_score)?;
         sqlx::query("INSERT OR IGNORE INTO shenlun_rubrics(question_id,source_hash,skill_version,rubric_json,created_at_ms) VALUES(?,?,?,?,?)")
             .bind(&source.question_id).bind(&source.source_hash).bind(SKILL_VERSION)
             .bind(value.to_string()).bind(timestamp()).execute(&self.pool)
