@@ -102,6 +102,10 @@ test('批改复用 QuestionAiReview 的 Markdown、追问和删除，不创建�
     const { pathname } = new URL(route.request().url());
     if (pathname.endsWith('/shenlun/papers')) return route.fulfill({ json: catalog });
     if (pathname.endsWith('/shenlun/papers/' + paperId)) return route.fulfill({ json: paperView });
+    if (pathname.endsWith('/shenlun/questions/' + questionId + '/source-answer')) return route.fulfill({ json: {
+      text: '来源参考答案：压实基层责任。', provenance: '题库来源（非官方）',
+      source_hash: 'source-shenlun-v1',
+    } });
     if (pathname.includes('/jobs') && route.request().method() === 'POST') legacyGradeJobs++;
     throw new Error('Unexpected dedicated grading request: ' + pathname);
   });
@@ -143,7 +147,7 @@ test('批改复用 QuestionAiReview 的 Markdown、追问和删除，不创建�
       return route.fulfill({ json: state });
     }
     if (pathname.includes('/requests/') && method === 'GET') return route.fulfill({ json: {
-      request_id: 'placeholder', intent: 'initial', status: 'complete',
+      request_id: pathname.split('/').at(-1), intent: 'initial', status: 'complete',
       error: null, remote_uncertain: false,
     } });
     if (pathname.endsWith('/events') || pathname.endsWith('/ai/events'))
@@ -158,6 +162,9 @@ test('批改复用 QuestionAiReview 的 Markdown、追问和删除，不创建�
   await expect.poll(() => startInstruction).toContain('【申论批改】');
   expect(startInstruction).toContain('应明确责任分工');
   await expect(page.getByTestId('question-bank-ai-messages')).toContainText('练习参考分');
+  await page.getByTestId('shenlun-mode-source').click();
+  await expect(page.getByTestId('shenlun-source-answer')).toContainText('压实基层责任');
+  await page.getByTestId('shenlun-mode-grade').click();
   await page.getByTestId('question-bank-ai-input').fill('为什么这道题要明确执行主体？');
   await page.getByTestId('question-bank-ai-send').click();
   await expect.poll(() => followMessage).toContain('申论批改请求或追问');
@@ -216,6 +223,7 @@ test('OCR 仅图片上传并要求校对确认，不会直接触发批改', asyn
       expect(input.text).toBe('手写确认文本，保留我的原话。');
       confirmed = true;
       attempt = { ...attempt, text: input.text, source_kind: 'vision-confirmed', revision: 1 };
+      jobs = []; // The real service discards OCR tasks after the confirmed text is saved.
       return route.fulfill({ json: attempt });
     }
     throw new Error('Unexpected OCR request: ' + method + ' ' + pathname);
