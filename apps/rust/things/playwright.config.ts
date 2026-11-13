@@ -29,6 +29,12 @@ function focusedRegressionFilter(): RegExp | undefined {
     };
     // Only PRs explicitly carrying this marker run the feature-specific E2E cases.
     // All other PRs and pushes to main retain the complete Playwright suite.
+    if (event.pull_request?.title?.includes('[focus-generation-e2e]')) {
+      // PR #119: run the affected generation, AI-delete and splitter paths,
+      // including the previously failing busy-conflict regression. Other
+      // PRs and main retain their existing selected/full coverage.
+      return /logic and quantitative preparation display transient Codex activity|data analysis shows parallel job activity and clears it when claimed|AI job survives leaving training|preparing task resumes polling after reload|newly generated paper stays untimed|generated logic questions share|generated quantitative questions share|generated data analysis shares|generation user prompt is collapsed|deleting saved AI analysis sends|AI delete 409 requires|AI delete busy conflict remains|AI review keeps running across navigation|review remembers each question and material scroll position|review split resizes horizontally|review split resizes vertically|splitter keyboard controls|splitter cancels a short touch|splitter works with the scratchpad|phone splitter preserves|dragging the split keeps both pane scroll positions|split ratio is restored after reloading/;
+    }
     if (event.pull_request?.title?.includes('[focus-question-bank-e2e]')) {
       return /question bank/;
     }
