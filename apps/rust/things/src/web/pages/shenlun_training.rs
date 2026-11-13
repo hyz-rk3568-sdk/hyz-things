@@ -56,7 +56,7 @@ pub(super) fn shenlun_training(props: &ShenlunTrainingProps) -> Html {
     let attempts = use_state(Vec::<ShenlunAttempt>::new);
     let attempt_loading = use_state(|| false);
     let attempt_busy = use_state(|| false);
-    let mode = use_state(|| "grade".to_owned());
+    let mode = use_state(|| "ai".to_owned());
     let menu_open = use_state(|| false);
     let ai_delete_signal = use_state(|| 0_u32);
     let grade_regrade_signal = use_state(|| 0_u32);
@@ -127,20 +127,20 @@ pub(super) fn shenlun_training(props: &ShenlunTrainingProps) -> Html {
     }
     // An attempt is only the native grade job's immutable input container.
     // Nothing here creates an objective practice session, countdown, or exam submission.
+    let needs_attempt = *mode != "ai";
     {
         let attempt = attempt.clone();
         let attempts = attempts.clone();
         let attempt_loading = attempt_loading.clone();
-        let mode = mode.clone();
         let menu_open = menu_open.clone();
         let error = error.clone();
         let csrf = props.csrf.clone();
-        use_effect_with(question_key.clone(), move |key| {
+        use_effect_with((question_key.clone(), needs_attempt), move |(key, needed)| {
             let alive = Rc::new(Cell::new(true));
+            if *needed {
             attempt.set(None);
             attempts.set(Vec::new());
             attempt_loading.set(key.is_some());
-            mode.set("grade".into());
             menu_open.set(false);
             if let Some((paper_id, question_id)) = key.clone() {
                 let guard = alive.clone();
@@ -181,6 +181,7 @@ pub(super) fn shenlun_training(props: &ShenlunTrainingProps) -> Html {
                     attempt_loading.set(false);
                 });
             }
+            }
             move || alive.set(false)
         });
     }
@@ -189,6 +190,8 @@ pub(super) fn shenlun_training(props: &ShenlunTrainingProps) -> Html {
         let busy = busy.clone();
         let paper = paper.clone();
         let selected = selected.clone();
+        let mode = mode.clone();
+        let menu_open = menu_open.clone();
         let error = error.clone();
         let immersive = props.on_immersive_change.clone();
         Callback::from(move |id: String| {
@@ -198,12 +201,16 @@ pub(super) fn shenlun_training(props: &ShenlunTrainingProps) -> Html {
             let busy = busy.clone();
             let paper = paper.clone();
             let selected = selected.clone();
+            let mode = mode.clone();
+            let menu_open = menu_open.clone();
             let error = error.clone();
             let immersive = immersive.clone();
             spawn_local(async move {
                 match fetch_json::<PaperView>(&format!("/api/v1/question-bank/shenlun/papers/{id}"), "申论原卷").await {
                     Ok(value) => {
                         selected.set(0);
+                        mode.set("ai".into());
+                        menu_open.set(false);
                         paper.set(Some(value));
                         immersive.emit(true);
                     }
@@ -215,9 +222,11 @@ pub(super) fn shenlun_training(props: &ShenlunTrainingProps) -> Html {
     };
     let close = {
         let paper = paper.clone();
+        let mode = mode.clone();
         let immersive = props.on_immersive_change.clone();
         Callback::from(move |_| {
             immersive.emit(false);
+            mode.set("ai".into());
             paper.set(None);
         })
     };
@@ -532,6 +541,15 @@ pub(super) fn shenlun_training(props: &ShenlunTrainingProps) -> Html {
                         test_id="shenlun-split" resizable={true} split_at_md={true}/>
                 </div>
                 <CompactQuestionNavigation current={selected.clone()}
+                    navigation_allowed={Some(Callback::from({
+                        let mode=mode.clone();
+                        let menu_open=menu_open.clone();
+                        move |_:()| {
+                            mode.set("ai".into());
+                            menu_open.set(false);
+                            true
+                        }
+                    }))}
                     numbers={current.questions.iter().map(|q|q.number).collect::<Vec<_>>()}
                     answered={answered} grades={None::<Vec<Option<bool>>>} groups={groups}/>
             </div>
