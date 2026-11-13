@@ -2,8 +2,8 @@ use super::*;
 use crate::adapters::outbound::question_bank_ai::{AiReviewError, QuestionBankAiService};
 use crate::application::question_bank::{BankError, QuestionBankApplication};
 use crate::domain::question_bank::{
-    CreatePracticeRequest, CreateShenlunAttempt, ModulePracticeFilters, PracticeMode, SavePracticeAnswer, SaveShenlunDraft, SetFavorite,
-    SetPracticePaused, StudyPlan,
+    CreatePracticeRequest, CreateShenlunAttempt, ModulePracticeFilters, PracticeMode,
+    SavePracticeAnswer, SaveShenlunDraft, SetFavorite, SetPracticePaused, StudyPlan,
 };
 use axum::Extension;
 
@@ -797,7 +797,10 @@ pub(super) async fn shenlun_attempts(
         Ok(app) => app,
         Err(error) => return bank_error(error),
     };
-    match app.shenlun_attempts(&query.paper_id, &query.question_id).await {
+    match app
+        .shenlun_attempts(&query.paper_id, &query.question_id)
+        .await
+    {
         Ok(attempts) => Json(attempts).into_response(),
         Err(error) => bank_error(error),
     }
