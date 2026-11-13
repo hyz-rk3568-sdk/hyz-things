@@ -918,7 +918,11 @@ impl QuestionBankAiService {
         let request_id = request_uuid(request_id)?;
         let hash = request_hash(&intent)?;
         let locator = self.bank.question_ai_locator(question_id).await?;
-        let max_input = if locator.subject == "shenlun" {50_256} else {MAX_FOLLOW_UP};
+        let max_input = if locator.subject == "shenlun" {
+            50_256
+        } else {
+            MAX_FOLLOW_UP
+        };
         let key = key(&locator);
         let mut active = self.active.lock().await;
         if let Some(existing) = self.request_for_key(&key, &request_id).await? {
@@ -1546,9 +1550,12 @@ mod tests {
     #[test]
     fn shenlun_grade_prompt_uses_markdown_and_stays_within_the_question() {
         let locator = QuestionAiLocator {
-            question_id: "q1".into(), paper_id: "p1".into(),
-            paper_path: "shenlun/test.md".into(), subject: "shenlun".into(),
-            material_ids: vec!["m1".into()], stem_fingerprint: "fingerprint".into(),
+            question_id: "q1".into(),
+            paper_id: "p1".into(),
+            paper_path: "shenlun/test.md".into(),
+            subject: "shenlun".into(),
+            material_ids: vec!["m1".into()],
+            stem_fingerprint: "fingerprint".into(),
         };
         let grade = initial_prompt(&locator, Some("【申论批改】\n请批改这份答案"));
         assert!(grade.contains("Markdown 报告格式"));
