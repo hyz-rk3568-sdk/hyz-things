@@ -118,9 +118,15 @@ fn shenlun_from_row(row: &sqlx::sqlite::SqliteRow) -> Result<ShenlunAttempt, Ban
         source_kind: row.try_get("source_kind").map_err(|_| BankError::Storage)?,
         status: row.try_get("status").map_err(|_| BankError::Storage)?,
         revision: row.try_get("revision").map_err(|_| BankError::Storage)?,
-        created_at_ms: row.try_get("created_at_ms").map_err(|_| BankError::Storage)?,
-        updated_at_ms: row.try_get("updated_at_ms").map_err(|_| BankError::Storage)?,
-        submitted_at_ms: row.try_get("submitted_at_ms").map_err(|_| BankError::Storage)?,
+        created_at_ms: row
+            .try_get("created_at_ms")
+            .map_err(|_| BankError::Storage)?,
+        updated_at_ms: row
+            .try_get("updated_at_ms")
+            .map_err(|_| BankError::Storage)?,
+        submitted_at_ms: row
+            .try_get("submitted_at_ms")
+            .map_err(|_| BankError::Storage)?,
     })
 }
 
