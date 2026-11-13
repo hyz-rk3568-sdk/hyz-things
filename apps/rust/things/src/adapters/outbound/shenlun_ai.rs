@@ -279,7 +279,7 @@ impl ShenlunAiService {
             return record(&existing);
         }
         let unknown: i64 = sqlx::query_scalar(
-            "SELECT COUNT(*) FROM shenlun_jobs WHERE attempt_id=? AND source_hash=? AND attempt_revision=? AND status='unknown'",
+            "SELECT COUNT(*) FROM shenlun_jobs WHERE attempt_id=? AND source_hash=? AND attempt_revision=? AND status='unknown' AND acknowledged_at_ms IS NULL",
         )
         .bind(attempt_id)
         .bind(&attempt.source_hash)
@@ -327,6 +327,18 @@ impl ShenlunAiService {
         let permit = Arc::clone(&self.in_flight)
             .try_acquire_owned()
             .map_err(|_| ShenlunAiError::NotReady)?;
+        if unknown > 0 && request.confirm_uncertain {
+            sqlx::query(
+                "UPDATE shenlun_jobs SET acknowledged_at_ms=? WHERE attempt_id=? AND source_hash=? AND attempt_revision=? AND status='unknown' AND acknowledged_at_ms IS NULL",
+            )
+            .bind(timestamp())
+            .bind(attempt_id)
+            .bind(&attempt.source_hash)
+            .bind(attempt.revision)
+            .execute(&self.pool)
+            .await
+            .map_err(|_| ShenlunAiError::Storage)?;
+        }
         let now = timestamp();
         let job = ShenlunJob {
             id: request.request_id.clone(),
