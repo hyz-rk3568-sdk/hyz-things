@@ -7,6 +7,7 @@ mod calculation;
 mod camera;
 mod collection_review;
 mod comprehensive;
+mod generation_activity;
 mod deployments;
 mod devices;
 mod favorite_flashcard;
@@ -37,6 +38,7 @@ mod training_statistics;
 mod training_time;
 
 use ai_reply::AiReply;
+use generation_activity::GenerationActivity;
 pub(crate) use calculation::*;
 pub(crate) use camera::*;
 pub(crate) use collection_review::*;
