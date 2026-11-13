@@ -794,6 +794,10 @@ fn app_with_assets(
             on(MethodFilter::POST, shenlun::stop),
         )
         .route(
+            "/api/v1/question-bank/shenlun/jobs/{id}/delete",
+            on(MethodFilter::POST, shenlun::delete_record),
+        )
+        .route(
             "/api/v1/question-bank/shenlun/jobs/{id}/events",
             on(MethodFilter::GET, shenlun::events),
         )
