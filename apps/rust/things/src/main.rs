@@ -243,15 +243,7 @@ async fn run_daemon() -> Result<(), Box<dyn Error>> {
             if let Err(error) = ai.recover_interrupted().await {
                 tracing::warn!(?error, "question bank AI recovery failed");
             }
-            let shenlun_ai = Arc::new(ShenlunAiService::new(
-                bank.clone(),
-                pool,
-                codex,
-                Some(ai.clone()),
-            ));
-            if let Err(error) = shenlun_ai.recover_interrupted().await {
-                tracing::warn!(?error, "shenlun AI recovery failed");
-            }
+            let shenlun_ai = Arc::new(ShenlunAiService::new(bank.clone(), codex, Some(ai.clone())));
             (Some(bank), Some(ai), Some(shenlun_ai))
         }
         Err(_) => {

@@ -12,6 +12,16 @@ if [[ -z "${GITHUB_BASE_REF:-}" ]]; then
 fi
 cd -- "$WORKSPACE"
 changed="$(git -C "$WORKSPACE" -c core.quotepath=false diff --name-only "origin/$GITHUB_BASE_REF...HEAD")"
+# Scope this PR to the 申论 E2E. Shared code still goes through Rust CI.
+# When unrelated paths are present, the existing wider selection is retained.
+shenlun_scope='^((apps/rust/things/e2e/shenlun\.spec\.ts)|(apps/rust/things/src/web/pages/(shenlun_training|shenlun_ai_panel|ai_composer|mod|question_bank_practice|training)\.rs)|(apps/rust/things/src/adapters/inbound/http/(mod|question_bank|shenlun)\.rs)|(apps/rust/things/src/adapters/outbound/(question_bank_ai|shenlun_ai)\.rs)|(apps/rust/things/src/main\.rs)|(apps/rust/things/src/application/question_bank/(practice|shenlun_grading)\.rs)|(.agents/skills/hyz-shenlun/(SKILL\.md|references/scoring\.md))|(docs/plan/2026-11-13-shenlun-grading-specialized-training-plan\.md)|(apps/rust/things/tools/select-related-e2e\.sh))$'
+if printf '%s\n' "$changed" | grep -qx 'apps/rust/things/e2e/shenlun.spec.ts'; then
+  non_shenlun="$(printf '%s\n' "$changed" | grep -vE "$shenlun_scope" || true)"
+  if [[ -z "$non_shenlun" ]]; then
+    printf '%s\n' e2e/shenlun.spec.ts
+    exit 0
+  fi
+fi
 unrelated="$(printf '%s\n' "$changed" | grep -vE '^((apps/rust/things/src/web/pages/(question_navigation|favorite_flashcard|question_bank_practice|collection_review|training|training_statistics)\.rs)|(apps/rust/things/e2e/(question-bank|favorite-flashcard|question-bank-drill|flashcards)\.spec\.ts)|(apps/rust/things/e2e/support\.ts)|(apps/rust/things/tests/question_bank_drill\.rs)|(apps/rust/things/tools/(check-e2e-suites|frontend-bundle-cache|test-portal-ci)\.py)|(question_bank/collections/xiaop-2026-shuliang/(06-行程问题（二）|07-溶液问题)\.md)|(\.github/workflows/portal-ci\.yml))$' || true)"
 if [[ -z "$unrelated" ]]; then
   printf '%s\n' \

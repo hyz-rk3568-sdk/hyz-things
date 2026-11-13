@@ -121,168 +121,6 @@ fn new_ai_request_id() -> Result<String, String> {
     ))
 }
 
-#[derive(Clone, PartialEq, Eq)]
-struct PendingImage {
-    id: String,
-    name: String,
-    preview: Option<Rc<String>>,
-}
-
-async fn image_preview_data(file: &web_sys::File) -> Option<String> {
-    use base64::Engine as _;
-    let value = wasm_bindgen_futures::JsFuture::from(file.array_buffer())
-        .await
-        .ok()?;
-    let bytes = js_sys::Uint8Array::new(&value).to_vec();
-    Some(format!(
-        "data:{};base64,{}",
-        file.type_(),
-        base64::engine::general_purpose::STANDARD.encode(bytes)
-    ))
-}
-
-#[derive(Properties, PartialEq)]
-struct AiImagePickerProps {
-    endpoint: String,
-    csrf: String,
-    attachments: UseStateHandle<Vec<PendingImage>>,
-    uploading: UseStateHandle<bool>,
-    disabled: bool,
-    testid: &'static str,
-    #[prop_or(false)]
-    compact: bool,
-    children: Children,
-}
-
-#[function_component(AiImagePicker)]
-fn ai_image_picker(props: &AiImagePickerProps) -> Html {
-    let failure = use_state(|| None::<String>);
-    let upload = {
-        let endpoint = props.endpoint.clone();
-        let csrf = props.csrf.clone();
-        let attachments = props.attachments.clone();
-        let uploading = props.uploading.clone();
-        let failure = failure.clone();
-        let disabled = props.disabled;
-        Callback::from(move |files: Vec<web_sys::File>| {
-            if disabled || *uploading {
-                return;
-            }
-            let remaining = 3usize.saturating_sub(attachments.len());
-            let mut selected = Vec::new();
-            for file in files {
-                if selected.len() >= remaining {
-                    break;
-                }
-                if !matches!(file.type_().as_str(), "image/png" | "image/jpeg") {
-                    failure.set(Some("仅支持 JPG 或 PNG 图片".into()));
-                    continue;
-                }
-                if file.size() > (8 * 1024 * 1024) as f64 {
-                    failure.set(Some("每张图片不能超过 8 MiB".into()));
-                    continue;
-                }
-                selected.push(file);
-            }
-            if selected.is_empty() {
-                return;
-            }
-            failure.set(None);
-            uploading.set(true);
-            let attachments = attachments.clone();
-            let uploading = uploading.clone();
-            let failure = failure.clone();
-            let endpoint = endpoint.clone();
-            let csrf = csrf.clone();
-            spawn_local(async move {
-                let mut next = (*attachments).clone();
-                for file in selected {
-                    match upload_question_ai_image(&endpoint, &csrf, file.clone()).await {
-                        Ok(id) => next.push(PendingImage {
-                            id,
-                            name: file.name(),
-                            preview: image_preview_data(&file).await.map(Rc::new),
-                        }),
-                        Err(error) => {
-                            failure.set(Some(error));
-                            break;
-                        }
-                    }
-                }
-                attachments.set(next);
-                uploading.set(false);
-            });
-        })
-    };
-    let onchange = {
-        let upload = upload.clone();
-        Callback::from(move |event: Event| {
-            let input: web_sys::HtmlInputElement = event.target_unchecked_into();
-            let files = input
-                .files()
-                .map(|files| (0..files.length()).filter_map(|i| files.get(i)).collect())
-                .unwrap_or_default();
-            input.set_value("");
-            upload.emit(files);
-        })
-    };
-    let onpaste = Callback::from(move |event: Event| {
-        let event: web_sys::ClipboardEvent = wasm_bindgen::JsCast::unchecked_into(event);
-        let Some(data) = event.clipboard_data() else {
-            return;
-        };
-        let Some(files) = data.files() else {
-            return;
-        };
-        let images: Vec<_> = (0..files.length())
-            .filter_map(|i| files.get(i))
-            .filter(|file| file.type_().starts_with("image/"))
-            .collect();
-        if !images.is_empty() {
-            event.prevent_default();
-            upload.emit(images);
-        }
-    });
-    let picker = html! {
-        <label class="btn btn-ghost btn-sm btn-circle shrink-0 text-base-content/60 hover:text-base-content"
-            title="添加图片（JPG/PNG，最多 3 张，每张 ≤ 8 MiB）" aria-label="添加图片">
-            <input type="file" class="hidden" accept="image/png,image/jpeg" multiple=true
-                disabled={props.disabled || *props.uploading} onchange={onchange}/>
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>
-        </label>
-    };
-    let thumbnails = html! { for props.attachments.iter().map(|image| {
-        let attachments = props.attachments.clone();
-        let id = image.id.clone();
-        html! {
-            <span key={id.clone()} class="relative h-9 w-9 shrink-0 rounded-md border border-base-content/20" title={image.name.clone()}>
-                if let Some(preview) = &image.preview {
-                    <img class="h-full w-full rounded-md object-cover" src={(**preview).clone()} alt={image.name.clone()}/>
-                } else { <span class="text-xs">{"图"}</span> }
-                <button type="button" class="absolute -right-1 -top-1 rounded-full bg-base-300 px-1 text-xs leading-4"
-                    aria-label={format!("移除图片 {}",image.name)} disabled={props.disabled || *props.uploading}
-                    onclick={Callback::from(move |_| attachments.set(attachments.iter().filter(|value| value.id != id).cloned().collect()))}>{"×"}</button>
-            </span>
-        }
-    }) };
-    html! {
-        <div class={if props.compact {"px-1 py-1"} else {"space-y-2 pb-2 px-2"}} data-testid={props.testid} {onpaste}>
-            if props.compact {
-                <div class="flex flex-wrap items-center gap-1 pr-11">{picker}{thumbnails}
-                    if *props.uploading { <span class="loading loading-spinner loading-xs" aria-label="正在上传图片"></span> }
-                    {for props.children.iter()}
-                </div>
-            } else {
-                {for props.children.iter()}
-                <div class="flex flex-wrap items-center gap-2">{picker}{thumbnails}
-                    if *props.uploading { <span class="loading loading-spinner loading-xs" aria-label="正在上传图片"></span> }
-                </div>
-            }
-            if let Some(error) = failure.as_ref() { <p class="text-xs text-error" role="alert">{error.clone()}</p> }
-        </div>
-    }
-}
-
 const ROOT: &str = "/api/v1/question-bank";
 
 #[derive(Default)]
@@ -963,68 +801,6 @@ pub(crate) fn use_question_ai_tab(
     (ai_tab, chosen)
 }
 
-struct AiComposer<'a> {
-    id: &'a str,
-    input_ref: NodeRef,
-    compose_testid: &'a str,
-    input_testid: &'a str,
-    button_testid: &'a str,
-    value: &'a str,
-    placeholder: &'a str,
-    button_label: &'a str,
-    is_stop: bool,
-    disabled: bool,
-    endpoint: String,
-    csrf: String,
-    attachments: UseStateHandle<Vec<PendingImage>>,
-    uploading: UseStateHandle<bool>,
-    picker_disabled: bool,
-    picker_testid: &'static str,
-    oninput: Callback<InputEvent>,
-    onkeydown: Callback<KeyboardEvent>,
-    onclick: Callback<MouseEvent>,
-}
-
-/// One shape for both asking Codex to start a review and sending a follow-up.
-fn ai_composer(props: AiComposer<'_>) -> Html {
-    let oninput = {
-        let callback = props.oninput.clone();
-        Callback::from(move |event: InputEvent| {
-            let input: web_sys::HtmlTextAreaElement = event.target_unchecked_into();
-            let _ = input.style().set_property("height", "auto");
-            let _ = input.style().set_property(
-                "height",
-                &format!("{}px", input.scroll_height().clamp(24, 160)),
-            );
-            callback.emit(event);
-        })
-    };
-    html! {
-        <div class="relative rounded-2xl border border-base-content/15 bg-base-100 transition focus-within:border-primary/50 focus-within:ring-2 focus-within:ring-primary/15"
-            data-testid={props.compose_testid.to_owned()}>
-            <AiImagePicker endpoint={props.endpoint} csrf={props.csrf} attachments={props.attachments}
-                uploading={props.uploading} disabled={props.picker_disabled} testid={props.picker_testid} compact={true}>
-            <textarea ref={props.input_ref} id={props.id.to_owned()} rows="1"
-                class="block h-6 min-w-16 flex-1 resize-none overflow-y-auto border-0 bg-transparent px-1 py-0 text-sm leading-6 focus:outline-none focus:ring-0"
-                data-testid={props.input_testid.to_owned()} maxlength="2000"
-                value={props.value.to_owned()}
-                placeholder={props.placeholder.to_owned()}
-                onkeydown={props.onkeydown}
-                {oninput}/>
-            </AiImagePicker>
-            <div class="absolute right-2 top-1/2 flex -translate-y-1/2 items-center justify-end">
-                <button type="button" class="btn btn-primary btn-sm btn-circle" aria-label={props.button_label.to_owned()} title={props.button_label.to_owned()}
-                    data-testid={props.button_testid.to_owned()} disabled={props.disabled} onclick={props.onclick}>
-                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                        if props.is_stop { <rect x="7" y="7" width="10" height="10" rx="1" fill="currentColor" stroke="none"/> }
-                        else { <path d="M12 19V5M5 12l7-7 7 7"/> }
-                    </svg>
-                </button>
-            </div>
-        </div>
-    }
-}
-
 fn streaming_markdown_complete(text: &str) -> bool {
     let fences = text
         .lines()
@@ -1041,7 +817,7 @@ fn streaming_markdown_complete(text: &str) -> bool {
         && text.matches("\\[").count() == text.matches("\\]").count()
 }
 
-fn ai_draft_key(question_id: &str, kind: &str) -> String {
+pub(super) fn ai_draft_key(question_id: &str, kind: &str) -> String {
     format!("hyz.ai-review.draft.{question_id}.{kind}")
 }
 
@@ -1052,7 +828,7 @@ fn ai_draft_read(key: &str) -> String {
         .unwrap_or_default()
 }
 
-fn ai_draft_write(key: &str, value: &str) {
+pub(super) fn ai_draft_write(key: &str, value: &str) {
     if let Some(storage) =
         web_sys::window().and_then(|window| window.session_storage().ok().flatten())
     {
@@ -1075,6 +851,8 @@ pub(crate) struct QuestionAiReviewProps {
     pub delete_signal: u32,
     #[prop_or_default]
     pub on_delete_availability: Callback<bool>,
+    #[prop_or("analysis")]
+    pub mode: &'static str,
 }
 
 /// The component is mounted only while the AI tab is visible; the native
@@ -1363,6 +1141,7 @@ pub(crate) fn question_ai_review(props: &QuestionAiReviewProps) -> Html {
         let start_images = start_images.clone();
         let uploading_start = uploading_start.clone();
         let start_key = start_key.clone();
+        let grade_mode = props.mode == "grade";
         Callback::from(move |_: ()| {
             if *submitting || *uploading_start {
                 return;
@@ -1410,7 +1189,11 @@ pub(crate) fn question_ai_review(props: &QuestionAiReviewProps) -> Html {
             let endpoint = endpoint.clone();
             let csrf = csrf.clone();
             let draft = (*start_instruction).clone();
-            let instruction = draft.trim().to_owned();
+            let instruction = if grade_mode {
+                format!("【申论批改】\n{}", draft.trim())
+            } else {
+                draft.trim().to_owned()
+            };
             let start_key = start_key.clone();
             let start_instruction = start_instruction.clone();
             let start_images = start_images.clone();
@@ -1534,6 +1317,7 @@ pub(crate) fn question_ai_review(props: &QuestionAiReviewProps) -> Html {
         let follow_key = follow_key.clone();
         let endpoint = format!("{endpoint}/messages");
         let csrf = props.csrf.clone();
+        let grade_mode = props.mode == "grade";
         Callback::from(move |_: ()| {
             if *submitting
                 || *uploading_follow
@@ -1549,8 +1333,15 @@ pub(crate) fn question_ai_review(props: &QuestionAiReviewProps) -> Html {
                 return;
             }
             let draft = (*follow_up).clone();
-            let message = draft.trim().to_owned();
-            if (message.is_empty() && follow_images.is_empty()) || message.chars().count() > 2000 {
+            let message = if grade_mode {
+                format!("【申论批改请求或追问】\n如果以下内容是一份新答案，请按当前题目给出完整批改；如果是针对之前报告的问题，请直接解答，不把问题误认为答卷。用户确认此前的手写转写无误时，可以继续完成评分。\n{}", draft.trim())
+            } else {
+                draft.trim().to_owned()
+            };
+            let message = message.trim().to_owned();
+            if (message.is_empty() && follow_images.is_empty())
+                || message.chars().count() > (if grade_mode { 50_256 } else { 2000 })
+            {
                 return;
             }
             if request_id.is_some()
@@ -1895,7 +1686,7 @@ pub(crate) fn question_ai_review(props: &QuestionAiReviewProps) -> Html {
             <div class="min-h-0 flex-1 space-y-3 overflow-y-auto overscroll-contain touch-pan-y p-4" ref={messages_ref} onscroll={on_messages_scroll} data-testid="question-bank-ai-messages" role="log" aria-label="AI 对话记录" aria-live="polite">
             <div class="space-y-4" data-testid="question-bank-ai-question-content">{props.question_content.clone()}</div>
             <div class="flex items-center justify-between gap-2">
-                <strong>{"AI 解析与追问"}</strong>
+                <strong>{if props.mode=="grade" {"AI 批改与追问"} else {"AI 解析与追问"}}</strong>
                 <span class="text-xs text-base-content/60" data-testid="question-bank-ai-status">
                     {if running { "正在生成" } else { match stream.as_ref().as_ref().map(|v| v.status.as_str()).or_else(|| current.as_ref().map(|v| v.status.as_str())) {
                         Some("complete") => "已完成",
@@ -2051,7 +1842,11 @@ pub(crate) fn question_ai_review(props: &QuestionAiReviewProps) -> Html {
                 </div>
             }
             if can_start {
-                <p class="text-sm text-base-content/60">{"Codex 将根据题目 UUID 从电脑本地题库读取原题、共用材料及图片，独立解析；参考答案仅供参考。"}</p>
+                <p class="text-sm text-base-content/60">{if props.mode=="grade" {
+                    "粘贴作答或上传手写图片。AI 先辨认原图并确认不清楚的文字，再根据原题给出 Markdown 批改报告。"
+                } else {
+                    "AI 根据原题、相关给定材料和你的要求进行解析，来源参考答案仅作参考。"
+                }}</p>
             }
             </div>
             <div class="relative shrink-0 bg-base-100 px-2 pb-3 pt-2" data-testid="question-bank-ai-composer-area">
@@ -2066,10 +1861,10 @@ pub(crate) fn question_ai_review(props: &QuestionAiReviewProps) -> Html {
                         compose_testid: "question-bank-ai-requirements-compose",
                         input_testid: "question-bank-ai-instruction",
                         button_testid: "question-bank-ai-start",
-                        value: start_instruction.as_str(),
-                        placeholder: "输入解析要求（可选）…",
-                        button_label: "开始 AI 解析", is_stop: false,
-                        disabled: *submitting || *uploading_start || request_unresolved || request_uncertain,
+                        value: start_instruction.as_str(), max_length: if props.mode=="grade" {50_000} else {2000}, read_only: false,
+                        placeholder: if props.mode=="grade" {"粘贴申论作答，或上传手写图片…"} else {"输入解析要求（可选）…"},
+                        button_label: if props.mode=="grade" {"发送批改"} else {"开始 AI 解析"}, is_stop: false,
+                        disabled: *submitting || *uploading_start || request_unresolved || request_uncertain || (props.mode=="grade" && start_instruction.trim().is_empty() && start_images.is_empty()),
                         endpoint: format!("{endpoint}/attachments"), csrf: props.csrf.clone(),
                         attachments: start_images.clone(), uploading: uploading_start.clone(),
                         picker_disabled: *submitting, picker_testid: "question-bank-ai-start-images",
@@ -2095,8 +1890,8 @@ pub(crate) fn question_ai_review(props: &QuestionAiReviewProps) -> Html {
                         compose_testid: "question-bank-ai-compose",
                         input_testid: "question-bank-ai-input",
                         button_testid: if running {"question-bank-ai-stop"} else {"question-bank-ai-send"},
-                        value: follow_up.as_str(),
-                        placeholder: "输入消息…",
+                        value: follow_up.as_str(), max_length: if props.mode=="grade" {50_000} else {2000}, read_only: false,
+                        placeholder: if props.mode=="grade" {"追问扣分原因，或发送修改后的答案…"} else {"输入消息…"},
                         button_label: if running {"停止生成"} else {"发送追问"}, is_stop: running,
                         disabled: *submitting || (!running && (*uploading_follow || request_unresolved || request_uncertain || (follow_up.trim().is_empty() && follow_images.is_empty()))),
                         endpoint: format!("{endpoint}/attachments"), csrf: props.csrf.clone(),
