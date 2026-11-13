@@ -82,7 +82,9 @@ fn emit(module: &'static str, job_id: &str, kind: &str, payload: Value) {
 /// Maps only real Codex tool activity. Do not stream agentMessage JSON:
 /// it contains unseen questions, answer keys and explanations.
 pub fn sink(module: &'static str, job_id: String, label: String) -> AiReviewEventSink {
+    let namespace = uuid::Uuid::now_v7().to_string();
     std::sync::Arc::new(move |progress| {
+        let namespace = namespace.clone();
         let job_id = job_id.clone();
         let label = label.clone();
         Box::pin(async move {
@@ -99,7 +101,7 @@ pub fn sink(module: &'static str, job_id: String, label: String) -> AiReviewEven
                     details,
                 } => Some((
                     "tool_started",
-                    json!({"item_id":format!("{label}:{item_id}"),"tool":tool,"details":tagged(details)}),
+                    json!({"item_id":format!("{namespace}:{item_id}"),"tool":tool,"details":tagged(details)}),
                 )),
                 AiReviewProgress::ToolFinished {
                     item_id,
@@ -108,11 +110,11 @@ pub fn sink(module: &'static str, job_id: String, label: String) -> AiReviewEven
                     details,
                 } => Some((
                     "tool_finished",
-                    json!({"item_id":format!("{label}:{item_id}"),"tool":tool,"status":status,"details":tagged(details)}),
+                    json!({"item_id":format!("{namespace}:{item_id}"),"tool":tool,"status":status,"details":tagged(details)}),
                 )),
                 AiReviewProgress::CommandOutputDelta { item_id, text } => Some((
                     "command_output_delta",
-                    json!({"item_id":format!("{label}:{item_id}"),"text":text}),
+                    json!({"item_id":format!("{namespace}:{item_id}"),"text":text}),
                 )),
                 AiReviewProgress::ToolOutputDelta {
                     item_id,
@@ -120,7 +122,7 @@ pub fn sink(module: &'static str, job_id: String, label: String) -> AiReviewEven
                     text,
                 } => Some((
                     "tool_output_delta",
-                    json!({"item_id":format!("{label}:{item_id}"),"tool":tool,"text":text}),
+                    json!({"item_id":format!("{namespace}:{item_id}"),"tool":tool,"text":text}),
                 )),
                 AiReviewProgress::ToolProgress {
                     item_id,
@@ -128,7 +130,7 @@ pub fn sink(module: &'static str, job_id: String, label: String) -> AiReviewEven
                     message,
                 } => Some((
                     "tool_progress",
-                    json!({"item_id":format!("{label}:{item_id}"),"tool":tool,"message":message}),
+                    json!({"item_id":format!("{namespace}:{item_id}"),"tool":tool,"message":message}),
                 )),
                 // Reasoning and final JSON are not an execution log and may reveal answers.
                 _ => None,
