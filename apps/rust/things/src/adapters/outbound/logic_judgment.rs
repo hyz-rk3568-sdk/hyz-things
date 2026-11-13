@@ -1,9 +1,11 @@
 //! Independent logic judgment persistence and question preparation.
 
 use super::data_analysis::CodexConfig;
+use super::generation_events;
 use crate::application::logic_judgment::{
     LogicGenerationPort, LogicGenerationRequest, LogicGenerationTarget,
 };
+use crate::application::question_bank::practice::AiReviewEventSink;
 
 use crate::domain::logic_judgment::{
     validate_shape, GeneratedQuestion, QUIZ_QUESTIONS, QUIZ_SECONDS,
@@ -507,12 +509,17 @@ impl LogicJudgmentService {
             }
             return Err(error(e));
         }
+        generation_events::start("logic-judgment", &id);
         let service = self.clone();
         let job = id.clone();
         tokio::spawn(async move {
             if let Err(message) = service.prepare_paper(&job, &prompt).await {
+                generation_events::finish("logic-judgment", &job, None, false);
                 let _=sqlx::query("UPDATE logic_judgment_jobs SET state='failed',message=? WHERE id=? AND state='running'")
                     .bind(message).bind(&job).execute(&service.pool).await;
+            } else {
+                let ready = service.progress(&job).await.ok().and_then(|p| p.run_id);
+                generation_events::finish("logic-judgment", &job, ready.as_deref(), true);
             }
         });
         Ok(id)
@@ -521,7 +528,7 @@ impl LogicJudgmentService {
         for attempt in 0..3 {
             let seed = tie(attempt, job);
             let plan = self.plan(seed).await?;
-            let questions = self.generate(&plan, user_prompt).await?;
+            let questions = self.generate(job, &plan, user_prompt).await?;
             match self.commit_paper(Some(job), &plan, questions).await {
                 Ok(_) => return Ok(()),
                 Err(e) if e == CONFLICT && attempt < 2 => continue,
@@ -532,6 +539,7 @@ impl LogicJudgmentService {
     }
     async fn generate(
         &self,
+        job: &str,
         plan: &[Target],
         user_prompt: &str,
     ) -> Result<Vec<GeneratedQuestion>, String> {
@@ -558,7 +566,12 @@ impl LogicJudgmentService {
             return Err("服务正在停止".into());
         }
         let cancellation = watch::channel(false).0;
-        let generation = generator.generate(request, cancellation.clone());
+        generation_events::phase("logic-judgment", job, "Codex 正在处理已选 Flashcard");
+        let generation = generator.generate_stream(
+            request,
+            cancellation.clone(),
+            generation_events::sink("logic-judgment", job.to_owned(), "出题".into()),
+        );
         tokio::pin!(generation);
         let questions = tokio::select! {
             result=&mut generation=>result?,
@@ -647,7 +660,9 @@ impl LogicJudgmentService {
         let now = now_ms();
         sqlx::query("UPDATE logic_judgment_runs SET status='active',started_at_ms=?,deadline_at_ms=? WHERE id=? AND status='prepared'")
             .bind(now).bind(now+QUIZ_SECONDS as i64*1000).bind(id).execute(&self.pool).await.map_err(error)?;
-        self.run(id).await
+        let active = self.run(id).await?;
+        generation_events::clear_run("logic-judgment", id);
+        Ok(active)
     }
     /// Match data-analysis: server-persisted pause survives navigation and restarts.
     pub async fn pause_toggle(&self, id: &str) -> Result<RunView, String> {
@@ -850,6 +865,20 @@ impl LogicGenerationPort for CodexConfig {
         request: LogicGenerationRequest,
         cancellation: watch::Sender<bool>,
     ) -> Result<Vec<GeneratedQuestion>, String> {
+        self.generate_stream(
+            request,
+            cancellation,
+            Arc::new(|_| Box::pin(async { Ok(()) })),
+        )
+        .await
+    }
+
+    async fn generate_stream(
+        &self,
+        request: LogicGenerationRequest,
+        cancellation: watch::Sender<bool>,
+        sink: AiReviewEventSink,
+    ) -> Result<Vec<GeneratedQuestion>, String> {
         // The immutable contract, server-selected cards and user preferences
         // follow the same explicit boundaries as data analysis.
         let prompt = format!(
@@ -879,7 +908,7 @@ correct_answer 是原卡片的正确答案；back 为空表示未提供个人解
             _=cancelled.wait_for(|value|*value)=>return Err("服务正在停止".into()),
         };
         let output = session
-            .turn_cancellable_with_schema(&prompt, &[], cancellation, output_schema())
+            .turn_cancellable_with_schema_stream(&prompt, &[], cancellation, output_schema(), sink)
             .await?;
         #[derive(Deserialize)]
         #[serde(deny_unknown_fields)]
@@ -1755,7 +1784,7 @@ mod favorite_metadata_tests {
         let service = LogicJudgmentService::with_generator(pool, Some(Arc::new(AnswerContext)));
         let plan = service.plan(1).await.unwrap();
         assert_eq!(
-            service.generate(&plan, "").await.unwrap().len(),
+            service.generate("test-job", &plan, "").await.unwrap().len(),
             QUIZ_QUESTIONS
         );
     }

@@ -11,6 +11,7 @@ pub mod tailscale;
 
 pub mod ai_attachment_receiver;
 pub mod data_analysis;
+pub mod generation_events;
 pub mod logic_judgment;
 
 pub mod codex_app_server;

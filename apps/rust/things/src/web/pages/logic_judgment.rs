@@ -175,6 +175,7 @@ pub(crate) fn logic_judgment_training(props: &LogicJudgmentProps) -> Html {
     let run = use_state(|| None::<LogicRun>);
     let result = use_state(|| None::<LogicResult>);
     let job = use_state(|| None::<String>);
+    let activity_job = use_state(|| None::<String>);
     let progress = use_state(String::new);
     let error = use_state(|| None::<String>);
     let busy = use_state(|| false);
@@ -234,6 +235,7 @@ pub(crate) fn logic_judgment_training(props: &LogicJudgmentProps) -> Html {
         });
     }
     {
+        let activity_job = activity_job.clone();
         let (status, unfinished, history, statistics, prompt, job, error) = (
             status.clone(),
             unfinished.clone(),
@@ -264,6 +266,9 @@ pub(crate) fn logic_judgment_training(props: &LogicJudgmentProps) -> Html {
                 }
                 match loaded {
                     Ok((state, pending, records, settings)) => {
+                        if let Some(id) = &state.preparing_job_id {
+                            activity_job.set(Some(id.clone()));
+                        }
                         job.set(state.preparing_job_id.clone());
                         status.set(Some(state));
                         unfinished.set(pending);
@@ -333,6 +338,7 @@ pub(crate) fn logic_judgment_training(props: &LogicJudgmentProps) -> Html {
         });
     }
     let action = {
+        let activity_job = activity_job.clone();
         let (run, result, job, error, busy, lock, current, reload, offset, prompt, history_forced) = (
             run.clone(),
             result.clone(),
@@ -383,6 +389,7 @@ pub(crate) fn logic_judgment_training(props: &LogicJudgmentProps) -> Html {
                 history_forced.clone(),
             );
             let study_clock = study_clock.clone();
+            let activity_job = activity_job.clone();
             spawn_local(async move {
                 let outcome = async {
                     match command {
@@ -394,11 +401,13 @@ pub(crate) fn logic_judgment_training(props: &LogicJudgmentProps) -> Html {
                                 "出题",
                             )
                             .await?;
+                            activity_job.set(Some(task.job_id.clone()));
                             job.set(Some(task.job_id));
                         }
                         LogicAction::Open(id) => {
                             history_forced.set(false);
                             let active = enter_drill_run(root, seconds, &id, &csrf).await?;
+                            activity_job.set(None);
                             if active.status == "submitted" {
                                 let score = read_drill_result(root, &id).await?;
                                 result.set(Some(score));
@@ -822,6 +831,12 @@ pub(crate) fn logic_judgment_training(props: &LogicJudgmentProps) -> Html {
                             </div>
                         </div>
                     </details>
+                    if job.is_some() {
+                        <div class="rounded-box bg-base-200 p-3 text-sm" role="status" data-testid={format!("{prefix}-progress")}>{if progress.is_empty() {"正在恢复出题任务…".to_owned()} else {(*progress).clone()}}</div>
+                    }
+                    if let Some(activity_id) = (*activity_job).as_ref() {
+                        <GenerationActivity module={if props.quantitative {"quantitative-relations"} else {"logic-judgment"}} job_id={activity_id.clone()} test_prefix={prefix}/>
+                    }
                     <TrainingMetrics answered={answered} correct={correct} prefix={prefix} />
                     <details class="min-w-0 max-w-full overflow-hidden rounded-box border border-base-content/15 p-3" data-testid={format!("{prefix}-statistics")}>
                         <summary class="cursor-pointer font-semibold">{format!("全部卡片（{}）",statistics.len())}</summary>
@@ -861,9 +876,6 @@ pub(crate) fn logic_judgment_training(props: &LogicJudgmentProps) -> Html {
                                 </div>
                             </div>
                         </div>
-                    }
-                    if job.is_some() {
-                        <div class="rounded-box bg-base-200 p-3 text-sm" role="status" data-testid={format!("{prefix}-progress")}>{if progress.is_empty() {"正在恢复出题任务…".to_owned()} else {(*progress).clone()}}</div>
                     }
                     {alert}
                     if let Some(state)=status.as_ref() {
