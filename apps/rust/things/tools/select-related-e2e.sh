@@ -14,9 +14,8 @@ cd -- "$WORKSPACE"
 changed="$(git -C "$WORKSPACE" -c core.quotepath=false diff --name-only "origin/$GITHUB_BASE_REF...HEAD")"
 # Scope this PR to the 申论 E2E. Shared code still goes through Rust CI.
 # When unrelated paths are present, the existing wider selection is retained.
-shenlun_scope='^((apps/rust/things/e2e/shenlun\.spec\.ts)|(apps/rust/things/src/web/pages/(shenlun_training|shenlun_ai_panel|ai_composer|mod|question_bank_practice|training)\.rs)|(apps/rust/things/src/adapters/inbound/http/(mod|question_bank|shenlun)\.rs)|(apps/rust/things/src/adapters/outbound/(question_bank_ai|shenlun_ai)\.rs)|(apps/rust/things/src/main\.rs)|(apps/rust/things/src/application/question_bank/(practice|shenlun_grading)\.rs)|(\.agents/skills/hyz-shenlun/(SKILL\.md|references/(scoring|xiaoti|dazuowen)\.md))|(docs/plan/2026-11-13-shenlun-grading-specialized-training-plan\.md)|(apps/rust/things/tools/select-related-e2e\.sh))$'
-# Skill-only changes also require just the Shenlun E2E suite.
-if printf '%s\n' "$changed" | grep -Eq '^(apps/rust/things/e2e/shenlun\.spec\.ts|\.agents/skills/hyz-shenlun/(SKILL\.md|references/(scoring|xiaoti|dazuowen)\.md))$'; then
+shenlun_scope='^((apps/rust/things/e2e/shenlun\.spec\.ts)|(apps/rust/things/src/web/pages/(shenlun_training|shenlun_ai_panel|ai_composer|mod|question_bank_practice|training)\.rs)|(apps/rust/things/src/adapters/inbound/http/(mod|question_bank|shenlun)\.rs)|(apps/rust/things/src/adapters/outbound/(question_bank_ai|shenlun_ai)\.rs)|(apps/rust/things/src/main\.rs)|(apps/rust/things/src/application/question_bank/(practice|shenlun_grading)\.rs)|(.agents/skills/hyz-shenlun/(SKILL\.md|references/scoring\.md))|(docs/plan/2026-11-13-shenlun-grading-specialized-training-plan\.md)|(apps/rust/things/tools/select-related-e2e\.sh))$'
+if printf '%s\n' "$changed" | grep -qx 'apps/rust/things/e2e/shenlun.spec.ts'; then
   non_shenlun="$(printf '%s\n' "$changed" | grep -vE "$shenlun_scope" || true)"
   if [[ -z "$non_shenlun" ]]; then
     printf '%s\n' e2e/shenlun.spec.ts
