@@ -160,7 +160,7 @@ test('批改复用 QuestionAiReview 的 Markdown、追问和删除，不创建�
   await expect(page.getByTestId('question-bank-ai-messages')).toContainText('练习参考分');
   await page.getByTestId('question-bank-ai-input').fill('为什么这道题要明确执行主体？');
   await page.getByTestId('question-bank-ai-send').click();
-  await expect.poll(() => followMessage).toContain('申论批改交流');
+  await expect.poll(() => followMessage).toContain('申论批改请求或追问');
   await page.getByTestId('shenlun-mode-ai').click();
   await expect(page.getByTestId('question-bank-ai-messages')).toContainText('应补充执行主体');
   await expect(page.getByTestId('shenlun-job-history')).toHaveCount(0);
