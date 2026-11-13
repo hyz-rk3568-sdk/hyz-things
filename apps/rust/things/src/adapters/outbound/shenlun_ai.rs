@@ -473,7 +473,12 @@ impl ShenlunAiService {
         if result.rows_affected() != 1 {
             return Err(ShenlunAiError::Conflict);
         }
-        Ok(self.bank.shenlun_attempt(attempt_id).await?)
+        let saved = self.bank.shenlun_attempt(attempt_id).await?;
+        // Transcription is a temporary input aid, not permanent practice history.
+        // The user-confirmed text is now stored on the attempt. OCR output is no
+        // longer needed; cleanup failures must not lose that confirmed answer.
+        let _ = self.delete_record(&input.job_id).await;
+        Ok(saved)
     }
 
     async fn run(
