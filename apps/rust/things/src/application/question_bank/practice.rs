@@ -168,6 +168,7 @@ pub struct QuestionAiLocator {
     pub question_id: String,
     pub paper_id: String,
     pub paper_path: String,
+    pub subject: String,
     pub material_ids: Vec<String>,
     pub stem_fingerprint: String,
 }
@@ -1121,6 +1122,7 @@ impl QuestionBankApplication {
             question_id: question_id.to_owned(),
             paper_id: content.paper_id,
             paper_path: indexed.path,
+            subject: indexed.summary.subject,
             material_ids: content.question.materials,
             stem_fingerprint,
         })
