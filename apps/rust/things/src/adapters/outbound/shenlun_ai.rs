@@ -56,7 +56,10 @@ fn fingerprint(request: &ShenlunJobRequest, attempt: &ShenlunAttempt) -> String 
     hash.update(serde_json::to_vec(request).unwrap_or_default());
     hash.update(attempt.source_hash.as_bytes());
     hash.update(attempt.revision.to_le_bytes());
-    hash.finalize().iter().map(|byte| format!("{byte:02x}")).collect()
+    hash.finalize()
+        .iter()
+        .map(|byte| format!("{byte:02x}"))
+        .collect()
 }
 fn record(row: &sqlx::sqlite::SqliteRow) -> Result<ShenlunJob, ShenlunAiError> {
     let result_json: Option<String> = row
