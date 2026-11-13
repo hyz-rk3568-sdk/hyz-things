@@ -1338,7 +1338,7 @@ pub(crate) fn question_ai_review(props: &QuestionAiReviewProps) -> Html {
             } else {
                 draft.trim().to_owned()
             };
-            if (message.is_empty() && follow_images.is_empty()) || message.chars().count() > if grade_mode {50_032} else {2000} {
+            if (message.is_empty() && follow_images.is_empty()) || message.chars().count() > (if grade_mode {50_256} else {2000}) {
                 return;
             }
             if request_id.is_some()
