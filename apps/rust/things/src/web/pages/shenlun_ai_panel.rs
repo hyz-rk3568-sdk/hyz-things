@@ -78,6 +78,7 @@ pub(super) fn shenlun_ai_panel(props: &ShenlunAiPanelProps) -> Html {
         let busy = busy.clone();
         let error = error.clone();
         let result = result.clone();
+        let uploading = uploading.clone();
         let csrf = props.csrf.clone();
         let question_id = props.question_id.clone();
         Callback::from(move |_| {
