@@ -25,6 +25,7 @@ enum TrainingMode {
     QuestionBankPaper,
     QuestionBankModule,
     QuestionBankDrill,
+    Shenlun,
     Comprehensive,
     LogicJudgment,
     QuantitativeRelations,
@@ -135,6 +136,7 @@ fn training_workspace(props: &TrainingWorkspaceProps) -> Html {
         TrainingMode::QuestionBankPaper
         | TrainingMode::QuestionBankModule
         | TrainingMode::QuestionBankDrill => "question_bank",
+        TrainingMode::Shenlun => "shenlun",
         TrainingMode::Comprehensive => "comprehensive",
         TrainingMode::LogicJudgment => "logic",
         TrainingMode::QuantitativeRelations => "quantitative",
@@ -226,6 +228,14 @@ fn training_workspace(props: &TrainingWorkspaceProps) -> Html {
             mode.set(TrainingMode::QuestionBankDrill);
         })
     };
+    let choose_shenlun = {
+        let mode = mode.clone();
+        let training_immersive = training_immersive.clone();
+        Callback::from(move |_| {
+            training_immersive.set(false);
+            mode.set(TrainingMode::Shenlun);
+        })
+    };
     let choose_comprehensive = {
         let mode = mode.clone();
         let training_immersive = training_immersive.clone();
@@ -269,7 +279,7 @@ fn training_workspace(props: &TrainingWorkspaceProps) -> Html {
         })
     };
     html! {
-        <div ref={shell} class={classes!("training-shell",matches!(*mode,TrainingMode::QuestionBankPaper|TrainingMode::QuestionBankModule|TrainingMode::QuestionBankDrill).then_some("question-bank-shell"))} data-testid="training-layout">
+        <div ref={shell} class={classes!("training-shell",matches!(*mode,TrainingMode::QuestionBankPaper|TrainingMode::QuestionBankModule|TrainingMode::QuestionBankDrill|TrainingMode::Shenlun).then_some("question-bank-shell"))} data-testid="training-layout">
             if !*training_immersive {
                 <header class="training-topbar" data-testid="training-header">
                     <div class="training-topbar-inner">
@@ -289,6 +299,7 @@ fn training_workspace(props: &TrainingWorkspaceProps) -> Html {
                         <button type="button" class="training-mode" data-testid="training-mode-question-bank-paper" aria-pressed={(*mode == TrainingMode::QuestionBankPaper).to_string()} onclick={choose_question_bank_paper}>{"套卷训练"}</button>
                         <button type="button" class="training-mode" data-testid="training-mode-question-bank-module" aria-pressed={(*mode == TrainingMode::QuestionBankModule).to_string()} onclick={choose_question_bank_module}>{"模块训练"}</button>
                         <button type="button" class="training-mode" data-testid="training-mode-question-bank-drill" aria-pressed={(*mode == TrainingMode::QuestionBankDrill).to_string()} onclick={choose_question_bank_drill}>{"专项练习"}</button>
+                        <button type="button" class="training-mode" data-testid="training-mode-shenlun" aria-pressed={(*mode == TrainingMode::Shenlun).to_string()} onclick={choose_shenlun}>{"申论批改"}</button>
                         <button type="button" class="training-mode" data-testid="training-mode-comprehensive" aria-pressed={(*mode == TrainingMode::Comprehensive).to_string()} onclick={choose_comprehensive}>{"资料分析"}</button>
                         <button type="button" class="training-mode" data-testid="training-mode-logic-judgment" aria-pressed={(*mode == TrainingMode::LogicJudgment).to_string()} onclick={choose_logic}>{"判断推理"}</button>
                         <button type="button" class="training-mode" data-testid="training-mode-quantitative" aria-pressed={(*mode == TrainingMode::QuantitativeRelations).to_string()} onclick={choose_quantitative}>{"数量关系"}</button>
@@ -330,6 +341,8 @@ fn training_workspace(props: &TrainingWorkspaceProps) -> Html {
                     on_paper_pause_change={on_paper_pause_change.clone()}
                     quantitative={*mode == TrainingMode::QuantitativeRelations}
                     show_history={false} />
+            } else if *mode == TrainingMode::Shenlun {
+                <ShenlunTraining on_immersive_change={on_immersive_change.clone()} />
             } else if *mode == TrainingMode::Comprehensive {
                 <ComprehensiveTraining csrf={props.csrf.clone()} show_history={false} on_immersive_change={on_immersive_change} on_paper_pause_change={on_paper_pause_change} on_exit={exit_comprehensive} />
             }
