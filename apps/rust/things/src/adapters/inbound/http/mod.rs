@@ -3322,10 +3322,18 @@ mod tests {
     fn question_bank_practice_mutations_have_exact_post_allowlist() {
         let id = "019a3d8e-1b32-7a60-9c83-f34217a6e210";
         assert!(is_post_path("/api/v1/question-bank/shenlun/attempts"));
-        assert!(is_post_path("/api/v1/question-bank/shenlun/attempts/11111111-1111-4111-8111-111111111111/draft"));
-        assert!(is_post_path("/api/v1/question-bank/shenlun/attempts/11111111-1111-4111-8111-111111111111/submit"));
-        assert!(!is_post_path("/api/v1/question-bank/shenlun/attempts/not-an-id/draft"));
-        assert!(!is_post_path("/api/v1/question-bank/shenlun/attempts/11111111-1111-4111-8111-111111111111/unsafe"));
+        assert!(is_post_path(
+            "/api/v1/question-bank/shenlun/attempts/11111111-1111-4111-8111-111111111111/draft"
+        ));
+        assert!(is_post_path(
+            "/api/v1/question-bank/shenlun/attempts/11111111-1111-4111-8111-111111111111/submit"
+        ));
+        assert!(!is_post_path(
+            "/api/v1/question-bank/shenlun/attempts/not-an-id/draft"
+        ));
+        assert!(!is_post_path(
+            "/api/v1/question-bank/shenlun/attempts/11111111-1111-4111-8111-111111111111/unsafe"
+        ));
         assert!(is_post_path("/api/v1/question-bank/practice/sessions"));
         assert!(is_post_path(&format!(
             "/api/v1/question-bank/practice/sessions/{id}/submit"
