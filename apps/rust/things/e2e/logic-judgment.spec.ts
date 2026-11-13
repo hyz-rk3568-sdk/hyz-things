@@ -594,7 +594,7 @@ for (const [module, prefix, mode] of [
 ] as const) {
     const paper = {
       id:'prepared-paper', status:'prepared', server_now_ms:Date.now(),
-      started_at_ms:null, deadline_at_ms:null, duration_seconds:600,
+      started_at_ms:null, deadline_at_ms:null, duration_seconds:module==='quantitative-relations'?900:600,
       paused_remaining_ms:null,
       questions:Array.from({length:10},(_,n)=>({question:'题 '+(n+1),options:['甲','乙','丙','丁']})),
       answers:Array(10).fill(null),
