@@ -1334,7 +1334,7 @@ pub(crate) fn question_ai_review(props: &QuestionAiReviewProps) -> Html {
             }
             let draft = (*follow_up).clone();
             let message = if grade_mode {
-                format!("【申论批改交流】\n{}", draft.trim())
+                format!("【申论批改请求或追问】\n如果以下内容是一份新答案，请按当前题目给出完整批改；如果是针对之前报告的问题，请直接解答，不把问题误认为答卷。\n{}", draft.trim())
             } else {
                 draft.trim().to_owned()
             };
