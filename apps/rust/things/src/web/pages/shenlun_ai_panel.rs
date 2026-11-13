@@ -225,6 +225,9 @@ pub(super) fn shenlun_ai_panel(props: &ShenlunAiPanelProps) -> Html {
         let task_busy=task_busy.clone();
         let error=error.clone();
         let on_confirm=props.on_confirm.clone();
+        let jobs=jobs.clone();
+        let refresh=refresh.clone();
+        let confirm_uncertain=confirm_uncertain.clone();
         let start_job=start_job.clone();
         Callback::from(move |_:MouseEvent| {
             if *task_busy || *uploading {return;}
@@ -257,9 +260,11 @@ pub(super) fn shenlun_ai_panel(props: &ShenlunAiPanelProps) -> Html {
             let task_busy=task_busy.clone();
             let error=error.clone();
             let on_confirm=on_confirm.clone();
-            let start_job=start_job.clone();
+            let jobs=jobs.clone();
+            let refresh=refresh.clone();
+            let confirm_uncertain=confirm_uncertain.clone();
             spawn_local(async move {
-                let result:Result<ShenlunAttempt,String>=async {
+                let result:Result<(ShenlunAttempt,ShenlunJob),String>=async {
                     let saved=if text!=attempt.text {
                         let body=SaveShenlunDraft{expected_revision:attempt.revision,text};
                         post_json_response::<_,ShenlunAttempt>(
@@ -267,15 +272,29 @@ pub(super) fn shenlun_ai_panel(props: &ShenlunAiPanelProps) -> Html {
                             &csrf,&body,"保存批改输入"
                         ).await?
                     }else{attempt.clone()};
-                    post_json_response::<_,ShenlunAttempt>(
+                    let submitted:ShenlunAttempt=post_json_response(
                         &format!("/api/v1/question-bank/shenlun/attempts/{}/submit",saved.id),
                         &csrf,&EmptyRequest{},"冻结批改原稿"
-                    ).await
+                    ).await?;
+                    let request_id=super::shenlun_training::new_shenlun_attempt_id()?;
+                    let request=ShenlunJobRequest{
+                        request_id,kind:"grade".into(),attachments:Vec::new(),
+                        confirm_uncertain:*confirm_uncertain,
+                    };
+                    let job:ShenlunJob=post_json_response(
+                        &format!("/api/v1/question-bank/shenlun/attempts/{}/jobs",submitted.id),
+                        &csrf,&request,"申论 AI 批改"
+                    ).await?;
+                    Ok((submitted,job))
                 }.await;
                 match result {
-                    Ok(submitted)=>{
+                    Ok((submitted,job))=>{
                         on_confirm.emit(submitted);
-                        start_job.emit(("grade".into(),Vec::new()));
+                        let mut current=(*jobs).clone();
+                        current.retain(|item|item.id!=job.id);
+                        current.insert(0,job);
+                        jobs.set(current);
+                        refresh.set(refresh.wrapping_add(1));
                     }
                     Err(message)=>error.set(Some(message)),
                 }
@@ -533,7 +552,7 @@ pub(super) fn shenlun_ai_panel(props: &ShenlunAiPanelProps) -> Html {
                         let selected_job=selected_job.clone();
                         html!{
                             <button key={id.clone()} type="button"
-                                class={classes!("btn","btn-sm",if selected_job.as_ref()==Some(&id) {"btn-primary"} else {"btn-outline"})}
+                                class={classes!("btn","btn-sm",if (*selected_job).as_ref()==Some(&id) {"btn-primary"} else {"btn-outline"})}
                                 data-testid="shenlun-job-history"
                                 onclick={Callback::from(move |_|selected_job.set(Some(id.clone())))}>
                                 {format!("{} · {}",grade_score(job),job.status)}
