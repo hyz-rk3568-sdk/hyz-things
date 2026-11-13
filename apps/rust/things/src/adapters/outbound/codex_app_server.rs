@@ -753,6 +753,16 @@ impl CodexSession {
             .await
     }
 
+    /// Existing 4x5 data-analysis generation schema, with the same tool stream.
+    pub async fn turn_cancellable_stream(
+        &mut self,
+        prompt: &str,
+        cancellation: watch::Sender<bool>,
+        sink: AiReviewEventSink,
+    ) -> Result<String, String> {
+        self.turn_cancellable_inner(prompt, &[], cancellation, Some(output_schema()), Some(sink)).await
+    }
+
     /// Same Codex JSON Schema contract as other generation turns, with
     /// tool execution activity forwarded to a transient preparation sink.
     pub async fn turn_cancellable_with_schema_stream(
