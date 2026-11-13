@@ -402,11 +402,27 @@ pub(super) async fn ai_start(
     State(state): State<AppState>,
     headers: HeaderMap,
     service: AiService,
+    bank: Service,
     Path(question_id): Path<String>,
     payload: Result<Json<AiStartRequest>, JsonRejection>,
 ) -> Response {
     if let Err(response) = authorize_sensitive_control_admin(&state, &headers).await {
         return response;
+    }
+    // Preserve the legacy objective-review body limit. Only imported 申论
+    // source questions can carry a long handwritten/typed essay.
+    let oversized = headers
+        .get(header::CONTENT_LENGTH)
+        .and_then(|value| value.to_str().ok())
+        .and_then(|value| value.parse::<usize>().ok())
+        .is_some_and(|length| length > 8 * 1024);
+    if oversized {
+        let is_shenlun = matches!(&bank, Some(Extension(app)) if
+            matches!(app.question_ai_locator(&question_id).await, Ok(locator) if locator.subject == "shenlun")
+        );
+        if !is_shenlun {
+            return ControlJsonError::PayloadTooLarge.response();
+        }
     }
     let request = match decode_control_json(payload) {
         Ok(request) => request,
