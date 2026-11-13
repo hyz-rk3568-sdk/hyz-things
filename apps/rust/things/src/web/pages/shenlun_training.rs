@@ -1,7 +1,9 @@
 //! 申论批改：与行测客观题并列的真题选择、材料阅读入口。
 //! 不展示来源参考答案；草稿与交卷使用申论独立 API，评分尚待接入。
 use super::*;
-use hyz_things::domain::question_bank::{CreateShenlunAttempt, PaperSummary, PaperView, QuestionView, SaveShenlunDraft, ShenlunAttempt};
+use hyz_things::domain::question_bank::{
+    CreateShenlunAttempt, PaperSummary, PaperView, QuestionView, SaveShenlunDraft, ShenlunAttempt,
+};
 
 #[derive(Properties, PartialEq)]
 pub(super) struct ShenlunTrainingProps {
@@ -31,7 +33,7 @@ fn new_shenlun_attempt_id() -> Result<String, String> {
     bytes[6] = (bytes[6] & 0x0f) | 0x40;
     bytes[8] = (bytes[8] & 0x3f) | 0x80;
     Ok(format!(
-        "{:02x}{:02x}{:02x}{:02x}-{:02x}{:02x}-{:02x}{:02x}-{:02x}{:02x}-{:02x}{:02x}{:02x}{:02x}{:02x}{:02x}{:02x}{:02x}",
+        "{:02x}{:02x}{:02x}{:02x}-{:02x}{:02x}-{:02x}{:02x}-{:02x}{:02x}-{:02x}{:02x}{:02x}{:02x}{:02x}{:02x}",
         bytes[0], bytes[1], bytes[2], bytes[3],
         bytes[4], bytes[5], bytes[6], bytes[7],
         bytes[8], bytes[9], bytes[10], bytes[11],
@@ -58,7 +60,9 @@ pub(super) fn shenlun_training(props: &ShenlunTrainingProps) -> Html {
     let saving = use_state(|| false);
     let draft_error = use_state(|| None::<String>);
     let question_key = (*paper).as_ref().and_then(|p| {
-        p.questions.get(*selected).map(|question| (p.id.clone(), question.id.clone()))
+        p.questions
+            .get(*selected)
+            .map(|question| (p.id.clone(), question.id.clone()))
     });
     {
         let attempt = attempt.clone();
@@ -85,8 +89,11 @@ pub(super) fn shenlun_training(props: &ShenlunTrainingProps) -> Html {
                     }
                     match result {
                         Ok(items) => {
-                            let active = items.iter().find(|item| item.status == "draft")
-                                .or_else(|| items.first()).cloned();
+                            let active = items
+                                .iter()
+                                .find(|item| item.status == "draft")
+                                .or_else(|| items.first())
+                                .cloned();
                             if let Some(record) = active.as_ref() {
                                 draft.set(record.text.clone());
                             }
@@ -110,9 +117,9 @@ pub(super) fn shenlun_training(props: &ShenlunTrainingProps) -> Html {
         let saving = saving.clone();
         let draft_error = draft_error.clone();
         use_effect_with((snapshot.clone(), text.clone(), blocked), move |_| {
-            let pending = if let Some(record) = snapshot.filter(|record| {
-                record.status == "draft" && record.text != text && !blocked
-            }) {
+            let pending = if let Some(record) = snapshot
+                .filter(|record| record.status == "draft" && record.text != text && !blocked)
+            {
                 Some(gloo_timers::callback::Timeout::new(900, move || {
                     saving.set(true);
                     let attempt = attempt.clone();
@@ -131,9 +138,8 @@ pub(super) fn shenlun_training(props: &ShenlunTrainingProps) -> Html {
                         .await;
                         match result {
                             Ok(saved) => attempt.set(Some(saved)),
-                            Err(message) => draft_error.set(Some(format!(
-                                "草稿未保存，请修改或重试：{message}"
-                            ))),
+                            Err(message) => draft_error
+                                .set(Some(format!("草稿未保存，请修改或重试：{message}"))),
                         }
                         saving.set(false);
                     });
@@ -260,7 +266,11 @@ pub(super) fn shenlun_training(props: &ShenlunTrainingProps) -> Html {
                 let result: Result<ShenlunAttempt, String> = post_json_response(
                     "/api/v1/question-bank/shenlun/attempts",
                     &csrf,
-                    &CreateShenlunAttempt { request_id, paper_id, question_id },
+                    &CreateShenlunAttempt {
+                        request_id,
+                        paper_id,
+                        question_id,
+                    },
                     "开始申论作答",
                 )
                 .await;
@@ -300,7 +310,10 @@ pub(super) fn shenlun_training(props: &ShenlunTrainingProps) -> Html {
             let csrf = csrf.clone();
             spawn_local(async move {
                 let result: Result<ShenlunAttempt, String> = post_json_response(
-                    &format!("/api/v1/question-bank/shenlun/attempts/{}/submit", record.id),
+                    &format!(
+                        "/api/v1/question-bank/shenlun/attempts/{}/submit",
+                        record.id
+                    ),
                     &csrf,
                     &EmptyRequest {},
                     "提交申论作答",
@@ -350,7 +363,8 @@ pub(super) fn shenlun_training(props: &ShenlunTrainingProps) -> Html {
         Callback::from(move |_| region.set("湖南".into()))
     };
 
-    let unsaved = (*attempt).as_ref()
+    let unsaved = (*attempt)
+        .as_ref()
         .is_some_and(|record| record.status == "draft" && record.text != *draft);
     let navigation_locked = *saving || *attempt_busy || unsaved;
     if let Some(current) = (*paper).as_ref() {
@@ -454,12 +468,13 @@ pub(super) fn shenlun_training(props: &ShenlunTrainingProps) -> Html {
                                             let item = item.clone();
                                             let select = select_attempt.clone();
                                             let label = if item.status == "submitted" {"已交卷"} else {"草稿"};
+                                            let revision = item.revision;
                                             html! {
                                                 <button type="button" key={item.id.clone()}
                                                     class="btn btn-ghost btn-xs"
                                                     disabled={navigation_locked}
                                                     onclick={Callback::from(move |_| select.emit(item.clone()))}>
-                                                    {format!("{} · v{}", label, item.revision)}
+                                                    {format!("{} · v{}", label, revision)}
                                                 </button>
                                             }
                                         })}
