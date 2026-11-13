@@ -1307,7 +1307,11 @@ test('data analysis shows parallel job activity and clears it when claimed', asy
     const path=new URL(route.request().url()).pathname;
     if(path.endsWith('/prepare/analysis-job/events')){
       await route.fulfill({status:200,contentType:'text/event-stream',
-        body:'event: snapshot\ndata: '+JSON.stringify(activity('analysis-job'))+'\n\n'});
+        body:'event: snapshot\ndata: '+JSON.stringify({job_id:'analysis-job',seq:3,status:'ready',events:[
+          {seq:1,kind:'tool_started',payload:{item_id:'out:cmd',tool:'commandExecution',details:{command:'cat flashcards/cards.md',source:'第1篇'}}},
+          {seq:2,kind:'command_output_delta',payload:{item_id:'out:cmd',text:'卡片已读取'}},
+          {seq:3,kind:'tool_finished',payload:{item_id:'out:cmd',status:'completed',details:{source:'第1篇'}}},
+        ]})+'\n\n'});
       return;
     }
     let value: unknown = {};
