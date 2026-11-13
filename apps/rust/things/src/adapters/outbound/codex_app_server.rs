@@ -753,6 +753,19 @@ impl CodexSession {
             .await
     }
 
+    /// Same Codex JSON Schema contract as other generation turns, with
+    /// tool execution activity forwarded to a transient preparation sink.
+    pub async fn turn_cancellable_with_schema_stream(
+        &mut self,
+        prompt: &str,
+        images: &[String],
+        cancellation: watch::Sender<bool>,
+        schema: Value,
+        sink: AiReviewEventSink,
+    ) -> Result<String, String> {
+        self.turn_cancellable_inner(prompt, images, cancellation, Some(schema), Some(sink)).await
+    }
+
     async fn turn_cancellable_inner(
         &mut self,
         prompt: &str,
