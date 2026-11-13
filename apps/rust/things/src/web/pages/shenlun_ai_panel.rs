@@ -10,6 +10,7 @@ pub(super) struct ShenlunAiPanelProps {
     pub(super) csrf: String,
     pub(super) on_confirm: Callback<ShenlunAttempt>,
     pub(super) is_essay: bool,
+    pub(super) attempts: Vec<ShenlunAttempt>,
 }
 
 #[derive(Clone, PartialEq)]
@@ -102,6 +103,9 @@ pub(super) fn shenlun_ai_panel(props: &ShenlunAiPanelProps) -> Html {
     let source_answer = use_state(|| None::<ShenlunSourceAnswer>);
     let showing_answer = use_state(|| false);
     let selected_history = use_state(|| None::<String>);
+    let comparison_target = use_state(|| None::<ShenlunAttempt>);
+    let comparison_jobs = use_state(Vec::<ShenlunJob>::new);
+    let comparison_error = use_state(|| None::<String>);
     let attempt_id = props.attempt.id.clone();
     {
         // Clear private results when switching questions/attempts.
@@ -111,6 +115,9 @@ pub(super) fn shenlun_ai_panel(props: &ShenlunAiPanelProps) -> Html {
         let source_answer = source_answer.clone();
         let showing_answer = showing_answer.clone();
         let selected_history = selected_history.clone();
+        let comparison_target = comparison_target.clone();
+        let comparison_jobs = comparison_jobs.clone();
+        let comparison_error = comparison_error.clone();
         let error = error.clone();
         use_effect_with(attempt_id.clone(), move |_| {
             jobs.set(Vec::new());
@@ -119,6 +126,9 @@ pub(super) fn shenlun_ai_panel(props: &ShenlunAiPanelProps) -> Html {
             source_answer.set(None);
             showing_answer.set(false);
             selected_history.set(None);
+            comparison_target.set(None);
+            comparison_jobs.set(Vec::new());
+            comparison_error.set(None);
             error.set(None);
             || ()
         });
@@ -144,6 +154,32 @@ pub(super) fn shenlun_ai_panel(props: &ShenlunAiPanelProps) -> Html {
                 }
             });
             move || alive.set(false)
+        });
+    }
+    // Historical scores are fetched separately and remain immutable; the
+    // comparison requires matching source and scoring versions.
+    {
+        let comparison_jobs = comparison_jobs.clone();
+        let comparison_error = comparison_error.clone();
+        let compare_id = (*comparison_target).as_ref().map(|value| value.id.clone());
+        use_effect_with(compare_id, move |id| {
+            let active = Rc::new(Cell::new(true));
+            comparison_jobs.set(Vec::new());
+            comparison_error.set(None);
+            if let Some(id) = id.clone() {
+                let active_inner = active.clone();
+                let comparison_jobs = comparison_jobs.clone();
+                let comparison_error = comparison_error.clone();
+                spawn_local(async move {
+                    let url = format!("/api/v1/question-bank/shenlun/attempts/{id}/jobs");
+                    match fetch_json::<Vec<ShenlunJob>>(&url, "申论历史批改").await {
+                        Ok(items) if active_inner.get() => comparison_jobs.set(items),
+                        Err(message) if active_inner.get() => comparison_error.set(Some(message)),
+                        _ => {}
+                    }
+                });
+            }
+            move || active.set(false)
         });
     }
     let is_running = jobs.iter().any(|job| job.status == "running");
@@ -433,6 +469,28 @@ pub(super) fn shenlun_ai_panel(props: &ShenlunAiPanelProps) -> Html {
         let selected_history = selected_history.clone();
         Callback::from(move |id: String| selected_history.set(Some(id)))
     };
+    let choose_comparison = {
+        let comparison_target = comparison_target.clone();
+        Callback::from(move |attempt: ShenlunAttempt| comparison_target.set(Some(attempt)))
+    };
+    let previous_grade = (*comparison_target).as_ref().and_then(|attempt| {
+        comparison_jobs.iter().find(|job| {
+            job.kind == "grade" && job.status == "complete"
+                && job.attempt_id == attempt.id
+                && job.attempt_revision == attempt.revision
+                && job.source_hash == attempt.source_hash
+        }).cloned()
+    });
+    let comparable = (*comparison_target).as_ref().zip(previous_grade.as_ref())
+        .zip(latest_grade.as_ref())
+        .is_some_and(|((attempt, old), new)| {
+            attempt.question_id == props.attempt.question_id
+                && attempt.source_hash == props.attempt.source_hash
+                && old.skill_version == new.skill_version
+                && old.source_hash == new.source_hash
+                && old.result.as_ref().and_then(|data| data.get("rubric_version"))
+                    == new.result.as_ref().and_then(|data| data.get("rubric_version"))
+        });
     let display_job = selected_history
         .as_ref()
         .and_then(|id| jobs.iter().find(|job| job.id == *id))
@@ -539,6 +597,66 @@ pub(super) fn shenlun_ai_panel(props: &ShenlunAiPanelProps) -> Html {
                 }
                 if let Some(job)=latest_grade.as_ref() {
                     <h4 class="font-semibold" data-testid="shenlun-score">{grade_score(job)}</h4>
+                }
+                if latest_grade.is_some() {
+                    <section class="rounded-lg border border-base-300 p-3" data-testid="shenlun-draft-comparison">
+                        <h4 class="mb-2 text-sm font-semibold">{"二稿对比（可选）"}</h4>
+                        <div class="flex flex-wrap gap-2">
+                            {for props.attempts.iter().filter(|item| {
+                                item.id != props.attempt.id
+                                    && item.question_id == props.attempt.question_id
+                                    && item.source_hash == props.attempt.source_hash
+                                    && item.status == "submitted"
+                            }).map(|item| {
+                                let target = item.clone();
+                                let compare = choose_comparison.clone();
+                                html! {
+                                    <button type="button" key={item.id.clone()} class="btn btn-outline btn-xs"
+                                        onclick={Callback::from(move |_|compare.emit(target.clone()))}>
+                                        {format!("对比已提交稿 v{}",item.revision)}
+                                    </button>
+                                }
+                            })}
+                        </div>
+                        if let Some(target)=(*comparison_target).as_ref() {
+                            if comparable {
+                                if let (Some(old),Some(new))=(previous_grade.as_ref(),latest_grade.as_ref()) {
+                                    <div class="mt-2 text-sm" data-testid="shenlun-draft-delta">
+                                        <p>{format!("对比稿：{}，当前稿：{}",grade_score(old),grade_score(new))}</p>
+                                        if let (Some(previous), Some(current)) = (
+                                            old.result.as_ref().and_then(|value|value.get("score")).and_then(serde_json::Value::as_f64),
+                                            new.result.as_ref().and_then(|value|value.get("score")).and_then(serde_json::Value::as_f64),
+                                        ) {
+                                            <p>{format!("参考分变化 {:+.2}，须结合具体采分点分析，不代表官方能力提升。",current-previous)}</p>
+                                        }
+                                        if let (Some(old_items),Some(new_items)) = (
+                                            old.result.as_ref().and_then(|value|value.get("items")).and_then(serde_json::Value::as_array),
+                                            new.result.as_ref().and_then(|value|value.get("items")).and_then(serde_json::Value::as_array),
+                                        ) {
+                                            <p class="mt-2 font-medium">{"采分点覆盖变化"}</p>
+                                            {for new_items.iter().filter_map(|new_item| {
+                                                let id=new_item.get("id").and_then(serde_json::Value::as_str)?;
+                                                let old_item=old_items.iter().find(|item|item.get("id").and_then(serde_json::Value::as_str)==Some(id))?;
+                                                let before=old_item.get("coverage").and_then(serde_json::Value::as_str)?;
+                                                let after=new_item.get("coverage").and_then(serde_json::Value::as_str)?;
+                                                (before != after).then(||html!{
+                                                    <p>{format!("{}：{} → {}",id,before,after)}</p>
+                                                })
+                                            })}
+                                        }
+                                        if props.attempt.after_reference || target.after_reference {
+                                            <p class="text-warning">{"存在参考后修改稿，分数变化不能归因为独立作答能力提升。"}</p>
+                                        }
+                                    </div>
+                                }
+                            } else {
+                                <p class="mt-2 text-xs opacity-70">{"历史批改尚未完成，或题目/评分点版本不同，暂不展示分数对比。"}</p>
+                            }
+                        }
+                        if let Some(message)=(*comparison_error).as_ref() {
+                            <p class="mt-2 text-error text-xs">{message}</p>
+                        }
+                    </section>
                 }
                 <div class="flex flex-wrap gap-1">
                     {for jobs.iter().filter(|job|job.status=="complete").take(20).map(|job|{
