@@ -276,6 +276,10 @@ pub(super) fn shenlun_ai_panel(props: &ShenlunAiPanelProps) -> Html {
                         &format!("/api/v1/question-bank/shenlun/attempts/{}/submit",saved.id),
                         &csrf,&EmptyRequest{},"冻结批改原稿"
                     ).await?;
+                    // The source snapshot has already been frozen. Surface it
+                    // even when the subsequent Codex request fails, so users
+                    // can retry grading without resubmitting or losing text.
+                    on_confirm.emit(submitted.clone());
                     let request_id=super::shenlun_training::new_shenlun_attempt_id()?;
                     let request=ShenlunJobRequest{
                         request_id,kind:"grade".into(),attachments:Vec::new(),
@@ -288,8 +292,7 @@ pub(super) fn shenlun_ai_panel(props: &ShenlunAiPanelProps) -> Html {
                     Ok((submitted,job))
                 }.await;
                 match result {
-                    Ok((submitted,job))=>{
-                        on_confirm.emit(submitted);
+                    Ok((_submitted,job))=>{
                         let mut current=(*jobs).clone();
                         current.retain(|item|item.id!=job.id);
                         current.insert(0,job);
