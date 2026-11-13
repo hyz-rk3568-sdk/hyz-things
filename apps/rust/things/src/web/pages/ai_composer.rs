@@ -228,4 +228,3 @@ pub(super) fn ai_composer(props: AiComposer<'_>) -> Html {
         </div>
     }
 }
-
