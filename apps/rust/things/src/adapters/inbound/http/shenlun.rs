@@ -12,6 +12,7 @@ pub fn with_shenlun_ai(router: Router, ai: Option<Arc<ShenlunAiService>>) -> Rou
 }
 type Service = Option<Extension<Arc<ShenlunAiService>>>;
 
+#[expect(clippy::result_large_err, reason = "Axum responses are returned directly by the handler")]
 fn require_service(service: Service) -> Result<Arc<ShenlunAiService>, Response> {
     service.map(|Extension(service)| service).ok_or_else(|| {
         error_json(
