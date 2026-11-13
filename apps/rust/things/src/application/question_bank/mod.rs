@@ -3,6 +3,7 @@ pub mod document;
 mod favorite_flashcards;
 pub mod images;
 pub mod practice;
+pub mod shenlun;
 
 use crate::domain::question_bank::{
     BankSyncStatus, BankSyncSummary, PaperSummary, PaperView, PracticeCatalog, PracticeMode,
