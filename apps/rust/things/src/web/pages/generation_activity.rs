@@ -38,16 +38,18 @@ struct ToolActivity {
 #[function_component(GenerationActivity)]
 pub(super) fn generation_activity(props: &GenerationActivityProps) -> Html {
     let snapshot = use_state(|| None::<GenerationSnapshot>);
-    let expanded = use_state(|| true);
+    let opened = use_state(|| false);
     let disconnected = use_state(|| false);
     {
         let snapshot = snapshot.clone();
         let disconnected = disconnected.clone();
+        let opened = opened.clone();
         use_effect_with(
             (props.module, props.job_id.clone()),
             move |(module, job_id)| {
                 let current = Rc::new(RefCell::new(None::<GenerationSnapshot>));
                 snapshot.set(None);
+                opened.set(false);
                 disconnected.set(false);
                 let source = web_sys::EventSource::new(&format!(
                     "/api/v1/study/{module}/prepare/{job_id}/events"
@@ -133,7 +135,6 @@ pub(super) fn generation_activity(props: &GenerationActivityProps) -> Html {
         );
     }
     let mut tools = Vec::<ToolActivity>::new();
-    let mut phases = Vec::<String>::new();
     if let Some(snapshot) = snapshot.as_ref() {
         for event in &snapshot.events {
             let item_id = event
@@ -142,11 +143,6 @@ pub(super) fn generation_activity(props: &GenerationActivityProps) -> Html {
                 .and_then(|v| v.as_str())
                 .unwrap_or("");
             match event.kind.as_str() {
-                "phase_changed" => {
-                    if let Some(text) = event.payload.get("message").and_then(|v| v.as_str()) {
-                        phases.push(text.to_owned());
-                    }
-                }
                 "tool_started" => tools.push(ToolActivity {
                     id: item_id.to_owned(),
                     tool: event
@@ -200,50 +196,65 @@ pub(super) fn generation_activity(props: &GenerationActivityProps) -> Html {
             }
         }
     }
-    let state = snapshot
-        .as_ref()
-        .map(|s| s.status.as_str())
-        .unwrap_or("running");
-    let description = match state {
-        "ready" => "本轮生成完成",
-        "failed" => "本轮生成失败",
-        _ => "Codex 正在执行",
-    };
-    let toggle = {
-        let expanded = expanded.clone();
-        Callback::from(move |_| expanded.set(!*expanded))
-    };
-    html! {
-        <section class="rounded-box border border-base-content/15 bg-base-100/50 p-3 space-y-2"
-            data-testid={format!("{}-activity",props.test_prefix)}>
-            <button type="button" class="flex w-full items-center justify-between text-left"
-                onclick={toggle} aria-expanded={expanded.to_string()}>
-                <span class="font-semibold text-sm">{format!("AI 执行过程 · {description}")}</span>
-                <span class="text-xs text-base-content/60">{if *expanded {"收起 ⌃"} else {"展开 ⌄"}}</span>
-            </button>
-            if *expanded {
-                <div class="max-h-80 overflow-y-auto space-y-3 border-l border-base-content/15 pl-3 text-xs text-base-content/70"
-                    data-testid={format!("{}-activity-events",props.test_prefix)}>
-                    {for phases.iter().map(|phase| html! { <p>{phase.clone()}</p> })}
-                    {for tools.iter().map(|tool| html! {
-                        <div class="space-y-1" data-testid={format!("{}-activity-tool",props.test_prefix)}>
-                            <p class="font-medium">{format!("{} · {}{}",if tool.source.is_empty() {"Codex"} else {&tool.source},tool.tool,if tool.status.is_empty() {""} else {" · 已结束"})}</p>
-                            if !tool.command.is_empty() {
-                                <pre class="whitespace-pre-wrap break-all rounded bg-base-200 p-2">{tool.command.clone()}</pre>
-                            }
-                            if !tool.output.is_empty() {
-                                <pre class="whitespace-pre-wrap break-all rounded bg-base-200 p-2">{tool.output.clone()}</pre>
-                            }
-                        </div>
-                    })}
-                    if snapshot.as_ref().is_none_or(|s| s.events.is_empty()) {
-                        <p>{"等待 Codex 工具执行事件…"}</p>
-                    }
-                    if *disconnected && state == "running" {
-                        <p role="status">{"执行流连接中断，正在重新连接…"}</p>
-                    }
-                </div>
+    // Prefer an unfinished tool for parallel data-analysis workers. Once all
+    // tools finish, keep the final command visible until entering the paper.
+    let latest = tools
+        .iter()
+        .rev()
+        .find(|tool| tool.status.is_empty())
+        .or_else(|| tools.last())
+        .map(|tool| {
+            let text = if tool.command.is_empty() {
+                &tool.tool
+            } else {
+                &tool.command
+            };
+            if tool.source.is_empty() {
+                text.clone()
+            } else {
+                format!("{} · {}", tool.source, text)
             }
-        </section>
+        });
+    let toggle = {
+        let opened = opened.clone();
+        Callback::from(move |_| opened.set(!*opened))
+    };
+    if let Some(latest) = latest {
+        let test_prefix = format!("{}-activity", props.test_prefix);
+        html! {
+            <div class="min-w-0 py-1 text-xs text-base-content/60" data-testid={test_prefix.clone()}>
+                <button type="button"
+                    class="flex w-full min-w-0 items-center gap-1 text-left text-xs text-base-content/60 hover:text-base-content"
+                    aria-expanded={opened.to_string()} onclick={toggle}
+                    title={latest.clone()}>
+                    <span class="shrink-0">{if *opened {"⌄"} else {"›"}}</span>
+                    <span class="min-w-0 truncate font-mono">{latest}</span>
+                </button>
+                if *opened {
+                    <div class="mt-2 max-h-[40dvh] space-y-3 overflow-y-auto border-l border-base-content/15 pl-3"
+                        data-testid={format!("{}-activity-events", props.test_prefix)}>
+                        {for tools.iter().map(|tool| {
+                            let label = format!(
+                                "{}{}{}",
+                                if tool.source.is_empty() { String::new() } else { format!("{} · ", tool.source) },
+                                tool.tool,
+                                if tool.status.is_empty() { String::new() } else { format!(" · {}", tool.status) },
+                            );
+                            super::ai_review_activity::tool_execution_item(
+                                &label,
+                                &tool.command,
+                                &tool.output,
+                                &test_prefix,
+                            )
+                        })}
+                        if *disconnected && snapshot.as_ref().is_some_and(|value| value.status == "running") {
+                            <p role="status">{"连接中断，正在重新连接…"}</p>
+                        }
+                    </div>
+                }
+            </div>
+        }
+    } else {
+        Html::default()
     }
 }
