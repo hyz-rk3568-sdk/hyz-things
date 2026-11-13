@@ -48,13 +48,16 @@ fn hub() -> &'static Hub {
 
 pub fn start(module: &'static str, job_id: &str) {
     let mut current = hub().current.lock().unwrap_or_else(|e| e.into_inner());
-    current.insert(module, GenerationSnapshot {
-        job_id: job_id.to_owned(),
-        status: "running".into(),
-        run_id: None,
-        seq: 0,
-        events: Vec::new(),
-    });
+    current.insert(
+        module,
+        GenerationSnapshot {
+            job_id: job_id.to_owned(),
+            status: "running".into(),
+            run_id: None,
+            seq: 0,
+            events: Vec::new(),
+        },
+    );
 }
 
 fn emit(module: &'static str, job_id: &str, kind: &str, payload: Value) {
@@ -90,16 +93,43 @@ pub fn sink(module: &'static str, job_id: String, label: String) -> AiReviewEven
                 details
             };
             let mapped = match progress {
-                AiReviewProgress::ToolStarted { item_id, tool, details } =>
-                    Some(("tool_started", json!({"item_id":format!("{label}:{item_id}"),"tool":tool,"details":tagged(details)}))),
-                AiReviewProgress::ToolFinished { item_id, tool, status, details } =>
-                    Some(("tool_finished", json!({"item_id":format!("{label}:{item_id}"),"tool":tool,"status":status,"details":tagged(details)}))),
-                AiReviewProgress::CommandOutputDelta { item_id, text } =>
-                    Some(("command_output_delta", json!({"item_id":format!("{label}:{item_id}"),"text":text}))),
-                AiReviewProgress::ToolOutputDelta { item_id, tool, text } =>
-                    Some(("tool_output_delta", json!({"item_id":format!("{label}:{item_id}"),"tool":tool,"text":text}))),
-                AiReviewProgress::ToolProgress { item_id, tool, message } =>
-                    Some(("tool_progress", json!({"item_id":format!("{label}:{item_id}"),"tool":tool,"message":message}))),
+                AiReviewProgress::ToolStarted {
+                    item_id,
+                    tool,
+                    details,
+                } => Some((
+                    "tool_started",
+                    json!({"item_id":format!("{label}:{item_id}"),"tool":tool,"details":tagged(details)}),
+                )),
+                AiReviewProgress::ToolFinished {
+                    item_id,
+                    tool,
+                    status,
+                    details,
+                } => Some((
+                    "tool_finished",
+                    json!({"item_id":format!("{label}:{item_id}"),"tool":tool,"status":status,"details":tagged(details)}),
+                )),
+                AiReviewProgress::CommandOutputDelta { item_id, text } => Some((
+                    "command_output_delta",
+                    json!({"item_id":format!("{label}:{item_id}"),"text":text}),
+                )),
+                AiReviewProgress::ToolOutputDelta {
+                    item_id,
+                    tool,
+                    text,
+                } => Some((
+                    "tool_output_delta",
+                    json!({"item_id":format!("{label}:{item_id}"),"tool":tool,"text":text}),
+                )),
+                AiReviewProgress::ToolProgress {
+                    item_id,
+                    tool,
+                    message,
+                } => Some((
+                    "tool_progress",
+                    json!({"item_id":format!("{label}:{item_id}"),"tool":tool,"message":message}),
+                )),
                 // Reasoning and final JSON are not an execution log and may reveal answers.
                 _ => None,
             };
@@ -123,7 +153,12 @@ pub fn finish(module: &'static str, job_id: &str, run_id: Option<&str>, success:
         snapshot.seq += 1;
         let event = GenerationEvent {
             seq: snapshot.seq,
-            kind: if success { "run_finished" } else { "run_failed" }.into(),
+            kind: if success {
+                "run_finished"
+            } else {
+                "run_failed"
+            }
+            .into(),
             payload: json!({}),
         };
         snapshot.events.push(event.clone());
@@ -150,7 +185,10 @@ pub fn subscribe(
 ) -> Option<(GenerationSnapshot, broadcast::Receiver<GenerationPush>)> {
     let current = hub().current.lock().unwrap_or_else(|e| e.into_inner());
     let receiver = hub().sender.subscribe();
-    current.get(module).filter(|r| r.job_id == job_id).cloned()
+    current
+        .get(module)
+        .filter(|r| r.job_id == job_id)
+        .cloned()
         .map(|snapshot| (snapshot, receiver))
 }
 
@@ -171,7 +209,12 @@ mod tests {
         let (snapshot, _) = subscribe(module, &second).unwrap();
         assert!(snapshot.events.is_empty());
         let sink = sink(module, second.clone(), "第1篇".into());
-        sink(AiReviewProgress::CommandOutputDelta { item_id:"x".into(), text:"abc".into() }).await.unwrap();
+        sink(AiReviewProgress::CommandOutputDelta {
+            item_id: "x".into(),
+            text: "abc".into(),
+        })
+        .await
+        .unwrap();
         let (snapshot, _) = subscribe(module, &second).unwrap();
         assert_eq!(snapshot.events.len(), 1);
         assert_eq!(snapshot.events[0].payload["text"], "abc");
@@ -189,12 +232,34 @@ mod tests {
         start(module, &id);
         let first = sink(module, id.clone(), "材料1".into());
         let second = sink(module, id.clone(), "材料2".into());
-        first(AiReviewProgress::TextDelta { item_id:"out".into(), text:"correct_index: 0".into() }).await.unwrap();
-        first(AiReviewProgress::ToolStarted { item_id:"1".into(), tool:"commandExecution".into(), details:json!({"command":"pwd"}) }).await.unwrap();
-        second(AiReviewProgress::ToolStarted { item_id:"1".into(), tool:"commandExecution".into(), details:json!({"command":"ls"}) }).await.unwrap();
+        first(AiReviewProgress::TextDelta {
+            item_id: "out".into(),
+            text: "correct_index: 0".into(),
+        })
+        .await
+        .unwrap();
+        first(AiReviewProgress::ToolStarted {
+            item_id: "1".into(),
+            tool: "commandExecution".into(),
+            details: json!({"command":"pwd"}),
+        })
+        .await
+        .unwrap();
+        second(AiReviewProgress::ToolStarted {
+            item_id: "1".into(),
+            tool: "commandExecution".into(),
+            details: json!({"command":"ls"}),
+        })
+        .await
+        .unwrap();
         let (snapshot, _) = subscribe(module, &id).unwrap();
         assert_eq!(snapshot.events.len(), 2);
-        assert_ne!(snapshot.events[0].payload["item_id"], snapshot.events[1].payload["item_id"]);
-        assert!(!serde_json::to_string(&snapshot).unwrap().contains("correct_index"));
+        assert_ne!(
+            snapshot.events[0].payload["item_id"],
+            snapshot.events[1].payload["item_id"]
+        );
+        assert!(!serde_json::to_string(&snapshot)
+            .unwrap()
+            .contains("correct_index"));
     }
 }
