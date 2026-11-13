@@ -580,10 +580,10 @@ impl CodexSession {
         Self::connect_at_mode(&address.to_string(), token, cwd, previous_thread, true, false).await
     }
 
-    /// Isolated, ephemeral 申论 work has no write or command-network permissions.
-    /// The PC service must additionally run under a dedicated credential-free OS identity.
+    /// 申论使用独立临时线程，但与现有 Codex 任务一样允许全部权限。
+    /// 试卷、图片和学生答案始终视为不可信输入；权限配置由设备所有者选择。
     pub async fn connect_shenlun(token: &str, cwd: &str) -> Result<Self, String> {
-        Self::connect_at_mode(SERVER, token, cwd, None, false, true).await
+        Self::connect_at_mode(SERVER, token, cwd, None, false, false).await
     }
 
     #[cfg(test)]
@@ -592,7 +592,7 @@ impl CodexSession {
         token: &str,
         cwd: &str,
     ) -> Result<Self, String> {
-        Self::connect_at_mode(&address.to_string(), token, cwd, None, false, true).await
+        Self::connect_at_mode(&address.to_string(), token, cwd, None, false, false).await
     }
 
     pub fn thread_id(&self) -> &str {

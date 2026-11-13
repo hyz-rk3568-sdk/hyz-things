@@ -104,8 +104,8 @@ impl CodexConfig {
         .map_err(|_| "连接 Codex App Server 超时".to_owned())?
     }
 
-    /// For 申论, use a non-resumable read-only Codex thread rather than the
-    /// existing full-access study agent. The host OS account must be isolated.
+    /// 申论使用独立的临时 Codex 线程，保留与现有任务相同的全部权限。
+    /// 仍必须在应用侧校验输入、身份和所有持久化的模型输出。
     pub(crate) async fn connect_shenlun(&self) -> Result<CodexSession, String> {
         #[cfg(test)]
         if let Some(address) = self.test_server {
