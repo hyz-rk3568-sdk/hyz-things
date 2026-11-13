@@ -851,6 +851,8 @@ pub(crate) struct QuestionAiReviewProps {
     pub delete_signal: u32,
     #[prop_or_default]
     pub on_delete_availability: Callback<bool>,
+    #[prop_or("analysis")]
+    pub mode: &'static str,
 }
 
 /// The component is mounted only while the AI tab is visible; the native
@@ -1139,6 +1141,7 @@ pub(crate) fn question_ai_review(props: &QuestionAiReviewProps) -> Html {
         let start_images = start_images.clone();
         let uploading_start = uploading_start.clone();
         let start_key = start_key.clone();
+        let grade_mode = props.mode == "grade";
         Callback::from(move |_: ()| {
             if *submitting || *uploading_start {
                 return;
@@ -1186,7 +1189,11 @@ pub(crate) fn question_ai_review(props: &QuestionAiReviewProps) -> Html {
             let endpoint = endpoint.clone();
             let csrf = csrf.clone();
             let draft = (*start_instruction).clone();
-            let instruction = draft.trim().to_owned();
+            let instruction = if grade_mode {
+                format!("【申论批改】\n{}", draft.trim())
+            } else {
+                draft.trim().to_owned()
+            };
             let start_key = start_key.clone();
             let start_instruction = start_instruction.clone();
             let start_images = start_images.clone();
@@ -1310,6 +1317,7 @@ pub(crate) fn question_ai_review(props: &QuestionAiReviewProps) -> Html {
         let follow_key = follow_key.clone();
         let endpoint = format!("{endpoint}/messages");
         let csrf = props.csrf.clone();
+        let grade_mode = props.mode == "grade";
         Callback::from(move |_: ()| {
             if *submitting
                 || *uploading_follow
@@ -1325,7 +1333,11 @@ pub(crate) fn question_ai_review(props: &QuestionAiReviewProps) -> Html {
                 return;
             }
             let draft = (*follow_up).clone();
-            let message = draft.trim().to_owned();
+            let message = if grade_mode {
+                format!("【申论批改交流】\n{}", draft.trim())
+            } else {
+                draft.trim().to_owned()
+            };
             if (message.is_empty() && follow_images.is_empty()) || message.chars().count() > 2000 {
                 return;
             }
@@ -1671,7 +1683,7 @@ pub(crate) fn question_ai_review(props: &QuestionAiReviewProps) -> Html {
             <div class="min-h-0 flex-1 space-y-3 overflow-y-auto overscroll-contain touch-pan-y p-4" ref={messages_ref} onscroll={on_messages_scroll} data-testid="question-bank-ai-messages" role="log" aria-label="AI 对话记录" aria-live="polite">
             <div class="space-y-4" data-testid="question-bank-ai-question-content">{props.question_content.clone()}</div>
             <div class="flex items-center justify-between gap-2">
-                <strong>{"AI 解析与追问"}</strong>
+                <strong>{if props.mode=="grade" {"AI 批改与追问"} else {"AI 解析与追问"}}</strong>
                 <span class="text-xs text-base-content/60" data-testid="question-bank-ai-status">
                     {if running { "正在生成" } else { match stream.as_ref().as_ref().map(|v| v.status.as_str()).or_else(|| current.as_ref().map(|v| v.status.as_str())) {
                         Some("complete") => "已完成",
@@ -1827,7 +1839,11 @@ pub(crate) fn question_ai_review(props: &QuestionAiReviewProps) -> Html {
                 </div>
             }
             if can_start {
-                <p class="text-sm text-base-content/60">{"Codex 将根据题目 UUID 从电脑本地题库读取原题、共用材料及图片，独立解析；参考答案仅供参考。"}</p>
+                <p class="text-sm text-base-content/60">{if props.mode=="grade" {
+                    "粘贴作答或上传手写图片。AI 先辨认原图并确认不清楚的文字，再根据原题给出 Markdown 批改报告。"
+                } else {
+                    "AI 根据原题、相关给定材料和你的要求进行解析，来源参考答案仅作参考。"
+                }}</p>
             }
             </div>
             <div class="relative shrink-0 bg-base-100 px-2 pb-3 pt-2" data-testid="question-bank-ai-composer-area">
@@ -1843,9 +1859,9 @@ pub(crate) fn question_ai_review(props: &QuestionAiReviewProps) -> Html {
                         input_testid: "question-bank-ai-instruction",
                         button_testid: "question-bank-ai-start",
                         value: start_instruction.as_str(), max_length: 2000, read_only: false,
-                        placeholder: "输入解析要求（可选）…",
-                        button_label: "开始 AI 解析", is_stop: false,
-                        disabled: *submitting || *uploading_start || request_unresolved || request_uncertain,
+                        placeholder: if props.mode=="grade" {"粘贴申论作答，或上传手写图片…"} else {"输入解析要求（可选）…"},
+                        button_label: if props.mode=="grade" {"发送批改"} else {"开始 AI 解析"}, is_stop: false,
+                        disabled: *submitting || *uploading_start || request_unresolved || request_uncertain || (props.mode=="grade" && start_instruction.trim().is_empty() && start_images.is_empty()),
                         endpoint: format!("{endpoint}/attachments"), csrf: props.csrf.clone(),
                         attachments: start_images.clone(), uploading: uploading_start.clone(),
                         picker_disabled: *submitting, picker_testid: "question-bank-ai-start-images",
@@ -1872,7 +1888,7 @@ pub(crate) fn question_ai_review(props: &QuestionAiReviewProps) -> Html {
                         input_testid: "question-bank-ai-input",
                         button_testid: if running {"question-bank-ai-stop"} else {"question-bank-ai-send"},
                         value: follow_up.as_str(), max_length: 2000, read_only: false,
-                        placeholder: "输入消息…",
+                        placeholder: if props.mode=="grade" {"追问扣分原因，或发送修改后的答案…"} else {"输入消息…"},
                         button_label: if running {"停止生成"} else {"发送追问"}, is_stop: running,
                         disabled: *submitting || (!running && (*uploading_follow || request_unresolved || request_uncertain || (follow_up.trim().is_empty() && follow_images.is_empty()))),
                         endpoint: format!("{endpoint}/attachments"), csrf: props.csrf.clone(),
