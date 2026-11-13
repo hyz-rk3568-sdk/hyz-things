@@ -484,7 +484,8 @@ pub(super) fn shenlun_training(props: &ShenlunTrainingProps) -> Html {
                                     </div>
                                 </div>
                             }
-                            <ShenlunAiPanel attempt={record.clone()} csrf={props.csrf.clone()}
+                            if let Some(record)=(*attempt).as_ref() {
+                                <ShenlunAiPanel attempt={record.clone()} csrf={props.csrf.clone()}
                                 on_confirm={Callback::from({
                                     let attempt=attempt.clone();
                                     let draft=draft.clone();
@@ -499,6 +500,7 @@ pub(super) fn shenlun_training(props: &ShenlunTrainingProps) -> Html {
                                         attempt.set(Some(next));
                                     }
                                 })}/>
+                            }
                             <p class="text-xs opacity-60">{"已交卷不等于已评分；来源答案需本稿完成批改后解锁。"}</p>
                         </div>
                     }

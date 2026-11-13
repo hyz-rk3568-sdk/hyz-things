@@ -99,8 +99,9 @@ pub(super) fn shenlun_ai_panel(props: &ShenlunAiPanelProps) -> Html {
     }).cloned();
     {
         let transcribed = transcribed.clone();
+        let selected_transcription = latest_transcription.clone();
         use_effect_with(latest_transcription.as_ref().map(|job| job.id.clone()), move |_| {
-            if let Some(job) = latest_transcription {
+            if let Some(job) = selected_transcription {
                 transcribed.set(transcription_text(&job));
             } else {
                 transcribed.set(String::new());
