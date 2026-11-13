@@ -108,6 +108,8 @@ pub struct ShenlunJobRequest {
     pub kind: String,
     #[serde(default)]
     pub attachments: Vec<String>,
+    #[serde(default)]
+    pub confirm_uncertain: bool,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
