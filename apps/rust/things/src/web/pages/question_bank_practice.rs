@@ -1338,7 +1338,7 @@ pub(crate) fn question_ai_review(props: &QuestionAiReviewProps) -> Html {
             } else {
                 draft.trim().to_owned()
             };
-            if (message.is_empty() && follow_images.is_empty()) || message.chars().count() > 2000 {
+            if (message.is_empty() && follow_images.is_empty()) || message.chars().count() > if grade_mode {50_032} else {2000} {
                 return;
             }
             if request_id.is_some()
@@ -1858,7 +1858,7 @@ pub(crate) fn question_ai_review(props: &QuestionAiReviewProps) -> Html {
                         compose_testid: "question-bank-ai-requirements-compose",
                         input_testid: "question-bank-ai-instruction",
                         button_testid: "question-bank-ai-start",
-                        value: start_instruction.as_str(), max_length: 2000, read_only: false,
+                        value: start_instruction.as_str(), max_length: if props.mode=="grade" {50_000} else {2000}, read_only: false,
                         placeholder: if props.mode=="grade" {"粘贴申论作答，或上传手写图片…"} else {"输入解析要求（可选）…"},
                         button_label: if props.mode=="grade" {"发送批改"} else {"开始 AI 解析"}, is_stop: false,
                         disabled: *submitting || *uploading_start || request_unresolved || request_uncertain || (props.mode=="grade" && start_instruction.trim().is_empty() && start_images.is_empty()),
@@ -1887,7 +1887,7 @@ pub(crate) fn question_ai_review(props: &QuestionAiReviewProps) -> Html {
                         compose_testid: "question-bank-ai-compose",
                         input_testid: "question-bank-ai-input",
                         button_testid: if running {"question-bank-ai-stop"} else {"question-bank-ai-send"},
-                        value: follow_up.as_str(), max_length: 2000, read_only: false,
+                        value: follow_up.as_str(), max_length: if props.mode=="grade" {50_000} else {2000}, read_only: false,
                         placeholder: if props.mode=="grade" {"追问扣分原因，或发送修改后的答案…"} else {"输入消息…"},
                         button_label: if running {"停止生成"} else {"发送追问"}, is_stop: running,
                         disabled: *submitting || (!running && (*uploading_follow || request_unresolved || request_uncertain || (follow_up.trim().is_empty() && follow_images.is_empty()))),
