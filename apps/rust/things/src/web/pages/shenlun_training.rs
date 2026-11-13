@@ -1,8 +1,8 @@
-//! 申论批改：与行测客观题并列的真题选择、材料阅读入口。
-//! 不展示来源参考答案；草稿与交卷使用申论独立 API，评分尚待接入。
+//! 申论训练：复用 Question Bank 真题复盘工作区，而非建立第二套考试 Session。
+use super::material_scroll::{use_training_scroll_pair, MaterialScrollButton};
 use super::*;
 use hyz_things::domain::question_bank::{
-    CreateShenlunAttempt, PaperSummary, PaperView, QuestionView, SaveShenlunDraft, ShenlunAttempt,
+    CreateShenlunAttempt, PaperSummary, PaperView, QuestionView, ShenlunAttempt,
 };
 
 #[derive(Properties, PartialEq)]
@@ -33,7 +33,7 @@ pub(super) fn new_shenlun_attempt_id() -> Result<String, String> {
     bytes[6] = (bytes[6] & 0x0f) | 0x40;
     bytes[8] = (bytes[8] & 0x3f) | 0x80;
     Ok(format!(
-        "{:02x}{:02x}{:02x}{:02x}-{:02x}{:02x}-{:02x}{:02x}-{:02x}{:02x}-{:02x}{:02x}{:02x}{:02x}{:02x}{:02x}",
+        "{:02x}{:02x}{:02x}{:02x}-{:02x}{:02x}-{:02x}-{:02x}-{:02x}{:02x}-{:02x}{:02x}{:02x}{:02x}{:02x}{:02x}{:02x}{:02x}{:02x}",
         bytes[0], bytes[1], bytes[2], bytes[3],
         bytes[4], bytes[5], bytes[6], bytes[7],
         bytes[8], bytes[9], bytes[10], bytes[11],
@@ -46,171 +46,124 @@ pub(super) fn shenlun_training(props: &ShenlunTrainingProps) -> Html {
     let papers = use_state(|| None::<Vec<PaperSummary>>);
     let paper = use_state(|| None::<PaperView>);
     let selected = use_state(|| 0_usize);
-    let region = use_state(|| "全部".to_string());
-    let year = use_state(String::new);
-    let variant = use_state(String::new);
-    let question_type_filter = use_state(|| "all".to_string());
     let busy = use_state(|| false);
     let loading = use_state(|| true);
     let error = use_state(|| None::<String>);
     let refresh = use_state(|| 0_u32);
     let attempt = use_state(|| None::<ShenlunAttempt>);
-    let attempt_history = use_state(Vec::<ShenlunAttempt>::new);
-    let draft = use_state(String::new);
+    let attempts = use_state(Vec::<ShenlunAttempt>::new);
     let attempt_loading = use_state(|| false);
     let attempt_busy = use_state(|| false);
-    let saving = use_state(|| false);
-    let draft_error = use_state(|| None::<String>);
-    let question_key = (*paper).as_ref().and_then(|p| {
-        p.questions
-            .get(*selected)
-            .map(|question| (p.id.clone(), question.id.clone()))
-    });
-    {
-        let attempt = attempt.clone();
-        let attempt_history = attempt_history.clone();
-        let draft = draft.clone();
-        let attempt_loading = attempt_loading.clone();
-        let draft_error = draft_error.clone();
-        use_effect_with(question_key.clone(), move |key| {
-            let cancelled = Rc::new(Cell::new(false));
-            attempt.set(None);
-            attempt_history.set(Vec::new());
-            draft.set(String::new());
-            draft_error.set(None);
-            attempt_loading.set(key.is_some());
-            if let Some((paper_id, question_id)) = key.clone() {
-                let cancelled = cancelled.clone();
-                spawn_local(async move {
-                    let url = format!(
-                        "/api/v1/question-bank/shenlun/attempts?paper_id={paper_id}&question_id={question_id}"
-                    );
-                    let result = fetch_json::<Vec<ShenlunAttempt>>(&url, "申论作答历史").await;
-                    if cancelled.get() {
-                        return;
-                    }
-                    match result {
-                        Ok(items) => {
-                            let active = items
-                                .iter()
-                                .find(|item| item.status == "draft")
-                                .or_else(|| items.first())
-                                .cloned();
-                            if let Some(record) = active.as_ref() {
-                                draft.set(record.text.clone());
-                            }
-                            attempt.set(active);
-                            attempt_history.set(items);
-                        }
-                        Err(error) => draft_error.set(Some(error)),
-                    }
-                    attempt_loading.set(false);
-                });
-            }
-            move || cancelled.set(true)
-        });
-    }
-    {
-        let snapshot = (*attempt).clone();
-        let text = (*draft).clone();
-        let blocked = *saving || (*draft_error).is_some();
-        let csrf = props.csrf.clone();
-        let attempt = attempt.clone();
-        let saving = saving.clone();
-        let draft_error = draft_error.clone();
-        use_effect_with((snapshot.clone(), text.clone(), blocked), move |_| {
-            let pending = if let Some(record) = snapshot
-                .filter(|record| record.status == "draft" && record.text != text && !blocked)
-            {
-                Some(gloo_timers::callback::Timeout::new(900, move || {
-                    saving.set(true);
-                    let attempt = attempt.clone();
-                    let saving = saving.clone();
-                    let draft_error = draft_error.clone();
-                    spawn_local(async move {
-                        let result: Result<ShenlunAttempt, String> = post_json_response(
-                            &format!("/api/v1/question-bank/shenlun/attempts/{}/draft", record.id),
-                            &csrf,
-                            &SaveShenlunDraft {
-                                expected_revision: record.revision,
-                                text,
-                            },
-                            "自动保存申论草稿",
-                        )
-                        .await;
-                        match result {
-                            Ok(saved) => attempt.set(Some(saved)),
-                            Err(message) => draft_error
-                                .set(Some(format!("草稿未保存，请修改或重试：{message}"))),
-                        }
-                        saving.set(false);
-                    });
-                }))
-            } else {
-                None
-            };
-            move || drop(pending)
-        });
-    }
+    let mode = use_state(|| "grade".to_owned());
+    let menu_open = use_state(|| false);
+    let ai_delete_signal = use_state(|| 0_u32);
+    let grade_regrade_signal = use_state(|| 0_u32);
+    let grade_delete_signal = use_state(|| 0_u32);
+    let scroll = use_training_scroll_pair();
+    let question_key = (*paper).as_ref().and_then(|p|
+        p.questions.get(*selected).map(|question| (p.id.clone(), question.id.clone())));
+
     {
         let papers = papers.clone();
         let loading = loading.clone();
         let error = error.clone();
         use_effect_with(*refresh, move |_| {
-            let cancelled = Rc::new(Cell::new(false));
-            let guard = cancelled.clone();
+            let alive = Rc::new(Cell::new(true));
+            let guard = alive.clone();
             loading.set(true);
             error.set(None);
             spawn_local(async move {
                 let result = fetch_json::<Vec<PaperSummary>>(
-                    "/api/v1/question-bank/shenlun/papers",
-                    "申论真题列表",
-                )
-                .await;
-                if guard.get() {
-                    return;
-                }
+                    "/api/v1/question-bank/shenlun/papers", "申论原卷"
+                ).await;
+                if !guard.get() { return; }
                 match result {
                     Ok(value) => papers.set(Some(value)),
                     Err(message) => error.set(Some(message)),
                 }
                 loading.set(false);
             });
-            move || cancelled.set(true)
+            move || alive.set(false)
         });
     }
-    let retry = {
-        let refresh = refresh.clone();
-        Callback::from(move |_| refresh.set(refresh.wrapping_add(1)))
-    };
+    // An attempt is only the native grade job's immutable input container.
+    // Nothing here creates an objective practice session, countdown, or exam submission.
+    {
+        let attempt = attempt.clone();
+        let attempts = attempts.clone();
+        let attempt_loading = attempt_loading.clone();
+        let mode = mode.clone();
+        let menu_open = menu_open.clone();
+        let error = error.clone();
+        let csrf = props.csrf.clone();
+        use_effect_with(question_key.clone(), move |key| {
+            let alive = Rc::new(Cell::new(true));
+            attempt.set(None);
+            attempts.set(Vec::new());
+            attempt_loading.set(key.is_some());
+            mode.set("grade".into());
+            menu_open.set(false);
+            if let Some((paper_id, question_id)) = key.clone() {
+                let guard = alive.clone();
+                let attempt = attempt.clone();
+                let attempts = attempts.clone();
+                let attempt_loading = attempt_loading.clone();
+                let error = error.clone();
+                let csrf = csrf.clone();
+                spawn_local(async move {
+                    let url = format!("/api/v1/question-bank/shenlun/attempts?paper_id={paper_id}&question_id={question_id}");
+                    let records = fetch_json::<Vec<ShenlunAttempt>>(&url, "申论批改记录").await;
+                    if !guard.get() { return; }
+                    let result = match records {
+                        Ok(items) if !items.is_empty() => Ok(items),
+                        Ok(_) => match new_shenlun_attempt_id() {
+                            Ok(request_id) => {
+                                let request = CreateShenlunAttempt { request_id, paper_id, question_id };
+                                let created: Result<ShenlunAttempt, String> = post_json_response(
+                                    "/api/v1/question-bank/shenlun/attempts",
+                                    &csrf, &request, "准备申论 AI 批改"
+                                ).await;
+                                created.map(|record| vec![record])
+                            }
+                            Err(message) => Err(message),
+                        },
+                        Err(message) => Err(message),
+                    };
+                    if !guard.get() { return; }
+                    match result {
+                        Ok(items) => {
+                            let active = items.iter().find(|record| record.status == "draft")
+                                .or_else(|| items.first()).cloned();
+                            attempt.set(active);
+                            attempts.set(items);
+                        }
+                        Err(message) => error.set(Some(message)),
+                    }
+                    attempt_loading.set(false);
+                });
+            }
+            move || alive.set(false)
+        });
+    }
+
     let open = {
         let busy = busy.clone();
         let paper = paper.clone();
         let selected = selected.clone();
-        let question_type_filter = question_type_filter.clone();
         let error = error.clone();
         let immersive = props.on_immersive_change.clone();
         Callback::from(move |id: String| {
-            if *busy {
-                return;
-            }
+            if *busy { return; }
             busy.set(true);
             error.set(None);
             let busy = busy.clone();
             let paper = paper.clone();
             let selected = selected.clone();
-            let question_type_filter = question_type_filter.clone();
             let error = error.clone();
             let immersive = immersive.clone();
             spawn_local(async move {
-                match fetch_json::<PaperView>(
-                    &format!("/api/v1/question-bank/shenlun/papers/{id}"),
-                    "申论真题",
-                )
-                .await
-                {
+                match fetch_json::<PaperView>(&format!("/api/v1/question-bank/shenlun/papers/{id}"), "申论原卷").await {
                     Ok(value) => {
-                        question_type_filter.set("all".into());
                         selected.set(0);
                         paper.set(Some(value));
                         immersive.emit(true);
@@ -229,407 +182,287 @@ pub(super) fn shenlun_training(props: &ShenlunTrainingProps) -> Html {
             paper.set(None);
         })
     };
-    let set_draft = {
-        let draft = draft.clone();
-        let draft_error = draft_error.clone();
-        Callback::from(move |event: InputEvent| {
-            let input: web_sys::HtmlTextAreaElement = event.target_unchecked_into();
-            draft_error.set(None);
-            draft.set(input.value());
-        })
-    };
     let new_attempt = {
         let key = question_key.clone();
         let csrf = props.csrf.clone();
-        let attempt_busy = attempt_busy.clone();
+        let busy = attempt_busy.clone();
         let attempt = attempt.clone();
-        let draft = draft.clone();
-        let draft_error = draft_error.clone();
-        let attempt_history = attempt_history.clone();
+        let attempts = attempts.clone();
+        let error = error.clone();
+        let mode = mode.clone();
         Callback::from(move |_| {
-            let Some((paper_id, question_id)) = key.clone() else {
-                return;
-            };
-            if *attempt_busy {
-                return;
-            }
+            let Some((paper_id, question_id)) = key.clone() else { return; };
+            if *busy { return; }
             let request_id = match new_shenlun_attempt_id() {
                 Ok(id) => id,
-                Err(error) => {
-                    draft_error.set(Some(error));
-                    return;
-                }
+                Err(message) => { error.set(Some(message)); return; }
             };
-            attempt_busy.set(true);
-            let attempt_busy = attempt_busy.clone();
+            busy.set(true);
+            let busy = busy.clone();
             let attempt = attempt.clone();
-            let draft = draft.clone();
-            let draft_error = draft_error.clone();
-            let attempt_history = attempt_history.clone();
+            let attempts = attempts.clone();
+            let error = error.clone();
+            let mode = mode.clone();
             let csrf = csrf.clone();
             spawn_local(async move {
+                let body = CreateShenlunAttempt { request_id, paper_id, question_id };
                 let result: Result<ShenlunAttempt, String> = post_json_response(
-                    "/api/v1/question-bank/shenlun/attempts",
-                    &csrf,
-                    &CreateShenlunAttempt {
-                        request_id,
-                        paper_id,
-                        question_id,
-                    },
-                    "开始申论作答",
-                )
-                .await;
+                    "/api/v1/question-bank/shenlun/attempts", &csrf, &body, "新批改"
+                ).await;
                 match result {
-                    Ok(record) => {
-                        draft.set(record.text.clone());
-                        attempt.set(Some(record.clone()));
-                        let mut items = (*attempt_history).clone();
-                        items.insert(0, record);
-                        attempt_history.set(items);
-                        draft_error.set(None);
+                    Ok(created) => {
+                        let mut history = (*attempts).clone();
+                        history.insert(0, created.clone());
+                        attempts.set(history);
+                        attempt.set(Some(created));
+                        mode.set("grade".into());
                     }
-                    Err(message) => draft_error.set(Some(message)),
+                    Err(message) => error.set(Some(message)),
                 }
-                attempt_busy.set(false);
+                busy.set(false);
             });
         })
     };
-    let submit = {
+    let on_confirm = {
         let attempt = attempt.clone();
-        let draft_error = draft_error.clone();
-        let attempt_busy = attempt_busy.clone();
-        let attempt_history = attempt_history.clone();
-        let csrf = props.csrf.clone();
-        Callback::from(move |_| {
-            let Some(record) = (*attempt).clone() else {
-                return;
-            };
-            if record.status != "draft" || record.text.trim().is_empty() || *attempt_busy {
-                return;
+        let attempts = attempts.clone();
+        Callback::from(move |next: ShenlunAttempt| {
+            let mut history = (*attempts).clone();
+            if let Some(row) = history.iter_mut().find(|row| row.id == next.id) {
+                *row = next.clone();
+            } else {
+                history.insert(0, next.clone());
             }
-            attempt_busy.set(true);
-            let attempt = attempt.clone();
-            let draft_error = draft_error.clone();
-            let attempt_busy = attempt_busy.clone();
-            let attempt_history = attempt_history.clone();
-            let csrf = csrf.clone();
-            spawn_local(async move {
-                let result: Result<ShenlunAttempt, String> = post_json_response(
-                    &format!(
-                        "/api/v1/question-bank/shenlun/attempts/{}/submit",
-                        record.id
-                    ),
-                    &csrf,
-                    &EmptyRequest {},
-                    "提交申论作答",
-                )
-                .await;
-                match result {
-                    Ok(submitted) => {
-                        let mut history = (*attempt_history).clone();
-                        if let Some(row) = history.iter_mut().find(|row| row.id == submitted.id) {
-                            *row = submitted.clone();
-                        }
-                        attempt_history.set(history);
-                        attempt.set(Some(submitted));
-                        draft_error.set(None);
-                    }
-                    Err(message) => draft_error.set(Some(message)),
-                }
-                attempt_busy.set(false);
-            });
+            attempts.set(history);
+            attempt.set(Some(next));
         })
-    };
-    let select_attempt = {
-        let attempt = attempt.clone();
-        let draft = draft.clone();
-        Callback::from(move |record: ShenlunAttempt| {
-            draft.set(record.text.clone());
-            attempt.set(Some(record));
-        })
-    };
-    let set_year = {
-        let year = year.clone();
-        Callback::from(move |event: InputEvent| {
-            let input: web_sys::HtmlInputElement = event.target_unchecked_into();
-            year.set(input.value());
-        })
-    };
-    let set_variant = {
-        let variant = variant.clone();
-        Callback::from(move |event: InputEvent| {
-            let input: web_sys::HtmlInputElement = event.target_unchecked_into();
-            variant.set(input.value());
-        })
-    };
-    let all_regions = {
-        let region = region.clone();
-        Callback::from(move |_| region.set("全部".into()))
-    };
-    let national = {
-        let region = region.clone();
-        Callback::from(move |_| region.set("国考".into()))
-    };
-    let hunan = {
-        let region = region.clone();
-        Callback::from(move |_| region.set("湖南".into()))
     };
 
-    let unsaved = (*attempt)
-        .as_ref()
-        .is_some_and(|record| record.status == "draft" && record.text != *draft);
-    let navigation_locked = *saving || *attempt_busy || unsaved;
-    if let Some(current) = (*paper).as_ref() {
+    if let Some(current) = paper.as_ref() {
         let index = (*selected).min(current.questions.len().saturating_sub(1));
         let question = current.questions.get(index);
-        let filtered: Vec<usize> = current
-            .questions
-            .iter()
-            .enumerate()
-            .filter(|(_, question)| {
-                *question_type_filter == "all"
-                    || question.question_type.as_deref() == Some(question_type_filter.as_str())
-            })
-            .map(|(i, _)| i)
-            .collect();
-        let at = filtered.iter().position(|&item| item == index).unwrap_or(0);
-        let prev_index = filtered.get(at.saturating_sub(1)).copied().unwrap_or(index);
-        let next_index = filtered.get(at + 1).copied().unwrap_or(index);
-        let change_type = {
-            let selected = selected.clone();
-            let filter = question_type_filter.clone();
-            let paper = current.clone();
-            Callback::from(move |kind: String| {
-                if let Some((number, _)) =
-                    paper.questions.iter().enumerate().find(|(_, question)| {
-                        kind == "all" || question.question_type.as_deref() == Some(kind.as_str())
-                    })
-                {
-                    selected.set(number);
-                    filter.set(kind);
-                }
-            })
-        };
-        let previous = {
-            let selected = selected.clone();
-            Callback::from(move |_| selected.set(prev_index))
-        };
-        let next = {
-            let selected = selected.clone();
-            Callback::from(move |_| selected.set(next_index))
-        };
+        let question_body = question.map(|item| html! {
+            <div class="space-y-2">
+                <p class="text-xs text-base-content/55">
+                    {topic_label(item)}{" · "}
+                    {item.max_score.map(|score| format!("{score} 分")).unwrap_or_else(|| "分值待确认".into())}
+                </p>
+                <div class="study-markdown">{render_markdown(&item.stem, &current.id)}</div>
+            </div>
+        }).unwrap_or_default();
+        let paper_id = current.id.clone();
+        let question_id = question.map(|item| item.id.clone()).unwrap_or_default();
+        let material_scroll = scroll.first.clone();
+        let material_edges = *scroll.first_edges;
+        let mode_value = (*mode).clone();
+        let icon_button = super::question_header_actions::QUESTION_HEADER_ICON_BUTTON;
+
         let left = html! {
-            <section class="flex h-full min-h-0 flex-col overflow-hidden rounded-xl border border-base-300 bg-base-100" data-testid="shenlun-materials">
-                <header class={TRAINING_PANE_HEADER}>
-                    <h2 class="font-semibold">{"给定材料"}</h2>
-                    <span class="text-xs opacity-70">{format!("共 {} 份", current.materials.len())}</span>
-                </header>
-                <div class="min-h-0 flex-1 overflow-y-auto px-4 pb-5" data-swipe-ignore="true">
+            <section class="flex min-h-0 min-w-0 flex-col overflow-hidden rounded-box border border-base-content/10 bg-base-100" data-testid="shenlun-materials">
+                <div class={classes!(TRAINING_PANE_HEADER, "question-bank-pane-header")}>
+                    <strong class="text-sm">{"原卷材料"}</strong>
+                    <div class="ml-auto flex shrink-0 gap-1" role="group" aria-label="材料滚动">
+                        <MaterialScrollButton passage={material_scroll.clone()} up={true}
+                            disabled={!material_edges.can_scroll_up} question_index={index}/>
+                        <MaterialScrollButton passage={material_scroll.clone()} up={false}
+                            disabled={!material_edges.can_scroll_down} question_index={index}/>
+                    </div>
+                </div>
+                <div ref={material_scroll} onscroll={scroll.on_scroll.clone()}
+                    class="min-h-0 flex-1 space-y-5 overflow-y-auto overscroll-contain px-4 pb-5 pt-3"
+                    data-swipe-ignore="true">
                     {for current.materials.iter().map(|material| html! {
-                        <article class="mb-6" key={material.id.clone()}>
-                            <h3 class="mb-2 font-semibold">{material.name.clone()}</h3>
-                            <div class="study-markdown">{render_markdown(&material.markdown, &current.id)}</div>
+                        <article key={material.id.clone()} class="space-y-2">
+                            <h3 class="font-semibold">{material.name.clone()}</h3>
+                            <div class="study-markdown">{render_markdown(&material.markdown, &paper_id)}</div>
                         </article>
                     })}
                 </div>
             </section>
         };
-        let right = html! {
-            <section class="flex h-full min-h-0 flex-col overflow-hidden rounded-xl border border-base-300 bg-base-100" data-testid="shenlun-question">
-                <header class={TRAINING_PANE_HEADER}>
-                    <h2 class="font-semibold">{"作答题目"}</h2>
-                    <span class="text-xs opacity-70">{format!("第 {} / {} 题", index + 1, current.questions.len())}</span>
-                </header>
-                <div class="flex flex-wrap gap-1 px-3 pb-2" aria-label="申论题型筛选">
-                    {for [
-                        ("all","全部题型"), ("summary","归纳概括"),
-                        ("analysis","综合分析"), ("measures","提出对策"),
-                        ("document_writing","公文写作"), ("essay","大作文"),
-                        ("other","其他"),
-                    ].into_iter().filter(|(kind,_)| *kind=="all"
-                        || current.questions.iter().any(|q|q.question_type.as_deref()==Some(kind)))
-                    .map(|(kind,label)| {
-                        let change = change_type.clone();
-                        let value=kind.to_string();
-                        html! {
-                            <button type="button" key={value.clone()} class={classes!("btn","btn-xs",
-                                if *question_type_filter == kind {"btn-primary"} else {"btn-outline"})}
-                                disabled={navigation_locked} data-testid="shenlun-type-filter"
-                                onclick={Callback::from(move |_| change.emit(value.clone()))}>
-                                {label}
-                            </button>
-                        }
-                    })}
-                </div>
-                <div class="flex flex-wrap gap-1 px-3 pb-2" aria-label="题号导航">
-                    {for current.questions.iter().enumerate()
-                        .filter(|(number,_)|filtered.contains(number))
-                        .map(|(number, item)| {
-                        let selected = selected.clone();
-                        html! {
-                            <button type="button" key={item.id.clone()} class={classes!("btn","btn-xs", if number == index {"btn-primary"} else {"btn-outline"})}
-                                aria-current={(number == index).then_some("step")}
-                                disabled={navigation_locked}
-                                data-testid="shenlun-question-nav"
-                                onclick={Callback::from(move |_| selected.set(number))}>{item.number}</button>
-                        }
-                    })}
-                </div>
-                <div class="min-h-0 flex-1 overflow-y-auto px-4 pb-5" data-swipe-ignore="true">
-                    if let Some(question) = question {
-                        <p class="mb-2 text-xs opacity-70">
-                            {topic_label(question)}
-                            {" · "}
-                            {question.max_score.map(|s| format!("{s} 分")).unwrap_or_else(|| "分值待确认".into())}
-                        </p>
-                        <div class="study-markdown">{render_markdown(&question.stem, &current.id)}</div>
-                        <div class="mt-5 space-y-3" data-testid="shenlun-answer">
-                            if *attempt_loading {
-                                <p class="text-sm opacity-70">{"正在恢复历史草稿…"}</p>
-                            } else if let Some(record) = (*attempt).as_ref() {
-                                <div class="flex flex-wrap items-center justify-between gap-2">
-                                    if record.after_reference {
-                                        <span class="text-xs text-warning">{"参考后修改（非独立二稿）"}</span>
+        let menu = {
+            let mode = mode.clone();
+            let menu_open = menu_open.clone();
+            let new_attempt = new_attempt.clone();
+            let ai_delete_signal = ai_delete_signal.clone();
+            let grade_regrade_signal = grade_regrade_signal.clone();
+            let grade_delete_signal = grade_delete_signal.clone();
+            html! {
+                <div class="relative">
+                    <button type="button" class={icon_button} aria-label="更多申论操作"
+                        title="更多申论操作" data-testid="shenlun-more"
+                        onclick={Callback::from({let menu_open=menu_open.clone();move |_|menu_open.set(!*menu_open)})}>
+                        {"⋮"}
+                    </button>
+                    if *menu_open {
+                        <div class="absolute right-0 top-full z-50 min-w-40 rounded-box border border-base-content/10 bg-base-100 p-1 shadow-lg">
+                            if mode_value != "ai" {
+                                <button type="button" class="btn btn-ghost btn-sm w-full justify-start"
+                                    data-testid="shenlun-new-grade"
+                                    onclick={Callback::from({
+                                        let menu_open=menu_open.clone(); let new_attempt=new_attempt.clone();
+                                        move |_| {menu_open.set(false);new_attempt.emit(());}
+                                    })}>{"新批改"}</button>
+                                <button type="button" class="btn btn-ghost btn-sm w-full justify-start"
+                                    data-testid="shenlun-regrade"
+                                    onclick={Callback::from({
+                                        let menu_open=menu_open.clone(); let mode=mode.clone(); let signal=grade_regrade_signal.clone();
+                                        move |_| {menu_open.set(false);mode.set("grade".into());signal.set(signal.wrapping_add(1));}
+                                    })}>{"重新批改"}</button>
+                                <button type="button" class="btn btn-ghost btn-sm w-full justify-start"
+                                    data-testid="shenlun-history-open"
+                                    onclick={Callback::from({
+                                        let menu_open=menu_open.clone();let mode=mode.clone();
+                                        move |_| {menu_open.set(false);mode.set("history".into());}
+                                    })}>{"查看历史记录"}</button>
+                            }
+                            <button type="button" class="btn btn-ghost btn-sm w-full justify-start text-error"
+                                data-testid="shenlun-delete-current"
+                                onclick={Callback::from({
+                                    let menu_open=menu_open.clone();let mode=mode.clone();
+                                    let ai_delete_signal=ai_delete_signal.clone();let grade_delete_signal=grade_delete_signal.clone();
+                                    move |_| {
+                                        menu_open.set(false);
+                                        if *mode=="ai" {ai_delete_signal.set(ai_delete_signal.wrapping_add(1));}
+                                        else {mode.set("history".into());grade_delete_signal.set(grade_delete_signal.wrapping_add(1));}
                                     }
-                                    <span class="text-xs opacity-70">
-                                        {if record.status == "submitted" {"已交卷 · 原稿不可修改"}
-                                         else if *saving {"自动保存中…"}
-                                         else if unsaved {"待自动保存"}
-                                         else {"草稿已保存"}}
-                                    </span>
-                                    <button type="button" class="btn btn-outline btn-xs" onclick={new_attempt.clone()}
-                                        disabled={navigation_locked}>{"重做新稿"}</button>
-                                </div>
-                                <textarea class="textarea textarea-bordered min-h-48 w-full leading-relaxed" rows="12"
-                                    data-testid="shenlun-answer-input" aria-label="申论文字作答"
-                                    placeholder="在此输入申论答案（最多 50000 字）"
-                                    disabled={record.status != "draft" || *attempt_busy}
-                                    value={(*draft).clone()} oninput={set_draft.clone()} />
-                                <div class="flex items-center justify-between gap-2">
-                                    <span class="text-xs opacity-70">{format!("{} 字", draft.chars().count())}</span>
-                                    if record.status == "draft" {
-                                        <button type="button" class="btn btn-primary btn-sm"
-                                            data-testid="shenlun-submit" onclick={submit.clone()}
-                                            disabled={navigation_locked || draft.trim().is_empty() || !draft_error.is_none()}>
-                                            {"确认提交"}
-                                        </button>
-                                    } else {
-                                        <span class="text-xs opacity-70">{"已保存正式作答，可开始 AI 批改。"}</span>
-                                    }
-                                </div>
-                            } else {
-                                <button type="button" class="btn btn-primary btn-sm"
-                                    data-testid="shenlun-start" disabled={*attempt_busy || props.csrf.is_empty()}
-                                    onclick={new_attempt.clone()}>{"开始作答"}</button>
-                            }
-                            if let Some(message) = (*draft_error).as_ref() {
-                                <p class="text-error text-sm" role="alert">{message}</p>
-                            }
-                            if !attempt_history.is_empty() {
-                                <div class="border-t border-base-300 pt-2">
-                                    <h3 class="mb-2 text-xs font-semibold">{"本题作答历史"}</h3>
-                                    <div class="flex flex-wrap gap-2">
-                                        {for attempt_history.iter().map(|item| {
-                                            let item = item.clone();
-                                            let select = select_attempt.clone();
-                                            let label = if item.status == "submitted" {"已交卷"} else {"草稿"};
-                                            let revision = item.revision;
-                                            html! {
-                                                <button type="button" key={item.id.clone()}
-                                                    class="btn btn-ghost btn-xs"
-                                                    disabled={navigation_locked}
-                                                    onclick={Callback::from(move |_| select.emit(item.clone()))}>
-                                                    {format!("{} · v{}", label, revision)}
-                                                </button>
-                                            }
-                                        })}
-                                    </div>
-                                </div>
-                            }
-                            if let Some(record)=(*attempt).as_ref() {
-                                <ShenlunAiPanel attempt={record.clone()} csrf={props.csrf.clone()}
-                                    attempts={(*attempt_history).clone()}
-                                    is_essay={question.question_type.as_deref() == Some("essay")}
-                                on_confirm={Callback::from({
-                                    let attempt=attempt.clone();
-                                    let draft=draft.clone();
-                                    let history=attempt_history.clone();
-                                    move |next: ShenlunAttempt| {
-                                        draft.set(next.text.clone());
-                                        let mut all=(*history).clone();
-                                        if let Some(item)=all.iter_mut().find(|item|item.id==next.id) {
-                                            *item=next.clone();
-                                        }
-                                        history.set(all);
-                                        attempt.set(Some(next));
-                                    }
-                                })}/>
-                            }
-                            <p class="text-xs opacity-60">{"已交卷不等于已评分；来源答案需本稿完成批改后解锁。"}</p>
+                                })}>{"删除当前 AI 记录"}</button>
                         </div>
                     }
                 </div>
-                <footer class="flex justify-between gap-2 border-t border-base-300 px-3 py-2">
-                    <button type="button" class="btn btn-outline btn-sm" disabled={at == 0 || navigation_locked} onclick={previous}>{"上一题"}</button>
-                    <button type="button" class="btn btn-outline btn-sm" disabled={at + 1 >= filtered.len() || navigation_locked} onclick={next}>{"下一题"}</button>
-                </footer>
+            }
+        };
+        let right = html! {
+            <section class="flex min-h-0 min-w-0 flex-col overflow-hidden rounded-box border border-base-content/10 bg-base-100" data-testid="shenlun-question">
+                <div class={classes!(TRAINING_PANE_HEADER, "question-bank-pane-header")}>
+                    <div class="min-w-0 flex-1">
+                        <strong class="text-sm">{format!("原卷第 {} 题", question.map(|q|q.number).unwrap_or(0))}</strong>
+                        <span class="ml-2 text-xs text-base-content/55">{question.map(topic_label).unwrap_or("申论")}</span>
+                    </div>
+                    <div class="ml-auto flex shrink-0 items-center gap-0">
+                        <button type="button" class={classes!(icon_button,if mode_value=="grade" {"text-primary btn-active"} else {""})}
+                            aria-label="AI 批改" title="AI 批改" data-testid="shenlun-mode-grade"
+                            onclick={Callback::from({let mode=mode.clone();move |_|mode.set("grade".into())})}>{"批"}</button>
+                        <button type="button" class={classes!(icon_button,if mode_value=="ocr" {"text-primary btn-active"} else {""})}
+                            aria-label="OCR 转写" title="OCR 转写" data-testid="shenlun-mode-ocr"
+                            onclick={Callback::from({let mode=mode.clone();move |_|mode.set("ocr".into())})}>{"识"}</button>
+                        <button type="button" class={classes!(icon_button,if mode_value=="ai" {"text-primary btn-active"} else {""})}
+                            aria-label="AI 解析与追问" title="AI 解析与追问" data-testid="shenlun-mode-ai"
+                            onclick={Callback::from({let mode=mode.clone();move |_|mode.set("ai".into())})}>{"✦"}</button>
+                        <button type="button" class={classes!(icon_button,if mode_value=="source" {"text-primary btn-active"} else {""})}
+                            aria-label="来源参考答案" title="来源参考答案" data-testid="shenlun-mode-source"
+                            onclick={Callback::from({let mode=mode.clone();move |_|mode.set("source".into())})}>{"答"}</button>
+                        {menu}
+                    </div>
+                </div>
+                if mode_value=="ai" {
+                    <QuestionAiReview key={question_id.clone()} csrf={props.csrf.clone()}
+                        question_id={question_id.clone()} question_content={question_body.clone()}
+                        question_scroll={scroll.second.clone()} on_question_scroll={scroll.on_scroll.clone()}
+                        delete_signal={*ai_delete_signal}/>
+                } else {
+                    <div class="min-h-0 flex-1 overflow-y-auto overscroll-contain p-4" ref={scroll.second.clone()}
+                        onscroll={scroll.on_scroll.clone()} data-swipe-ignore="true">
+                        if mode_value!="history" { {question_body.clone()} }
+                        if *attempt_loading {
+                            <p class="mt-3 text-sm text-base-content/60">{"正在加载本题 AI 批改…"}</p>
+                        } else if let Some(record)=(*attempt).as_ref() {
+                            <ShenlunAiPanel key={record.id.clone()} attempt={record.clone()}
+                                csrf={props.csrf.clone()} attempts={(*attempts).clone()}
+                                is_essay={question.and_then(|q|q.question_type.as_deref())==Some("essay")}
+                                mode={mode_value.clone()}
+                                regrade_signal={*grade_regrade_signal} delete_signal={*grade_delete_signal}
+                                on_new_attempt={new_attempt.clone()} on_confirm={on_confirm.clone()}/>
+                        }
+                        if let Some(message)=(*error).as_ref() {
+                            <p role="alert" class="mt-2 text-sm text-error">{message.clone()}</p>
+                        }
+                    </div>
+                }
             </section>
         };
+        let groups = vec![NavigationGroup {
+            label: "全部题目".into(), subtitle: None, start: 0, end: current.questions.len()
+        }];
+        let answered = current.questions.iter().map(|question| attempts.iter().any(|record|
+            record.question_id==question.id && record.status=="submitted")).collect::<Vec<_>>();
         html! {
             <div class="flex h-full min-h-0 flex-col gap-2" data-testid="shenlun-workspace">
-                <header class="flex shrink-0 items-center gap-3">
-                    <button type="button" class="btn btn-ghost btn-sm" disabled={navigation_locked} onclick={close}>{"← 返回选题"}</button>
+                <div class="flex shrink-0 items-center gap-3">
+                    <button type="button" class="btn btn-ghost btn-sm" onclick={close}>{"← 返回选题"}</button>
                     <h2 class="min-w-0 truncate text-sm font-semibold">{current.title.clone()}</h2>
-                </header>
-                <div class="min-h-0 flex-1">
-                    <TrainingSplitWorkspace left={left} right={right} test_id="shenlun-split" resizable={true} split_at_md={true} />
                 </div>
+                <div class="min-h-0 flex-1">
+                    <TrainingSplitWorkspace left={left} right={right}
+                        test_id="shenlun-split" resizable={true} split_at_md={true}/>
+                </div>
+                <CompactQuestionNavigation current={selected.clone()}
+                    numbers={current.questions.iter().map(|q|q.number).collect::<Vec<_>>()}
+                    answered={answered} grades={None::<Vec<Option<bool>>>} groups={groups}/>
             </div>
         }
     } else {
+        let mut grouped = std::collections::BTreeMap::<String,std::collections::BTreeMap<i32,Vec<&PaperSummary>>>::new();
+        if let Some(all)=papers.as_ref() {
+            for item in all.iter().filter(|item|item.role=="primary") {
+                grouped.entry(item.region.clone()).or_default().entry(item.year).or_default().push(item);
+            }
+        }
         html! {
             <section class="flex h-full min-h-0 flex-col gap-3 overflow-hidden" data-testid="shenlun-catalog">
-                <div class="flex flex-wrap items-center justify-between gap-3">
+                <div class="flex items-center justify-between gap-2">
                     <div>
-                        <h2 class="text-lg font-semibold">{"申论批改"}</h2>
-                        <p class="text-xs opacity-70">{"从现有国考、湖南省考申论真题中选题。来源答案不提前展示。"}
-                        </p>
+                        <h2 class="font-semibold">{"申论训练 · 选择原卷"}</h2>
+                        <p class="text-xs text-base-content/55">{"选择原卷后直接进入真题 AI 批改与复盘。"}</p>
                     </div>
-                    <button type="button" class="btn btn-ghost btn-sm" onclick={retry}>{"刷新题库"}</button>
+                    <button type="button" class="btn btn-ghost btn-sm"
+                        onclick={Callback::from({let refresh=refresh.clone();move |_|refresh.set(refresh.wrapping_add(1))})}>{"刷新"}</button>
                 </div>
-                <div class="flex flex-wrap items-center gap-2">
-                    <button type="button" class={classes!("btn","btn-sm",if *region == "全部" {"btn-primary"} else {"btn-outline"})} onclick={all_regions}>{"全部地区"}</button>
-                    <button type="button" class={classes!("btn","btn-sm",if *region == "国考" {"btn-primary"} else {"btn-outline"})} onclick={national}>{"国考"}</button>
-                    <button type="button" class={classes!("btn","btn-sm",if *region == "湖南" {"btn-primary"} else {"btn-outline"})} onclick={hunan}>{"湖南"}</button>
-                    <input class="input input-bordered input-sm w-28" type="search" inputmode="numeric" aria-label="筛选年份"
-                        placeholder="年份" value={(*year).clone()} oninput={set_year} />
-                    <input class="input input-bordered input-sm w-32" type="search" aria-label="筛选卷型"
-                        placeholder="卷型" value={(*variant).clone()} oninput={set_variant} />
-                </div>
-                if let Some(message) = (*error).as_ref() {
-                    <p class="text-error" role="alert">{message}</p>
+                if let Some(message)=(*error).as_ref() {
+                    <p role="alert" class="text-sm text-error">{message.clone()}</p>
                 }
                 <div class="min-h-0 flex-1 overflow-y-auto" data-testid="shenlun-paper-list">
                     if *loading {
-                        <p class="py-4 text-sm opacity-70">{"正在加载申论真题…"}</p>
-                    } else if let Some(all) = (*papers).as_ref() {
-                        <div class="grid grid-cols-1 gap-2 sm:grid-cols-2 xl:grid-cols-3">
-                            {for all.iter()
-                                .filter(|item| (*region == "全部" || item.region.contains(region.as_str()))
-                                    && (year.is_empty() || item.year.to_string().contains(year.as_str()))
-                                    && (variant.is_empty() || item.variant.contains(variant.as_str())))
-                                .map(|item| {
-                                    let id = item.id.clone();
-                                    let open = open.clone();
-                                    html! {
-                                        <button key={id.clone()} type="button" class="rounded-xl border border-base-300 bg-base-100 p-4 text-left hover:border-primary disabled:opacity-50"
-                                            disabled={*busy} onclick={Callback::from(move |_| open.emit(id.clone()))}
-                                            data-testid="shenlun-open-paper">
-                                            <div class="font-semibold">{item.title.clone()}</div>
-                                            <p class="mt-2 text-xs opacity-70">{format!("{} · {} · {} · {} 题", item.year, item.region, item.variant, item.questions)}</p>
-                                        </button>
-                                    }
-                                })}
+                        <p class="py-4 text-sm">{"正在加载申论原卷…"}</p>
+                    } else {
+                        <div class="question-bank-paper-grid">
+                            {for grouped.into_iter().enumerate().map(|(group_index,(region,years))| {
+                                let total=years.values().map(Vec::len).sum::<usize>();
+                                html!{
+                                    <details class="rounded-box border border-base-content/10 bg-base-100"
+                                        open={group_index<2} data-testid="shenlun-region-group">
+                                        <summary class="flex cursor-pointer justify-between px-4 py-3">
+                                            <strong>{region}</strong><span class="text-xs opacity-60">{format!("{total}份")}</span>
+                                        </summary>
+                                        <div class="space-y-2 border-t border-base-content/10 p-3">
+                                            {for years.into_iter().rev().enumerate().map(|(year_index,(year,items))|html!{
+                                                <details class="question-bank-year-group rounded-box bg-base-200/50" open={year_index==0}>
+                                                    <summary class="flex cursor-pointer justify-between px-3 py-2 text-sm">
+                                                        <span>{format!("{year} 年")}</span><span class="text-xs opacity-60">{format!("{} 份",items.len())}</span>
+                                                    </summary>
+                                                    <div class="grid gap-2 px-2 pb-2">
+                                                        {for items.iter().map(|item|{
+                                                            let id=item.id.clone();
+                                                            let open=open.clone();
+                                                            html! {
+                                                                <button type="button" class="question-bank-paper-option"
+                                                                    data-testid="shenlun-open-paper" disabled={*busy}
+                                                                    onclick={Callback::from(move |_|open.emit(id.clone()))}>
+                                                                    <span class="min-w-0">
+                                                                        <strong class="block text-sm">{item.title.clone()}</strong>
+                                                                        <span class="block text-xs opacity-55">{item.variant.clone()}</span>
+                                                                    </span>
+                                                                    <span class="shrink-0 text-xs opacity-60">{format!("{}题",item.questions)}</span>
+                                                                </button>
+                                                            }
+                                                        })}
+                                                    </div>
+                                                </details>
+                                            })}
+                                        </div>
+                                    </details>
+                                }
+                            })}
                         </div>
                     }
                 </div>
@@ -643,21 +476,13 @@ mod tests {
     use super::*;
 
     #[test]
-    fn topic_label_does_not_guess_type_from_question_number() {
+    fn topic_label_does_not_guess_from_question_number() {
         let item = QuestionView {
-            id: "test".into(),
-            number: 5,
-            stem: "请概括".into(),
-            options_markdown: String::new(),
-            materials: vec![],
-            module: None,
-            category: None,
-            topics: vec![],
-            answer_type: "subjective".into(),
-            question_type: Some("other".into()),
-            grading_mode: "ai".into(),
-            max_score: None,
+            id: "test".into(), number: 5, stem: "请概括".into(),
+            options_markdown: String::new(), materials: vec![], module: None,
+            category: None, topics: vec![], answer_type: "subjective".into(),
+            question_type: Some("other".into()), grading_mode: "ai".into(), max_score: None,
         };
-        assert_eq!(topic_label(&item), "其他");
+        assert_eq!(topic_label(&item),"其他");
     }
 }
