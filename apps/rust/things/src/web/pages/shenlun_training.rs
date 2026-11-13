@@ -174,7 +174,7 @@ pub(super) fn shenlun_training(props: &ShenlunTrainingProps) -> Html {
                         <p class="mb-2 text-xs opacity-70">
                             {topic_label(question)}
                             {" · "}
-                            {question.max_score.map(|s| format!("{s:g} 分")).unwrap_or_else(|| "分值待确认".into())}
+                            {question.max_score.map(|s| format!("{s} 分")).unwrap_or_else(|| "分值待确认".into())}
                         </p>
                         <div class="study-markdown">{render_markdown(&question.stem, &current.id)}</div>
                         <div class="mt-6 rounded-lg border border-dashed border-base-300 p-4 text-sm opacity-70" data-testid="shenlun-readonly-notice">
