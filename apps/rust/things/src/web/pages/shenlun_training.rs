@@ -124,7 +124,7 @@ pub(super) fn shenlun_training(props: &ShenlunTrainingProps) -> Html {
     }
     // An attempt is only the native grade job's immutable input container.
     // Nothing here creates an objective practice session, countdown, or exam submission.
-    let needs_attempt = *mode == "ocr" || *mode == "source";
+    let needs_attempt = *mode == "ocr";
     {
         let attempt = attempt.clone();
         let attempts = attempts.clone();
@@ -439,13 +439,15 @@ pub(super) fn shenlun_training(props: &ShenlunTrainingProps) -> Html {
                 } else {
                     <div class="min-h-0 flex-1 overflow-y-auto overscroll-contain p-4" ref={scroll.second.clone()}
                         onscroll={scroll.on_scroll.clone()} data-swipe-ignore="true">
-                        if mode_value!="history" { {question_body.clone()} }
-                        if *attempt_loading {
-                            <p class="mt-3 text-sm text-base-content/60">{"正在加载本题 AI 批改…"}</p>
+                        {question_body.clone()}
+                        if mode_value=="source" {
+                            <super::shenlun_ai_panel::ShenlunSourceAnswerPanel key={question_id.clone()}
+                                question_id={question_id.clone()}/>
+                        } else if *attempt_loading {
+                            <p class="mt-3 text-sm text-base-content/60">{"正在准备手写转写…"}</p>
                         } else if let Some(record)=(*attempt).as_ref() {
                             <ShenlunAiPanel key={record.id.clone()} attempt={record.clone()}
-                                csrf={props.csrf.clone()} mode={mode_value.clone()}
-                                on_confirm={on_confirm.clone()}/>
+                                csrf={props.csrf.clone()} on_confirm={on_confirm.clone()}/>
                         }
                         if let Some(message)=(*error).as_ref() {
                             <p role="alert" class="mt-2 text-sm text-error">{message.clone()}</p>
