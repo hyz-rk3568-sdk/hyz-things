@@ -1291,3 +1291,40 @@ test("generated data analysis shares resizable workspace and grouped answer shee
   await expect(screen.getByRole("button",{name:/收藏|创建 Flashcard/})).toHaveCount(0);
   await expect(screen.getByText("Codex 限额")).toHaveCount(0);
 });
+
+
+test('data analysis shows parallel job activity and clears it when claimed', async ({page}) => {
+  const groups=Array.from({length:4},(_,g)=>({
+    material:{topic:'主题 '+(g+1),text:'材料内容'},
+    questions:Array.from({length:5},(_,q)=>({question:'第'+(g*5+q+1)+'题',options:['甲','乙','丙','丁'],skill:'基期'})),
+  }));
+  const run={
+    id:'analysis-paper',status:'active',server_now_ms:Date.now(),current_question:0,
+    started_at_ms:Date.now(),deadline_at_ms:Date.now()+1200000,paused_remaining_ms:null,
+    duration_seconds:1200,groups,answers:Array(20).fill(null),
+  };
+  await page.route('**/api/v1/study/data-analysis/**',async route=>{
+    const path=new URL(route.request().url()).pathname;
+    if(path.endsWith('/prepare/analysis-job/events')){
+      await route.fulfill({status:200,contentType:'text/event-stream',
+        body:'event: snapshot\ndata: '+JSON.stringify(activity('analysis-job'))+'\n\n'});
+      return;
+    }
+    let value: unknown = {};
+    if(path.endsWith('/status')) value={configured:true,model:'Codex App Server',cached_sources:1,verified_groups:4,preparing_job_id:null,answer_summary:{answered_count:0,correct_count:0},card_stats:[]};
+    else if(path.endsWith('/user-prompt')) value={user_prompt:'默认',customized:false};
+    else if(path.endsWith('/unfinished') || path.endsWith('/history')) value=[];
+    else if(path.endsWith('/prepare')) value={job_id:'analysis-job'};
+    else if(path.endsWith('/prepare/analysis-job')) value={state:'ready',verified:20,message:'完成',run_id:run.id};
+    else if(path.endsWith('/claim')) value={run,control_token:'test-controller'};
+    await route.fulfill({json:value});
+  });
+  await page.goto('/#/study/training');
+  await page.getByTestId('training-mode-comprehensive').click();
+  await page.getByTestId('analysis-start').click();
+  const panel=page.getByTestId('analysis-activity');
+  await expect(panel).toContainText('cat flashcards/cards.md');
+  await expect(panel).toContainText('卡片已读取');
+  await page.getByTestId('analysis-enter').click();
+  await expect(panel).toHaveCount(0);
+});
