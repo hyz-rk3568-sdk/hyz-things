@@ -257,7 +257,9 @@ pub(super) fn shenlun_ai_panel(props: &ShenlunAiPanelProps) -> Html {
                 return;
             }
             if jobs.iter().any(|job| job.status == "unknown") && !*confirm_uncertain {
-                error.set(Some("上一任务的远端状态不确定，请先勾选确认再新建请求。".into()));
+                error.set(Some(
+                    "上一任务的远端状态不确定，请先勾选确认再新建请求。".into(),
+                ));
                 return;
             }
             let attachments: Vec<String> = if kind == "transcribe" {
@@ -511,22 +513,34 @@ pub(super) fn shenlun_ai_panel(props: &ShenlunAiPanelProps) -> Html {
         Callback::from(move |attempt: ShenlunAttempt| comparison_target.set(Some(attempt)))
     };
     let previous_grade = (*comparison_target).as_ref().and_then(|attempt| {
-        comparison_jobs.iter().find(|job| {
-            job.kind == "grade" && job.status == "complete"
-                && job.attempt_id == attempt.id
-                && job.attempt_revision == attempt.revision
-                && job.source_hash == attempt.source_hash
-        }).cloned()
+        comparison_jobs
+            .iter()
+            .find(|job| {
+                job.kind == "grade"
+                    && job.status == "complete"
+                    && job.attempt_id == attempt.id
+                    && job.attempt_revision == attempt.revision
+                    && job.source_hash == attempt.source_hash
+            })
+            .cloned()
     });
-    let comparable = (*comparison_target).as_ref().zip(previous_grade.as_ref())
+    let comparable = (*comparison_target)
+        .as_ref()
+        .zip(previous_grade.as_ref())
         .zip(latest_grade.as_ref())
         .is_some_and(|((attempt, old), new)| {
             attempt.question_id == props.attempt.question_id
                 && attempt.source_hash == props.attempt.source_hash
                 && old.skill_version == new.skill_version
                 && old.source_hash == new.source_hash
-                && old.result.as_ref().and_then(|data| data.get("rubric_version"))
-                    == new.result.as_ref().and_then(|data| data.get("rubric_version"))
+                && old
+                    .result
+                    .as_ref()
+                    .and_then(|data| data.get("rubric_version"))
+                    == new
+                        .result
+                        .as_ref()
+                        .and_then(|data| data.get("rubric_version"))
         });
     let display_job = selected_history
         .as_ref()
