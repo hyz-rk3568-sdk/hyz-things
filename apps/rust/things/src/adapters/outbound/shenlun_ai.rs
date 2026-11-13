@@ -278,6 +278,18 @@ impl ShenlunAiService {
             }
             return record(&existing);
         }
+        let unknown: i64 = sqlx::query_scalar(
+            "SELECT COUNT(*) FROM shenlun_jobs WHERE attempt_id=? AND source_hash=? AND attempt_revision=? AND status='unknown'",
+        )
+        .bind(attempt_id)
+        .bind(&attempt.source_hash)
+        .bind(attempt.revision)
+        .fetch_one(&self.pool)
+        .await
+        .map_err(|_| ShenlunAiError::Storage)?;
+        if unknown > 0 && !request.confirm_uncertain {
+            return Err(ShenlunAiError::NotReady);
+        }
         if (request.kind == "transcribe" && attempt.status != "draft")
             || (request.kind != "transcribe" && attempt.status != "submitted")
         {
@@ -450,7 +462,13 @@ impl ShenlunAiService {
             .await;
         let (status, result, error) = match execution {
             Ok(value) if !*cancel.borrow() => ("complete", Some(value), None),
-            Err(message) if message.contains("远端") && message.contains("无法确认") => {
+            Err(message)
+                if message.contains("远端")
+                    || message.contains("Codex")
+                    || message.contains("WebSocket")
+                    || message.contains("超时")
+                    || message.contains("断开") =>
+            {
                 ("unknown", None, Some(message))
             }
             _ if *cancel.borrow() => ("stopped", None, Some("用户已停止".to_string())),
