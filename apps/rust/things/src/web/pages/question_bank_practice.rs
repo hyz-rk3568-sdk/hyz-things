@@ -817,7 +817,7 @@ fn streaming_markdown_complete(text: &str) -> bool {
         && text.matches("\\[").count() == text.matches("\\]").count()
 }
 
-fn ai_draft_key(question_id: &str, kind: &str) -> String {
+pub(super) fn ai_draft_key(question_id: &str, kind: &str) -> String {
     format!("hyz.ai-review.draft.{question_id}.{kind}")
 }
 
@@ -828,7 +828,7 @@ fn ai_draft_read(key: &str) -> String {
         .unwrap_or_default()
 }
 
-fn ai_draft_write(key: &str, value: &str) {
+pub(super) fn ai_draft_write(key: &str, value: &str) {
     if let Some(storage) =
         web_sys::window().and_then(|window| window.session_storage().ok().flatten())
     {
