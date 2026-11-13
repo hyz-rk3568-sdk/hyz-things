@@ -1118,6 +1118,14 @@ impl QuestionBankApplication {
             .stem_fingerprint(&indexed.path, &content.question.stem)
             .await?
             .ok_or(BankError::Stale)?;
+        // Objective reviews keep their existing identity unchanged. Subjective
+        // reviews also bind the complete source snapshot (including materials),
+        // so a changed passage never resumes a stale Codex context.
+        let stem_fingerprint = if indexed.summary.subject == "shenlun" {
+            format!("{stem_fingerprint}:{}", indexed.hash)
+        } else {
+            stem_fingerprint
+        };
         Ok(QuestionAiLocator {
             question_id: question_id.to_owned(),
             paper_id: content.paper_id,
