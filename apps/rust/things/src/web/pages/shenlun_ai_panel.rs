@@ -29,35 +29,63 @@ struct OcrResponse {
 fn ocr_tools(events: &[OcrEvent]) -> Vec<(String, String, String, String)> {
     let mut tools: Vec<(String, String, String, String)> = Vec::new();
     for event in events {
-        let id = event.payload.get("item_id")
-            .and_then(serde_json::Value::as_str).unwrap_or("").to_owned();
+        let id = event
+            .payload
+            .get("item_id")
+            .and_then(serde_json::Value::as_str)
+            .unwrap_or("")
+            .to_owned();
         match event.kind.as_str() {
             "tool_started" => tools.push((
                 id,
-                event.payload.get("tool").and_then(serde_json::Value::as_str)
-                    .unwrap_or("工具").to_owned(),
-                event.payload.pointer("/details/command")
-                    .and_then(serde_json::Value::as_str).unwrap_or("").to_owned(),
+                event
+                    .payload
+                    .get("tool")
+                    .and_then(serde_json::Value::as_str)
+                    .unwrap_or("工具")
+                    .to_owned(),
+                event
+                    .payload
+                    .pointer("/details/command")
+                    .and_then(serde_json::Value::as_str)
+                    .unwrap_or("")
+                    .to_owned(),
                 String::new(),
             )),
             "command_output_delta" | "tool_output_delta" => {
                 if let Some(tool) = tools.iter_mut().rev().find(|tool| tool.0 == id) {
-                    tool.3.push_str(event.payload.get("text")
-                        .and_then(serde_json::Value::as_str).unwrap_or(""));
+                    tool.3.push_str(
+                        event
+                            .payload
+                            .get("text")
+                            .and_then(serde_json::Value::as_str)
+                            .unwrap_or(""),
+                    );
                 }
             }
             "tool_progress" => {
                 if let Some(tool) = tools.iter_mut().rev().find(|tool| tool.0 == id) {
-                    tool.3.push_str(event.payload.get("message")
-                        .and_then(serde_json::Value::as_str).unwrap_or(""));
+                    tool.3.push_str(
+                        event
+                            .payload
+                            .get("message")
+                            .and_then(serde_json::Value::as_str)
+                            .unwrap_or(""),
+                    );
                     tool.3.push('\n');
                 }
             }
             "tool_finished" => {
                 if let Some(tool) = tools.iter_mut().rev().find(|tool| tool.0 == id) {
-                    tool.1 = format!("{} · {}", tool.1,
-                        event.payload.get("status").and_then(serde_json::Value::as_str)
-                            .unwrap_or("完成"));
+                    tool.1 = format!(
+                        "{} · {}",
+                        tool.1,
+                        event
+                            .payload
+                            .get("status")
+                            .and_then(serde_json::Value::as_str)
+                            .unwrap_or("完成")
+                    );
                 }
             }
             _ => (),
@@ -98,9 +126,9 @@ pub(super) fn shenlun_ai_panel(props: &ShenlunAiPanelProps) -> Html {
             let images = images.clone();
             let csrf = csrf.clone();
             spawn_local(async move {
-                match post_json_response::<_, OcrResponse>(
-                    &endpoint, &csrf, &body, "手写图片转写",
-                ).await {
+                match post_json_response::<_, OcrResponse>(&endpoint, &csrf, &body, "手写图片转写")
+                    .await
+                {
                     Ok(response) => {
                         result.set(Some(response));
                         images.set(Vec::new());
@@ -111,7 +139,9 @@ pub(super) fn shenlun_ai_panel(props: &ShenlunAiPanelProps) -> Html {
             });
         })
     };
-    let tools = (*result).as_ref().map(|response| ocr_tools(&response.events))
+    let tools = (*result)
+        .as_ref()
+        .map(|response| ocr_tools(&response.events))
         .unwrap_or_default();
     let image_endpoint = format!(
         "/api/v1/question-bank/practice/questions/{}/ai/attachments",
@@ -175,7 +205,8 @@ pub(super) fn shenlun_source_answer_panel(props: &ShenlunSourceAnswerPanelProps)
             let endpoint =
                 format!("/api/v1/question-bank/shenlun/questions/{question_id}/source-answer");
             spawn_local(async move {
-                match fetch_json::<ShenlunSourceAnswer>(&endpoint, "题库来源参考答案").await {
+                match fetch_json::<ShenlunSourceAnswer>(&endpoint, "题库来源参考答案").await
+                {
                     Ok(value) if guard.get() => answer.set(Some(value)),
                     Err(message) if guard.get() => error.set(Some(message)),
                     _ => (),
