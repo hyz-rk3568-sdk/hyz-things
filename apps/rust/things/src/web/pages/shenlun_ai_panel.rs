@@ -104,6 +104,26 @@ pub(super) fn shenlun_ai_panel(props: &ShenlunAiPanelProps) -> Html {
     let selected_history = use_state(|| None::<String>);
     let attempt_id = props.attempt.id.clone();
     {
+        // Clear private results when switching questions/attempts.
+        let jobs = jobs.clone();
+        let images = images.clone();
+        let transcribed = transcribed.clone();
+        let source_answer = source_answer.clone();
+        let showing_answer = showing_answer.clone();
+        let selected_history = selected_history.clone();
+        let error = error.clone();
+        use_effect_with(attempt_id.clone(), move |_| {
+            jobs.set(Vec::new());
+            images.set(Vec::new());
+            transcribed.set(String::new());
+            source_answer.set(None);
+            showing_answer.set(false);
+            selected_history.set(None);
+            error.set(None);
+            || ()
+        });
+    }
+    {
         let jobs = jobs.clone();
         let error = error.clone();
         let attempt_id = attempt_id.clone();
