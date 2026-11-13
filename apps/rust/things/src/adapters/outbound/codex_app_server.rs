@@ -567,7 +567,7 @@ impl CodexSession {
         cwd: &str,
         previous_thread: Option<&str>,
     ) -> Result<Self, String> {
-        Self::connect_at_mode(SERVER, token, cwd, previous_thread, true).await
+        Self::connect_at_mode(SERVER, token, cwd, previous_thread, true, false).await
     }
 
     #[cfg(test)]
@@ -577,7 +577,22 @@ impl CodexSession {
         cwd: &str,
         previous_thread: Option<&str>,
     ) -> Result<Self, String> {
-        Self::connect_at_mode(&address.to_string(), token, cwd, previous_thread, true).await
+        Self::connect_at_mode(&address.to_string(), token, cwd, previous_thread, true, false).await
+    }
+
+    /// Isolated, ephemeral 申论 work has no write or command-network permissions.
+    /// The PC service must additionally run under a dedicated credential-free OS identity.
+    pub async fn connect_shenlun(token: &str, cwd: &str) -> Result<Self, String> {
+        Self::connect_at_mode(SERVER, token, cwd, None, false, true).await
+    }
+
+    #[cfg(test)]
+    pub(super) async fn connect_shenlun_test_server(
+        address: std::net::SocketAddr,
+        token: &str,
+        cwd: &str,
+    ) -> Result<Self, String> {
+        Self::connect_at_mode(&address.to_string(), token, cwd, None, false, true).await
     }
 
     pub fn thread_id(&self) -> &str {
@@ -585,7 +600,7 @@ impl CodexSession {
     }
 
     async fn connect_at(address: &str, token: &str, cwd: &str) -> Result<Self, String> {
-        Self::connect_at_mode(address, token, cwd, None, false).await
+        Self::connect_at_mode(address, token, cwd, None, false, false).await
     }
 
     async fn connect_at_mode(
@@ -594,6 +609,7 @@ impl CodexSession {
         cwd: &str,
         previous_thread: Option<&str>,
         persistent: bool,
+        restricted: bool,
     ) -> Result<Self, String> {
         let mut client = Self::initialize_at(address, token).await?;
         client.resumed = previous_thread.is_some();
@@ -612,7 +628,7 @@ impl CodexSession {
                         "ephemeral":!persistent,
                         "cwd":cwd,
                         "approvalPolicy":"never",
-                        "sandbox":"danger-full-access",
+                        "sandbox":if restricted {"read-only"} else {"danger-full-access"},
                         "config":{"shell_environment_policy.set":{
                             "TMPDIR":"/tmp","TMP":"/tmp","TEMP":"/tmp"
                         }}
