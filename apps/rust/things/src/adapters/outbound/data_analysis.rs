@@ -1,9 +1,9 @@
 //! Native Codex App Server question preparation from exam-inspired simulated topics.
 //! Codex owns the answer; the application stores each freshly prepared practice attempt.
-use super::generation_events;
 use super::codex_app_server::{
     validate_token, CodexSession, CANCELLED_MESSAGE, UNCONFIRMED_MESSAGE,
 };
+use super::generation_events;
 use crate::domain::data_analysis::{
     select_material_batch, topic_scope, Material, RelatedCardSnapshot, VerifiedQuestion,
     QUIZ_GROUPS, QUIZ_PER_GROUP, QUIZ_SECONDS, TOPICS,
@@ -1184,7 +1184,7 @@ impl DataAnalysisService {
                 Err(msg) => {
                     generation_events::finish("data-analysis", &job, None, false);
                     worker.set_progress(&job, "failed", 0, &msg, None).await;
-                },
+                }
             }
         });
         Ok(id)
@@ -1281,7 +1281,14 @@ impl DataAnalysisService {
                     let job_id = job_id.clone();
                     async move {
                         worker
-                            .generate_group(&job_id, &material, &plan, &user_prompt, slot, cancellation)
+                            .generate_group(
+                                &job_id,
+                                &material,
+                                &plan,
+                                &user_prompt,
+                                slot,
+                                cancellation,
+                            )
                             .await
                     }
                 })
@@ -1392,8 +1399,14 @@ impl DataAnalysisService {
                 return Err(CANCELLED_MESSAGE.into());
             }
         };
-        let sink = generation_events::sink("data-analysis", job.to_owned(), format!("第{}篇", ordinal + 1));
-        let output = session.turn_cancellable_stream(&prompt, cancellation, sink).await?;
+        let sink = generation_events::sink(
+            "data-analysis",
+            job.to_owned(),
+            format!("第{}篇", ordinal + 1),
+        );
+        let output = session
+            .turn_cancellable_stream(&prompt, cancellation, sink)
+            .await?;
         #[derive(Deserialize)]
         struct GeneratedQuestion {
             #[serde(flatten)]
@@ -1561,7 +1574,10 @@ impl DataAnalysisService {
         }
         let run = self.run(id).await?;
         generation_events::clear_run("data-analysis", id);
-        Ok(ClaimedRun { run, control_token: token })
+        Ok(ClaimedRun {
+            run,
+            control_token: token,
+        })
     }
 
     /// Server discovery works across browsers/devices; never expose answer keys
