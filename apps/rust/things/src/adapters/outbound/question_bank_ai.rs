@@ -310,18 +310,20 @@ fn key(locator: &QuestionAiLocator) -> Key {
 
 fn scoped_key(locator: &QuestionAiLocator, scope: AiReviewScope) -> Result<Key, AiReviewError> {
     scope.validate_subject(locator)?;
-    match scope {
-        AiReviewScope::Analysis => Ok(key(locator)),
-        AiReviewScope::Grading => {
-            let digest = Sha256::digest(format!(
-                "hyz-question-ai-scope-v1:grading:{}",
-                locator.stem_fingerprint
-            ));
-            let fingerprint = digest.iter().map(|byte| format!("{byte:02x}")).collect();
-            Ok((locator.question_id.clone(), fingerprint))
-        }
-        AiReviewScope::Ocr => Err(AiReviewError::Invalid),
+    if scope == AiReviewScope::Analysis && locator.subject != "shenlun" {
+        return Ok(key(locator));
     }
+    let name = match scope {
+        AiReviewScope::Analysis => "analysis",
+        AiReviewScope::Grading => "grading",
+        AiReviewScope::Ocr => return Err(AiReviewError::Invalid),
+    };
+    let digest = Sha256::digest(format!(
+        "hyz-question-ai-scope-v1:{name}:{}",
+        locator.stem_fingerprint
+    ));
+    let fingerprint = digest.iter().map(|byte| format!("{byte:02x}")).collect();
+    Ok((locator.question_id.clone(), fingerprint))
 }
 
 const AI_REVIEW_ENVELOPE: &str =

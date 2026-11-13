@@ -286,7 +286,7 @@ impl AiReviewTurn for ControlledTurn {
 
 async fn shenlun_service(
     backend: Arc<ControlledBackend>,
-) -> (Arc<QuestionBankAiService>, sqlx::SqlitePool) {
+) -> (Arc<QuestionBankAiService>, sqlx::SqlitePool, String) {
     let repository = Arc::new(
         SqliteQuestionBankRepository::connect("sqlite::memory:")
             .await
@@ -300,12 +300,13 @@ async fn shenlun_service(
     bank.sync().await.unwrap();
     let locator = bank.question_ai_locator(SHENLUN_QUESTION_ID).await.unwrap();
     assert_eq!(locator.paper_id, SHENLUN_PAPER_ID);
+    let legacy_fingerprint = locator.stem_fingerprint.clone();
     let ai_service = QuestionBankAiService::with_backend(bank, pool.clone(), Some(backend))
         .with_attachment_relay(
             Some(Arc::new(FixtureAttachmentRelay::default())),
             Some("/test-uploads".into()),
         );
-    (Arc::new(ai_service), pool)
+    (Arc::new(ai_service), pool, legacy_fingerprint)
 }
 
 async fn wait_for_status(service: &QuestionBankAiService, scope: AiReviewScope, expected: &str) {
@@ -595,9 +596,65 @@ async fn shenlun_analysis_and_grading_keep_separate_threads_history_and_lifecycl
     const ANALYSIS_CROSS_SCOPE_ID: &str = "019a3d8e-1b32-7a60-9c83-f34217a6e234";
     const GRADING_CROSS_SCOPE_ID: &str = "019a3d8e-1b32-7a60-9c83-f34217a6e235";
     const RETRY_CROSS_SCOPE_ID: &str = "019a3d8e-1b32-7a60-9c83-f34217a6e236";
+    const LEGACY_SHARED_REQUEST_ID: &str = "019a3d8e-1b32-7a60-9c83-f34217a6e237";
+    const LEGACY_SHARED_RUN_ID: &str = "019a3d8e-1b32-7a60-9c83-f34217a6e238";
 
     let backend = Arc::new(ControlledBackend::new());
-    let (service, pool) = shenlun_service(backend.clone()).await;
+    let (service, pool, legacy_fingerprint) = shenlun_service(backend.clone()).await;
+    sqlx::query("INSERT INTO question_ai_reviews(question_id,stem_fingerprint,thread_id,status,updated_at) VALUES(?,?,'legacy-shared-thread','complete',1)")
+        .bind(SHENLUN_QUESTION_ID)
+        .bind(&legacy_fingerprint)
+        .execute(&pool)
+        .await
+        .unwrap();
+    sqlx::query("INSERT INTO question_ai_messages(question_id,stem_fingerprint,role,content,created_at) VALUES(?,?,'assistant','旧的申论批改与解析共用会话',1)")
+        .bind(SHENLUN_QUESTION_ID)
+        .bind(&legacy_fingerprint)
+        .execute(&pool)
+        .await
+        .unwrap();
+    sqlx::query("INSERT INTO question_ai_requests(question_id,stem_fingerprint,request_id,payload_hash,run_id,intent,attachments,status,created_at,updated_at) VALUES(?,?,?,?,?,'initial','[]','complete',1,1)")
+        .bind(SHENLUN_QUESTION_ID)
+        .bind(&legacy_fingerprint)
+        .bind(LEGACY_SHARED_REQUEST_ID)
+        .bind("legacy-shared-payload")
+        .bind(LEGACY_SHARED_RUN_ID)
+        .execute(&pool)
+        .await
+        .unwrap();
+
+    for scope in [AiReviewScope::Analysis, AiReviewScope::Grading] {
+        let identity = service
+            .stream_identity_in_scope(SHENLUN_QUESTION_ID, scope)
+            .await
+            .unwrap();
+        assert_ne!(identity.1, legacy_fingerprint);
+        let state = service
+            .state_in_scope(SHENLUN_QUESTION_ID, scope)
+            .await
+            .unwrap();
+        assert_eq!(state.status, "idle");
+        assert!(state.messages.is_empty());
+        assert!(service
+            .history_runs_in_scope(SHENLUN_QUESTION_ID, scope, 0, 10)
+            .await
+            .unwrap()
+            .items
+            .is_empty());
+        assert!(matches!(
+            service
+                .request_status_in_scope(SHENLUN_QUESTION_ID, scope, LEGACY_SHARED_REQUEST_ID,)
+                .await,
+            Err(AiReviewError::RequestNotFound)
+        ));
+        assert!(matches!(
+            service
+                .history_events_in_scope(SHENLUN_QUESTION_ID, scope, LEGACY_SHARED_RUN_ID, 0, 10,)
+                .await,
+            Err(AiReviewError::RequestNotFound)
+        ));
+    }
+
     let analysis_identity = service
         .stream_identity_in_scope(SHENLUN_QUESTION_ID, AiReviewScope::Analysis)
         .await

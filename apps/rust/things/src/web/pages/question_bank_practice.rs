@@ -728,6 +728,7 @@ pub(super) struct QuestionAiHeaderActionsProps {
     pub available: bool,
     pub active: bool,
     pub can_delete: bool,
+    pub reset_key: String,
     pub original: Callback<MouseEvent>,
     pub ai: Callback<MouseEvent>,
     pub delete: Callback<MouseEvent>,
@@ -741,7 +742,7 @@ pub(super) fn question_ai_header_actions(props: &QuestionAiHeaderActionsProps) -
                 <QuestionAiModeTabs active={props.active} original={props.original.clone()} ai={props.ai.clone()}/>
             }
             <QuestionAiMoreMenu can_delete={props.available && props.active && props.can_delete}
-                reset_key={props.active.to_string()} delete={props.delete.clone()}/>
+                reset_key={format!("{}:{}", props.reset_key, props.active)} delete={props.delete.clone()}/>
         </div>
     }
 }
@@ -902,10 +903,10 @@ pub(super) fn ai_scope_url(
 }
 
 pub(super) fn ai_draft_key(question_id: &str, scope: &str, kind: &str) -> String {
-    if scope == "grading" {
-        format!("hyz.ai-review.draft.{question_id}.grading.{kind}")
-    } else {
-        format!("hyz.ai-review.draft.{question_id}.{kind}")
+    match scope {
+        "analysis" => format!("hyz.ai-review.draft.{question_id}.{kind}"),
+        "grading" => format!("hyz.ai-review.draft.{question_id}.grading.{kind}"),
+        _ => format!("hyz.ai-review.draft.{question_id}.{scope}.{kind}"),
     }
 }
 
@@ -941,6 +942,8 @@ pub(crate) struct QuestionAiReviewProps {
     pub on_delete_availability: Callback<bool>,
     #[prop_or("analysis")]
     pub mode: &'static str,
+    #[prop_or_default]
+    pub draft_namespace: Option<&'static str>,
 }
 
 /// The component is mounted only while the AI tab is visible; the native
@@ -968,11 +971,15 @@ pub(crate) fn question_ai_review(props: &QuestionAiReviewProps) -> Html {
     } else {
         "analysis"
     };
-    let follow_key = ai_draft_key(&props.question_id, scope, "follow-up");
-    let start_key = ai_draft_key(&props.question_id, scope, "start");
+    let draft_scope = props.draft_namespace.map_or_else(
+        || scope.to_owned(),
+        |namespace| format!("{namespace}-{scope}"),
+    );
+    let follow_key = ai_draft_key(&props.question_id, &draft_scope, "follow-up");
+    let start_key = ai_draft_key(&props.question_id, &draft_scope, "start");
     let follow_up = use_state(|| ai_draft_read(&follow_key));
     let start_instruction = use_state(|| ai_draft_read(&start_key));
-    let request_key = ai_draft_key(&props.question_id, scope, "request-id");
+    let request_key = ai_draft_key(&props.question_id, &draft_scope, "request-id");
     let request_id = use_state(|| {
         let value = ai_draft_read(&request_key);
         if value.is_empty() {
@@ -3071,6 +3078,7 @@ pub(crate) fn question_bank_training(props: &QuestionBankTrainingProps) -> Html 
                         format!("第 {}/{} 题", item_index + 1, current.questions.len())
                     }}
                     tabs={html! {<QuestionAiHeaderActions available={selected_review.is_some()} active={*ai_tab} can_delete={*ai_can_delete}
+                        reset_key={item.item.question_id.clone()}
                         original={Callback::from({let ai_tab=ai_tab.clone();let chosen=ai_tab_chosen.clone();move |_|{*chosen.borrow_mut()=true;ai_tab.set(false);}})}
                         ai={Callback::from({let ai_tab=ai_tab.clone();let chosen=ai_tab_chosen.clone();move |_|{*chosen.borrow_mut()=true;ai_tab.set(true);}})}
                         delete={Callback::from({let signal=ai_delete_signal.clone();move |_|signal.set(signal.wrapping_add(1))})}/>}}

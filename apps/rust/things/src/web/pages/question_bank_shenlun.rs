@@ -288,7 +288,7 @@ pub(super) fn question_bank_shenlun(props: &QuestionBankShenlunProps) -> Html {
         let menu = html! {
             <super::question_bank_practice::QuestionAiMoreMenu
                 can_delete={can_delete}
-                reset_key={mode_value.clone()}
+                reset_key={format!("{paper_id}:{question_id}:{mode_value}")}
                 button_test_id="shenlun-more"
                 delete_test_id="shenlun-delete-current"
                 button_label="更多题目操作"
@@ -362,6 +362,7 @@ pub(super) fn question_bank_shenlun(props: &QuestionBankShenlunProps) -> Html {
                 } else if matches!(mode_value.as_str(), "grade"|"ai") {
                     <QuestionAiReview key={format!("{}:{}",question_id,mode_value)}
                         mode={if mode_value=="grade" {"grade"} else {"analysis"}}
+                        draft_namespace={Some("shenlun")}
                         csrf={props.csrf.clone()} question_id={question_id.clone()}
                         question_content={question_body.clone()}
                         question_scroll={scroll.second.clone()} on_question_scroll={scroll.on_scroll.clone()}

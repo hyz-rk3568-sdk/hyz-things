@@ -182,7 +182,10 @@ test('申论原卷复用地区年份目录和统一答题卡，不出现独立�
 });
 
 test('申论解析和批改分别使用独立会话、草稿与删除状态', async ({ page }) => {
-  await page.addInitScript(() => {
+  const legacyRequestId = 'legacy-shenlun-shared-request';
+  await page.addInitScript((legacyQuestionId) => {
+    sessionStorage.setItem(`hyz.ai-review.draft.${legacyQuestionId}.start`, '旧的共享草稿');
+    sessionStorage.setItem(`hyz.ai-review.draft.${legacyQuestionId}.request-id`, 'legacy-shenlun-shared-request');
     const urls: string[] = [];
     (window as any).__shenlunReviewStreams = urls;
     class FakeEventSource extends EventTarget {
@@ -193,7 +196,7 @@ test('申论解析和批改分别使用独立会话、草稿与删除状态', as
       close() { this.readyState = 2; }
     }
     Object.defineProperty(window, 'EventSource', { configurable: true, value: FakeEventSource });
-  });
+  }, questionId);
   await loginAsAdmin(page);
   type Scope = 'analysis' | 'grading';
   const states: Record<Scope, any> = {
@@ -205,6 +208,7 @@ test('申论解析和批改分别使用独立会话、草稿与删除状态', as
     histories: [] as Scope[],
     historyEvents: [] as Scope[],
     requestStatuses: [] as Scope[],
+    requestIds: [] as string[],
     starts: [] as Array<{ scope: Scope; instruction: string }>,
     followUps: [] as Array<{ scope: Scope; message: string }>,
     deletes: [] as Scope[],
@@ -242,6 +246,7 @@ test('申论解析和批改分别使用独立会话、草稿与删除状态', as
     }
     if (path.includes('/requests/') && method === 'GET') {
       observed.requestStatuses.push(scope);
+      observed.requestIds.push(path.split('/').at(-1) ?? '');
       const requestId = path.split('/').at(-1)!;
       return route.fulfill({ json: requests.get(`${scope}:${requestId}`) ?? {
         request_id: requestId, run_id: `${scope}-${requestId}`, intent: 'initial', status: 'complete',
@@ -303,6 +308,8 @@ test('申论解析和批改分别使用独立会话、草稿与删除状态', as
   await openShenlun(page);
   const input = page.getByTestId('question-bank-ai-instruction');
   await expect(input).toHaveAttribute('placeholder', /输入解析要求/);
+  await expect(input).toHaveValue('');
+  expect(observed.requestIds).not.toContain(legacyRequestId);
   await input.fill('只属于解析的草稿');
   await page.getByTestId('shenlun-mode-grade').click();
   await expect(input).toHaveAttribute('placeholder', /粘贴申论作答/);
@@ -363,7 +370,15 @@ test('申论解析和批改分别使用独立会话、草稿与删除状态', as
   }));
   expect(streamScopes).toEqual(expect.arrayContaining(['analysis', 'grading']));
   expect(observed.requestStatuses).toEqual(expect.arrayContaining(['analysis', 'grading']));
+  expect(observed.requestIds).not.toContain(legacyRequestId);
   expect(legacyGradeJobs).toBe(0);
+  await page.getByTestId('shenlun-more').click();
+  await expect(page.getByTestId('shenlun-delete-current')).toBeVisible();
+  await page.getByTestId('training-answer-sheet-toggle').click();
+  await page.getByTestId('question-bank-practice-number').nth(1).click();
+  await expect(page.getByTestId('shenlun-question')).toContainText('请提出优化基层服务');
+  await expect(page.getByTestId('shenlun-more')).toHaveAttribute('aria-expanded', 'false');
+  await expect(page.getByTestId('shenlun-delete-current')).toHaveCount(0);
 });
 
 for (const viewport of [
