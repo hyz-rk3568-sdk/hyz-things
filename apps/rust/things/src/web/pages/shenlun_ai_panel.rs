@@ -13,16 +13,64 @@ struct OcrRequest {
     attachments: Vec<String>,
 }
 
-#[derive(serde::Deserialize)]
+#[derive(Clone, PartialEq, serde::Deserialize)]
+struct OcrEvent {
+    kind: String,
+    payload: serde_json::Value,
+}
+
+#[derive(Clone, PartialEq, serde::Deserialize)]
 struct OcrResponse {
     markdown: String,
+    events: Vec<OcrEvent>,
+}
+
+/// Use the same command/tool item renderer as the Question Bank AI review.
+fn ocr_tools(events: &[OcrEvent]) -> Vec<(String, String, String, String)> {
+    let mut tools: Vec<(String, String, String, String)> = Vec::new();
+    for event in events {
+        let id = event.payload.get("item_id")
+            .and_then(serde_json::Value::as_str).unwrap_or("").to_owned();
+        match event.kind.as_str() {
+            "tool_started" => tools.push((
+                id,
+                event.payload.get("tool").and_then(serde_json::Value::as_str)
+                    .unwrap_or("工具").to_owned(),
+                event.payload.pointer("/details/command")
+                    .and_then(serde_json::Value::as_str).unwrap_or("").to_owned(),
+                String::new(),
+            )),
+            "command_output_delta" | "tool_output_delta" => {
+                if let Some(tool) = tools.iter_mut().rev().find(|tool| tool.0 == id) {
+                    tool.3.push_str(event.payload.get("text")
+                        .and_then(serde_json::Value::as_str).unwrap_or(""));
+                }
+            }
+            "tool_progress" => {
+                if let Some(tool) = tools.iter_mut().rev().find(|tool| tool.0 == id) {
+                    tool.3.push_str(event.payload.get("message")
+                        .and_then(serde_json::Value::as_str).unwrap_or(""));
+                    tool.3.push('\n');
+                }
+            }
+            "tool_finished" => {
+                if let Some(tool) = tools.iter_mut().rev().find(|tool| tool.0 == id) {
+                    tool.1 = format!("{} · {}", tool.1,
+                        event.payload.get("status").and_then(serde_json::Value::as_str)
+                            .unwrap_or("完成"));
+                }
+            }
+            _ => (),
+        }
+    }
+    tools
 }
 
 #[function_component(ShenlunAiPanel)]
 pub(super) fn shenlun_ai_panel(props: &ShenlunAiPanelProps) -> Html {
     let busy = use_state(|| false);
     let error = use_state(|| None::<String>);
-    let result = use_state(|| None::<String>);
+    let result = use_state(|| None::<OcrResponse>);
     let images = use_state(Vec::<PendingImage>::new);
     let uploading = use_state(|| false);
     let start_ocr = {
@@ -53,7 +101,7 @@ pub(super) fn shenlun_ai_panel(props: &ShenlunAiPanelProps) -> Html {
                     &endpoint, &csrf, &body, "手写图片转写",
                 ).await {
                     Ok(response) => {
-                        result.set(Some(response.markdown));
+                        result.set(Some(response));
                         images.set(Vec::new());
                     }
                     Err(message) => error.set(Some(message)),
@@ -62,6 +110,8 @@ pub(super) fn shenlun_ai_panel(props: &ShenlunAiPanelProps) -> Html {
             });
         })
     };
+    let tools = (*result).as_ref().map(|response| ocr_tools(&response.events))
+        .unwrap_or_default();
     let image_endpoint = format!(
         "/api/v1/question-bank/practice/questions/{}/ai/attachments",
         props.question_id
@@ -81,10 +131,22 @@ pub(super) fn shenlun_ai_panel(props: &ShenlunAiPanelProps) -> Html {
                 disabled={*busy || *uploading || images.is_empty()} onclick={start_ocr}>
                 {if *busy {"正在识别…"} else {"转写为 Markdown"}}
             </button>
-            if let Some(markdown) = (*result).as_ref() {
+            if let Some(response) = (*result).as_ref() {
+                if !tools.is_empty() {
+                    <section class="py-1" data-testid="shenlun-ocr-tool-activity">
+                        <p class="text-xs text-base-content/60">{"工具调用 · 本次临时转写"}</p>
+                        <div class="mt-2 space-y-3 border-l border-base-content/15 pl-3 text-xs text-base-content/60">
+                            {for tools.iter().map(|(_, label, command, output)| {
+                                super::ai_review_activity::tool_execution_item(
+                                    label, command, output, "shenlun-ocr"
+                                )
+                            })}
+                        </div>
+                    </section>
+                }
                 <article class="study-markdown space-y-2 rounded-box border border-base-content/10 p-3"
                     data-testid="shenlun-ocr-markdown">
-                    {render_question_bank_user_markdown(markdown)}
+                    {render_question_bank_user_markdown(&response.markdown)}
                 </article>
             }
             if let Some(message) = (*error).as_ref() {
