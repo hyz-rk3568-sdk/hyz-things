@@ -16,7 +16,7 @@ const activity = (jobId: string) => ({
 
 for (const [module, prefix, mode] of [
   ['logic-judgment','logic','training-mode-logic-judgment'],
-  ['quantitative-relations','quant','training-mode-quantitative-relations'],
+  ['quantitative-relations','quant','training-mode-quantitative'],
 ] as const) {
   test(module + ' shows Codex tool stream only until entering the paper', async ({page}) => {
     const paper = {
