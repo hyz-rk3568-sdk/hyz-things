@@ -48,6 +48,7 @@ pub(super) fn shenlun_training(props: &ShenlunTrainingProps) -> Html {
     let selected = use_state(|| 0_usize);
     let region = use_state(|| "全部".to_string());
     let year = use_state(String::new);
+    let variant = use_state(String::new);
     let busy = use_state(|| false);
     let loading = use_state(|| true);
     let error = use_state(|| None::<String>);
@@ -350,6 +351,13 @@ pub(super) fn shenlun_training(props: &ShenlunTrainingProps) -> Html {
             year.set(input.value());
         })
     };
+    let set_variant = {
+        let variant = variant.clone();
+        Callback::from(move |event: InputEvent| {
+            let input: web_sys::HtmlInputElement = event.target_unchecked_into();
+            variant.set(input.value());
+        })
+    };
     let all_regions = {
         let region = region.clone();
         Callback::from(move |_| region.set("全部".into()))
@@ -541,6 +549,8 @@ pub(super) fn shenlun_training(props: &ShenlunTrainingProps) -> Html {
                     <button type="button" class={classes!("btn","btn-sm",if *region == "湖南" {"btn-primary"} else {"btn-outline"})} onclick={hunan}>{"湖南"}</button>
                     <input class="input input-bordered input-sm w-28" type="search" inputmode="numeric" aria-label="筛选年份"
                         placeholder="年份" value={(*year).clone()} oninput={set_year} />
+                    <input class="input input-bordered input-sm w-32" type="search" aria-label="筛选卷型"
+                        placeholder="卷型" value={(*variant).clone()} oninput={set_variant} />
                 </div>
                 if let Some(message) = (*error).as_ref() {
                     <p class="text-error" role="alert">{message}</p>
@@ -551,7 +561,9 @@ pub(super) fn shenlun_training(props: &ShenlunTrainingProps) -> Html {
                     } else if let Some(all) = (*papers).as_ref() {
                         <div class="grid grid-cols-1 gap-2 sm:grid-cols-2 xl:grid-cols-3">
                             {for all.iter()
-                                .filter(|item| (*region == "全部" || item.region.contains(region.as_str())) && (year.is_empty() || item.year.to_string().contains(year.as_str())))
+                                .filter(|item| (*region == "全部" || item.region.contains(region.as_str()))
+                                    && (year.is_empty() || item.year.to_string().contains(year.as_str()))
+                                    && (variant.is_empty() || item.variant.contains(variant.as_str())))
                                 .map(|item| {
                                     let id = item.id.clone();
                                     let open = open.clone();
