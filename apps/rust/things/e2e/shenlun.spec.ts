@@ -43,6 +43,9 @@ test('shenlun training opens materials, saves an independent draft and restores 
       expect(url.searchParams.get('question_id')).toBe(questionId);
       return route.fulfill({ json: attempt ? [attempt] : [] });
     }
+    if (path.endsWith('/jobs') && method === 'GET') {
+      return route.fulfill({ json: [] });
+    }
     if (path.endsWith('/shenlun/attempts') && method === 'POST') {
       const input = route.request().postDataJSON();
       expect(input.paper_id).toBe(paperId);
