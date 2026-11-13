@@ -12,11 +12,9 @@ pub(super) struct ShenlunAiPanelProps {
     pub(super) csrf: String,
     pub(super) on_confirm: Callback<ShenlunAttempt>,
     pub(super) attempts: Vec<ShenlunAttempt>,
-    pub(super) is_essay: bool,
     pub(super) mode: String,
     pub(super) regrade_signal: u32,
     pub(super) delete_signal: u32,
-    pub(super) on_new_attempt: Callback<()>,
 }
 
 fn transcription_text(job: &ShenlunJob) -> String {
