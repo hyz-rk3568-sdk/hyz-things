@@ -165,7 +165,7 @@ pub(super) async fn delete_record(
         Err(error) => return error,
     };
     match service.delete_record(&id).await {
-        Ok(()) => StatusCode::NO_CONTENT.into_response(),
+        Ok(()) => Json(serde_json::json!({"deleted": true})).into_response(),
         Err(error) => ai_error(error),
     }
 }
