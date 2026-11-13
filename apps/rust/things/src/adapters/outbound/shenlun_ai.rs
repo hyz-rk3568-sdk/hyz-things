@@ -159,15 +159,25 @@ impl ShenlunAiService {
         rows.iter().map(record).collect()
     }
 
-    async fn completed_grade(
-        &self,
-        attempt: &ShenlunAttempt,
-    ) -> Result<ShenlunJob, ShenlunAiError> {
-        let rows = sqlx::query("SELECT * FROM shenlun_jobs WHERE attempt_id=? AND kind='grade' AND status='complete' AND source_hash=? AND attempt_revision=? ORDER BY updated_at_ms DESC LIMIT 1")
-            .bind(&attempt.id).bind(&attempt.source_hash).bind(attempt.revision)
-            .fetch_optional(&self.pool).await.map_err(|_| ShenlunAiError::Storage)?
-            .ok_or(ShenlunAiError::NotReady)?;
-        record(&rows)
+    /// The source answer can be revealed only after this question's shared AI
+    /// conversation contains a completed, user-requested grading report.
+    /// No separate Shenlun grade job or score history is created.
+    async fn review_has_grade(&self, question_id: &str) -> Result<(), ShenlunAiError> {
+        let review = self.attachments.as_ref().ok_or(ShenlunAiError::NotReady)?
+            .state(question_id).await.map_err(|_| ShenlunAiError::NotReady)?;
+        let mut requested = false;
+        for message in review.messages {
+            if message.role == "user" &&
+                (message.content.starts_with("【申论批改】") ||
+                 message.content.starts_with("【申论批改交流】")) {
+                requested = true;
+            }
+            if requested && message.role == "assistant" &&
+                message.content.contains("# 申论批改") {
+                return Ok(());
+            }
+        }
+        Err(ShenlunAiError::NotReady)
     }
 
     pub async fn reference_answer(
@@ -175,13 +185,8 @@ impl ShenlunAiService {
         attempt_id: &str,
     ) -> Result<ShenlunSourceAnswer, ShenlunAiError> {
         let attempt = self.bank.shenlun_attempt(attempt_id).await?;
-        if attempt.status != "submitted" {
-            return Err(ShenlunAiError::NotReady);
-        }
-        // Once legitimately revealed, removing an AI grade must not revoke the
-        // already-recorded source-answer exposure. New attempts are still gated.
         if attempt.reference_viewed_at_ms.is_none() {
-            self.completed_grade(&attempt).await?;
+            self.review_has_grade(&attempt.question_id).await?;
         }
         let source = self
             .bank
