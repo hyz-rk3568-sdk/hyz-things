@@ -3044,7 +3044,16 @@ fn is_post_path(path: &str) -> bool {
         || is_quantitative_relations_run_post_path(path)
         || is_question_bank_practice_post_path(path)
         || is_shenlun_attempt_post_path(path)
+        || is_shenlun_ocr_post_path(path)
 }
+fn is_shenlun_ocr_post_path(path: &str) -> bool {
+    let parts: Vec<&str> = path.split('/').collect();
+    parts.len() == 8
+        && parts[..6] == ["", "api", "v1", "question-bank", "shenlun", "questions"]
+        && crate::application::question_bank::document::valid_id(parts[6])
+        && parts[7] == "ocr"
+}
+
 fn is_shenlun_attempt_post_path(path: &str) -> bool {
     let parts: Vec<&str> = path.split('/').collect();
     if parts.len() == 8
