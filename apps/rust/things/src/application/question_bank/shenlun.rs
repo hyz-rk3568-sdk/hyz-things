@@ -42,7 +42,11 @@ impl QuestionBankApplication {
         question_id: &str,
     ) -> Result<ShenlunSourceContext, BankError> {
         let paper = self.shenlun_paper(paper_id).await?;
-        if !paper.questions.iter().any(|question| question.id == question_id) {
+        if !paper
+            .questions
+            .iter()
+            .any(|question| question.id == question_id)
+        {
             return Err(BankError::NotFound);
         }
         let source = self.repository.paper_content(paper_id).await?;
@@ -51,9 +55,13 @@ impl QuestionBankApplication {
             .into_iter()
             .find(|question| question.id == question_id && question.answer_type == "subjective")
             .ok_or(BankError::NotFound)?;
-        let materials = source.materials.into_iter()
-            .filter(|material| question.materials.contains(&material.name)
-                || question.materials.contains(&material.id))
+        let materials = source
+            .materials
+            .into_iter()
+            .filter(|material| {
+                question.materials.contains(&material.name)
+                    || question.materials.contains(&material.id)
+            })
             .collect();
         Ok(ShenlunSourceContext {
             paper_id: paper.id,

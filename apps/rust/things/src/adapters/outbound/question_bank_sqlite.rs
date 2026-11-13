@@ -127,8 +127,13 @@ fn shenlun_from_row(row: &sqlx::sqlite::SqliteRow) -> Result<ShenlunAttempt, Ban
         submitted_at_ms: row
             .try_get("submitted_at_ms")
             .map_err(|_| BankError::Storage)?,
-        reference_viewed_at_ms: row.try_get("reference_viewed_at_ms").map_err(|_| BankError::Storage)?,
-        after_reference: row.try_get::<i64, _>("after_reference").map_err(|_| BankError::Storage)? != 0,
+        reference_viewed_at_ms: row
+            .try_get("reference_viewed_at_ms")
+            .map_err(|_| BankError::Storage)?,
+        after_reference: row
+            .try_get::<i64, _>("after_reference")
+            .map_err(|_| BankError::Storage)?
+            != 0,
     })
 }
 
@@ -306,8 +311,11 @@ impl QuestionBankRepositoryPort for SqliteQuestionBankRepository {
               WHERE status='submitted' AND length(trim(answer_text)) > 0 GROUP BY question_id)
              WHERE submitted_at_ms>=? AND submitted_at_ms<? GROUP BY day",
         )
-        .bind(start_ms).bind(end_ms)
-        .fetch_all(&self.pool).await.map_err(|_| BankError::Storage)?;
+        .bind(start_ms)
+        .bind(end_ms)
+        .fetch_all(&self.pool)
+        .await
+        .map_err(|_| BankError::Storage)?;
         for (day, count) in subjective {
             if let Some(row) = objective.iter_mut().find(|row| row.0 == day) {
                 row.1 += count;
@@ -315,7 +323,7 @@ impl QuestionBankRepositoryPort for SqliteQuestionBankRepository {
                 objective.push((day, count));
             }
         }
-        objective.sort_by(|left,right| left.0.cmp(&right.0));
+        objective.sort_by(|left, right| left.0.cmp(&right.0));
         Ok(objective)
     }
 
@@ -404,8 +412,11 @@ impl QuestionBankRepositoryPort for SqliteQuestionBankRepository {
              WHERE first.first_at>=? AND first.first_at<?
              GROUP BY day,paper_title",
         )
-        .bind(start_ms).bind(end_ms)
-        .fetch_all(&self.pool).await.map_err(|_| BankError::Storage)?;
+        .bind(start_ms)
+        .bind(end_ms)
+        .fetch_all(&self.pool)
+        .await
+        .map_err(|_| BankError::Storage)?;
         breakdown.extend(subjective.into_iter().map(|(day, paper_title, answered)| {
             DailyAnsweredBreakdownRow {
                 day,

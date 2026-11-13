@@ -779,8 +779,7 @@ fn app_with_assets(
         )
         .route(
             "/api/v1/question-bank/shenlun/attempts/{id}/transcription/confirm",
-            on(MethodFilter::POST, shenlun::confirm)
-                .layer(DefaultBodyLimit::max(200 * 1024)),
+            on(MethodFilter::POST, shenlun::confirm).layer(DefaultBodyLimit::max(200 * 1024)),
         )
         .route(
             "/api/v1/question-bank/shenlun/attempts/{id}/source-answer",
@@ -3086,12 +3085,14 @@ fn is_shenlun_attempt_post_path(path: &str) -> bool {
     let parts: Vec<&str> = path.split('/').collect();
     if parts.len() == 8
         && parts[..6] == ["", "api", "v1", "question-bank", "shenlun", "jobs"]
-        && uuid::Uuid::parse_str(parts[6]).is_ok_and(|id| id.to_string() == parts[6]) {
+        && uuid::Uuid::parse_str(parts[6]).is_ok_and(|id| id.to_string() == parts[6])
+    {
         return parts[7] == "stop";
     }
     if parts.len() < 8
         || parts[..6] != ["", "api", "v1", "question-bank", "shenlun", "attempts"]
-        || !uuid::Uuid::parse_str(parts[6]).is_ok_and(|id| id.to_string() == parts[6]) {
+        || !uuid::Uuid::parse_str(parts[6]).is_ok_and(|id| id.to_string() == parts[6])
+    {
         return false;
     }
     parts.len() == 8 && matches!(parts[7], "draft" | "submit" | "jobs")

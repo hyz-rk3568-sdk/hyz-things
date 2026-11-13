@@ -109,12 +109,8 @@ impl CodexConfig {
     pub(crate) async fn connect_shenlun(&self) -> Result<CodexSession, String> {
         #[cfg(test)]
         if let Some(address) = self.test_server {
-            return CodexSession::connect_shenlun_test_server(
-                address,
-                &self.token,
-                &self.cwd,
-            )
-            .await;
+            return CodexSession::connect_shenlun_test_server(address, &self.token, &self.cwd)
+                .await;
         }
         tokio::time::timeout(
             Duration::from_secs(12),

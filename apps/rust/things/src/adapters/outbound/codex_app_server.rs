@@ -577,7 +577,15 @@ impl CodexSession {
         cwd: &str,
         previous_thread: Option<&str>,
     ) -> Result<Self, String> {
-        Self::connect_at_mode(&address.to_string(), token, cwd, previous_thread, true, false).await
+        Self::connect_at_mode(
+            &address.to_string(),
+            token,
+            cwd,
+            previous_thread,
+            true,
+            false,
+        )
+        .await
     }
 
     /// 申论使用独立临时线程，但与现有 Codex 任务一样允许全部权限。

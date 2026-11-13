@@ -3,8 +3,8 @@ use hyz_things::{
         inbound::http::{
             app_with_admin_camera_control_and_flashcards_and_analysis_with_allowed_origins,
             bind_fixed_lan_with_retry, bind_ipv6_listener, with_favorite_flashcards,
-            with_question_bank, with_question_bank_ai, with_shenlun_ai, with_training_time, PortalTls, TlsListener,
-            DEFAULT_BIND_ATTEMPTS, DEFAULT_HTTP_PORT,
+            with_question_bank, with_question_bank_ai, with_shenlun_ai, with_training_time,
+            PortalTls, TlsListener, DEFAULT_BIND_ATTEMPTS, DEFAULT_HTTP_PORT,
         },
         outbound::{
             admin::AdminFileAdapter,
@@ -20,9 +20,9 @@ use hyz_things::{
             question_bank_ai::QuestionBankAiService,
             question_bank_source::FilesystemQuestionBankSource,
             question_bank_sqlite::SqliteQuestionBankRepository,
-            shenlun_ai::ShenlunAiService,
             registry::RegistryAdapter,
             router::RouterControlClient,
+            shenlun_ai::ShenlunAiService,
             tailscale::{fetch_tailscale_status, PortalListenerApp, TailscaleListenerManager},
             training_time::TrainingTimeService,
         },
@@ -244,7 +244,10 @@ async fn run_daemon() -> Result<(), Box<dyn Error>> {
                 tracing::warn!(?error, "question bank AI recovery failed");
             }
             let shenlun_ai = Arc::new(ShenlunAiService::new(
-                bank.clone(), pool, codex, Some(ai.clone()),
+                bank.clone(),
+                pool,
+                codex,
+                Some(ai.clone()),
             ));
             if let Err(error) = shenlun_ai.recover_interrupted().await {
                 tracing::warn!(?error, "shenlun AI recovery failed");
