@@ -243,3 +243,24 @@
 **不运行全量 Playwright E2E。** 主要命令为 `npx playwright test e2e/shenlun.spec.ts`（在项目配置指明的 Playwright 工作目录执行），可按需要增加单独的申论重构专用 spec。只在共享组件变动确实触及行测时，追加**最小** Question Bank 冒烟用例（如 ai composer / 答题卡）；不跑全量 question-bank 或其他训练模块的 E2E。Rust 编译/格式/受影响单测及 CI 必要门禁仍要检查，不把跳过全量 E2E 解释为可以跳过编译验证。
 
 **交付口径**：只有真实可用且测试完成的条目才能勾选；若在线运行环境缺少设备、Codex 或浏览器，PR 必须保持 Draft 并如实标注未验收项，不能宣称实现完成。
+
+### PR #122 当前实现进度（代码已提交，不等于通过验收）
+
+**已提交到同一个 Draft PR 的改动：**
+
+- 按 `subject=shenlun` 选择申论 Skill/提示词；AI 解析与追问直接挂载 `QuestionAiReview` 并复用 `QuestionBankAiService` 的真实 Codex Thread、SSE、恢复、运行历史及删除。没有任何新聊天表或手工重组对话 Prompt；提示词不包含线程管理术语。申论 AI 身份在题目 UUID 和题干指纹基础上增加原卷源版本，原有行测指纹不变。
+- `AiImagePicker` + `AiComposer` 从 Question Bank 抽成共享实现。行测保持 2000 字输入上限；申论提供最长 50000 字、已冻结原稿只读。OCR 只接收图片；批改与解析均支持文本/图片；文字加图片转写前先保存文字，确认后才能评分。
+- 申论选卷页沿用 Question Bank 地区/年份/原卷结构；进入试卷默认 AI 复盘、不自动创建批改记录；复用 `TrainingSplitWorkspace`、`QuestionBankQuestionHeader`、`MaterialScrollButton`、`CompactQuestionNavigation`、`QuestionHeaderActions`、题目收藏与 Flashcard 现成组件。移除独立题号行、题型筛选条、二稿对比、独立 AI 参考答案入口。
+- 评分仍使用 `ShenlunAiService`，按输入快照冻结后请求 Codex，保留原有点池/证据校验。三点菜单提供新批改、重批、历史、删除当前 AI 记录；真实后端删除只允许终态 Job，且不删除原稿。OCR 确认后清理临时任务结果；来源答案保留已解锁标记。修复切题时旧异步请求和收藏响应串题的风险。
+- 改写 `e2e/shenlun.spec.ts`（选卷/答题卡、文本批改、历史删除、来源答案、OCR 确认、直接复用 AI 解析），并调整 CI E2E 选择脚本：本 PR 确认只选择该专项 spec，不运行其他无关 E2E。
+
+**尚未完成验收 / 应在同一 PR 继续修复，不允许直接合并：**
+
+- [ ] 对最终 HEAD 运行 Rust `fmt --check`、编译、受影响单测及 Clippy；当前在线工具只有 GitHub 代码读写，无法检出并执行 Rust 命令。静态括号/语法配对检查不能代替编译。
+- [ ] 执行 `npx playwright test e2e/shenlun.spec.ts` 并修复实际失败；目前仅提交定向用例，没有浏览器运行结果。必要时对共享 AI Composer 加单个 Question Bank 冒烟用例，不运行全量 E2E。
+- [ ] 真 Codex / 图片转写 / 大作文效果与 iPad 响应式人工验证；不把 mock E2E 等同于真实模型评分。
+- [ ] 批改 Job 的真实工具调用轨迹目前未接入 Question Bank 的逐事件展示；已有的是 Job 状态与评分结果历史。若要展示工具轨迹，先评估现有进度事件适配，不应再造聊天会话。
+- [ ] 核查快速重复发送/网络断线时评分 Job 的请求 ID 恢复机制。旧 `ShenlunAiPanel` 的待确认请求追踪尚未完整移植，不得声称全部重试幂等已验收。
+- [ ] 收敛最终 UI 的窄屏/滚动/输入框布局与 Flashcard 跨学科资格判定，按专项验收修正。
+
+**验收规则**：仍维持 Draft，不直推 main，不全量 E2E；以上项目有真实结果后才勾选最终的产品验收清单。
