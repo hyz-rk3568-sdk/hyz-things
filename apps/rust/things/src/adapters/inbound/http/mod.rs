@@ -743,6 +743,14 @@ fn app_with_assets(
             on(MethodFilter::GET, question_bank::paper),
         )
         .route(
+            "/api/v1/question-bank/shenlun/papers",
+            on(MethodFilter::GET, question_bank::shenlun_papers),
+        )
+        .route(
+            "/api/v1/question-bank/shenlun/papers/{id}",
+            on(MethodFilter::GET, question_bank::shenlun_paper),
+        )
+        .route(
             "/api/v1/question-bank/papers/{id}/modules",
             on(MethodFilter::GET, question_bank::modules),
         )
