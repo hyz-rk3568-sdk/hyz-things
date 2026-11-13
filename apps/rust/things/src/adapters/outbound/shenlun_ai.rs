@@ -407,6 +407,21 @@ impl ShenlunAiService {
         self.get(&request.request_id).await
     }
 
+    /// Delete one completed/stopped/failed AI record, never its source answer or question.
+    /// A running or uncertain remote execution must be stopped/resolved first.
+    pub async fn delete_record(&self, id: &str) -> Result<(), ShenlunAiError> {
+        let job = self.get(id).await?;
+        if matches!(job.status.as_str(), "running" | "unknown") {
+            return Err(ShenlunAiError::NotReady);
+        }
+        let deleted = sqlx::query("DELETE FROM shenlun_jobs WHERE id=? AND status IN ('complete','failed','stopped')")
+            .bind(id).execute(&self.pool).await.map_err(|_| ShenlunAiError::Storage)?;
+        if deleted.rows_affected() != 1 {
+            return Err(ShenlunAiError::NotReady);
+        }
+        Ok(())
+    }
+
     pub async fn stop(&self, id: &str) -> Result<ShenlunJob, ShenlunAiError> {
         let job = self.get(id).await?;
         if job.status == "running" {
