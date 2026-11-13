@@ -1,10 +1,10 @@
 //! 申论训练：复用 Question Bank 真题复盘工作区，而非建立第二套考试 Session。
 use super::favorite_flashcard::{favorite_can_create, FavoriteFlashcardWorkspace, FavoritePreview};
-use super::question_bank_practice::{ai_draft_key, ai_draft_write, use_practice_favorite, QuestionAiReview, QuestionBankQuestionHeader};
+use super::question_bank_practice::{use_practice_favorite, QuestionAiReview, QuestionBankQuestionHeader};
 use super::material_scroll::{use_training_scroll_pair, MaterialScrollButton};
 use super::*;
 use hyz_things::domain::question_bank::{
-    CreateShenlunAttempt, FavoriteState, PaperSummary, PaperView, QuestionView, SetFavorite, ShenlunAttempt,
+    FavoriteState, PaperSummary, PaperView, QuestionView, SetFavorite,
 };
 
 #[derive(Properties, PartialEq)]
@@ -24,25 +24,6 @@ fn topic_label(question: &QuestionView) -> &str {
     }
 }
 
-pub(super) fn new_shenlun_attempt_id() -> Result<String, String> {
-    let mut bytes = [0u8; 16];
-    web_sys::window()
-        .ok_or("浏览器不可用")?
-        .crypto()
-        .map_err(|_| "无法获取安全随机数")?
-        .get_random_values_with_u8_array(&mut bytes)
-        .map_err(|_| "无法获取安全随机数")?;
-    bytes[6] = (bytes[6] & 0x0f) | 0x40;
-    bytes[8] = (bytes[8] & 0x3f) | 0x80;
-    Ok(format!(
-        "{:02x}{:02x}{:02x}{:02x}-{:02x}{:02x}-{:02x}-{:02x}-{:02x}{:02x}-{:02x}{:02x}{:02x}{:02x}{:02x}{:02x}{:02x}{:02x}{:02x}",
-        bytes[0], bytes[1], bytes[2], bytes[3],
-        bytes[4], bytes[5], bytes[6], bytes[7],
-        bytes[8], bytes[9], bytes[10], bytes[11],
-        bytes[12], bytes[13], bytes[14], bytes[15],
-    ))
-}
-
 #[function_component(ShenlunTraining)]
 pub(super) fn shenlun_training(props: &ShenlunTrainingProps) -> Html {
     let papers = use_state(|| None::<Vec<PaperSummary>>);
@@ -52,17 +33,12 @@ pub(super) fn shenlun_training(props: &ShenlunTrainingProps) -> Html {
     let loading = use_state(|| true);
     let error = use_state(|| None::<String>);
     let refresh = use_state(|| 0_u32);
-    let attempt = use_state(|| None::<ShenlunAttempt>);
-    let attempts = use_state(Vec::<ShenlunAttempt>::new);
-    let attempt_loading = use_state(|| false);
     let mode = use_state(|| "ai".to_owned());
     let menu_open = use_state(|| false);
     let ai_delete_signal = use_state(|| 0_u32);
     let scroll = use_training_scroll_pair();
     let question_key = (*paper).as_ref().and_then(|p|
         p.questions.get(*selected).map(|question| (p.id.clone(), question.id.clone())));
-    let active_question = use_mut_ref(|| None::<(String, String)>);
-    *active_question.borrow_mut() = question_key.clone();
     let favorite=use_practice_favorite(question_key.as_ref().map(|(_,id)|id.clone()));
     let favorite_busy=use_state(||false);
     let flashcard_preview=use_state(||None::<(String,FavoritePreview)>);
@@ -122,67 +98,6 @@ pub(super) fn shenlun_training(props: &ShenlunTrainingProps) -> Html {
             move || alive.set(false)
         });
     }
-    // An attempt is only the native grade job's immutable input container.
-    // Nothing here creates an objective practice session, countdown, or exam submission.
-    let needs_attempt = *mode == "ocr";
-    {
-        let attempt = attempt.clone();
-        let attempts = attempts.clone();
-        let attempt_loading = attempt_loading.clone();
-        let menu_open = menu_open.clone();
-        let error = error.clone();
-        let csrf = props.csrf.clone();
-        use_effect_with((question_key.clone(), needs_attempt), move |(key, needed)| {
-            let alive = Rc::new(Cell::new(true));
-            if *needed {
-            attempt.set(None);
-            attempts.set(Vec::new());
-            attempt_loading.set(key.is_some());
-            menu_open.set(false);
-            if let Some((paper_id, question_id)) = key.clone() {
-                let guard = alive.clone();
-                let attempt = attempt.clone();
-                let attempts = attempts.clone();
-                let attempt_loading = attempt_loading.clone();
-                let error = error.clone();
-                let csrf = csrf.clone();
-                spawn_local(async move {
-                    let url = format!("/api/v1/question-bank/shenlun/attempts?paper_id={paper_id}&question_id={question_id}");
-                    let records = fetch_json::<Vec<ShenlunAttempt>>(&url, "申论批改记录").await;
-                    if !guard.get() { return; }
-                    let result = match records {
-                        Ok(items) if !items.is_empty() => Ok(items),
-                        Ok(_) => match new_shenlun_attempt_id() {
-                            Ok(request_id) => {
-                                let request = CreateShenlunAttempt { request_id, paper_id, question_id };
-                                let created: Result<ShenlunAttempt, String> = post_json_response(
-                                    "/api/v1/question-bank/shenlun/attempts",
-                                    &csrf, &request, "准备申论 AI 批改"
-                                ).await;
-                                created.map(|record| vec![record])
-                            }
-                            Err(message) => Err(message),
-                        },
-                        Err(message) => Err(message),
-                    };
-                    if !guard.get() { return; }
-                    match result {
-                        Ok(items) => {
-                            let active = items.iter().find(|record| record.status == "draft")
-                                .or_else(|| items.first()).cloned();
-                            attempt.set(active);
-                            attempts.set(items);
-                        }
-                        Err(message) => error.set(Some(message)),
-                    }
-                    attempt_loading.set(false);
-                });
-            }
-            }
-            move || alive.set(false)
-        });
-    }
-
     let open = {
         let busy = busy.clone();
         let paper = paper.clone();
@@ -227,31 +142,6 @@ pub(super) fn shenlun_training(props: &ShenlunTrainingProps) -> Html {
             paper.set(None);
         })
     };
-    let on_confirm = {
-        let attempt = attempt.clone();
-        let attempts = attempts.clone();
-        let active_question = active_question.clone();
-        Callback::from(move |next: ShenlunAttempt| {
-            if active_question.borrow().as_ref() != Some(&(next.paper_id.clone(), next.question_id.clone())) {
-                return;
-            }
-            // Transfer the human-confirmed OCR text into the existing AI composer,
-            // not into a separate grading history or session.
-            if !next.text.trim().is_empty() {
-                ai_draft_write(&ai_draft_key(&next.question_id, "start"), &next.text);
-                ai_draft_write(&ai_draft_key(&next.question_id, "follow-up"), &next.text);
-            }
-            let mut history = (*attempts).clone();
-            if let Some(row) = history.iter_mut().find(|row| row.id == next.id) {
-                *row = next.clone();
-            } else {
-                history.insert(0, next.clone());
-            }
-            attempts.set(history);
-            attempt.set(Some(next));
-        })
-    };
-
     if let Some(current) = (*paper).as_ref() {
         let index = (*selected).min(current.questions.len().saturating_sub(1));
         let question = current.questions.get(index);
@@ -443,11 +333,9 @@ pub(super) fn shenlun_training(props: &ShenlunTrainingProps) -> Html {
                         if mode_value=="source" {
                             <super::shenlun_ai_panel::ShenlunSourceAnswerPanel key={question_id.clone()}
                                 question_id={question_id.clone()}/>
-                        } else if *attempt_loading {
-                            <p class="mt-3 text-sm text-base-content/60">{"正在准备手写转写…"}</p>
-                        } else if let Some(record)=(*attempt).as_ref() {
-                            <ShenlunAiPanel key={record.id.clone()} attempt={record.clone()}
-                                csrf={props.csrf.clone()} on_confirm={on_confirm.clone()}/>
+                        } else if mode_value=="ocr" {
+                            <ShenlunAiPanel key={question_id.clone()}
+                                question_id={question_id.clone()} csrf={props.csrf.clone()}/>
                         }
                         if let Some(message)=(*error).as_ref() {
                             <p role="alert" class="mt-2 text-sm text-error">{message.clone()}</p>
