@@ -1,11 +1,12 @@
 //! 申论批改：与行测客观题并列的真题选择、材料阅读入口。
-//! 不展示来源参考答案；主观题草稿/评分在独立服务就绪后接入。
+//! 不展示来源参考答案；草稿与交卷使用申论独立 API，评分尚待接入。
 use super::*;
-use hyz_things::domain::question_bank::{PaperSummary, PaperView, QuestionView};
+use hyz_things::domain::question_bank::{CreateShenlunAttempt, PaperSummary, PaperView, QuestionView, SaveShenlunDraft, ShenlunAttempt};
 
 #[derive(Properties, PartialEq)]
 pub(super) struct ShenlunTrainingProps {
     pub(super) on_immersive_change: Callback<bool>,
+    pub(super) csrf: String,
 }
 
 fn topic_label(question: &QuestionView) -> &str {
@@ -19,6 +20,25 @@ fn topic_label(question: &QuestionView) -> &str {
     }
 }
 
+fn new_shenlun_attempt_id() -> Result<String, String> {
+    let mut bytes = [0u8; 16];
+    web_sys::window()
+        .ok_or("浏览器不可用")?
+        .crypto()
+        .map_err(|_| "无法获取安全随机数")?
+        .get_random_values_with_u8_array(&mut bytes)
+        .map_err(|_| "无法获取安全随机数")?;
+    bytes[6] = (bytes[6] & 0x0f) | 0x40;
+    bytes[8] = (bytes[8] & 0x3f) | 0x80;
+    Ok(format!(
+        "{:02x}{:02x}{:02x}{:02x}-{:02x}{:02x}-{:02x}{:02x}-{:02x}{:02x}-{:02x}{:02x}{:02x}{:02x}{:02x}{:02x}{:02x}{:02x}",
+        bytes[0], bytes[1], bytes[2], bytes[3],
+        bytes[4], bytes[5], bytes[6], bytes[7],
+        bytes[8], bytes[9], bytes[10], bytes[11],
+        bytes[12], bytes[13], bytes[14], bytes[15],
+    ))
+}
+
 #[function_component(ShenlunTraining)]
 pub(super) fn shenlun_training(props: &ShenlunTrainingProps) -> Html {
     let papers = use_state(|| None::<Vec<PaperSummary>>);
@@ -30,6 +50,100 @@ pub(super) fn shenlun_training(props: &ShenlunTrainingProps) -> Html {
     let loading = use_state(|| true);
     let error = use_state(|| None::<String>);
     let refresh = use_state(|| 0_u32);
+    let attempt = use_state(|| None::<ShenlunAttempt>);
+    let attempt_history = use_state(Vec::<ShenlunAttempt>::new);
+    let draft = use_state(String::new);
+    let attempt_loading = use_state(|| false);
+    let attempt_busy = use_state(|| false);
+    let saving = use_state(|| false);
+    let draft_error = use_state(|| None::<String>);
+    let question_key = (*paper).as_ref().and_then(|p| {
+        p.questions.get(*selected).map(|question| (p.id.clone(), question.id.clone()))
+    });
+    {
+        let attempt = attempt.clone();
+        let attempt_history = attempt_history.clone();
+        let draft = draft.clone();
+        let attempt_loading = attempt_loading.clone();
+        let draft_error = draft_error.clone();
+        use_effect_with(question_key.clone(), move |key| {
+            let cancelled = Rc::new(Cell::new(false));
+            attempt.set(None);
+            attempt_history.set(Vec::new());
+            draft.set(String::new());
+            draft_error.set(None);
+            attempt_loading.set(key.is_some());
+            if let Some((paper_id, question_id)) = key.clone() {
+                let cancelled = cancelled.clone();
+                spawn_local(async move {
+                    let url = format!(
+                        "/api/v1/question-bank/shenlun/attempts?paper_id={paper_id}&question_id={question_id}"
+                    );
+                    let result = fetch_json::<Vec<ShenlunAttempt>>(&url, "申论作答历史").await;
+                    if cancelled.get() {
+                        return;
+                    }
+                    match result {
+                        Ok(items) => {
+                            let active = items.iter().find(|item| item.status == "draft")
+                                .or_else(|| items.first()).cloned();
+                            if let Some(record) = active.as_ref() {
+                                draft.set(record.text.clone());
+                            }
+                            attempt.set(active);
+                            attempt_history.set(items);
+                        }
+                        Err(error) => draft_error.set(Some(error)),
+                    }
+                    attempt_loading.set(false);
+                });
+            }
+            move || cancelled.set(true)
+        });
+    }
+    {
+        let snapshot = (*attempt).clone();
+        let text = (*draft).clone();
+        let blocked = *saving || (*draft_error).is_some();
+        let csrf = props.csrf.clone();
+        let attempt = attempt.clone();
+        let saving = saving.clone();
+        let draft_error = draft_error.clone();
+        use_effect_with((snapshot.clone(), text.clone(), blocked), move |_| {
+            let pending = if let Some(record) = snapshot.filter(|record| {
+                record.status == "draft" && record.text != text && !blocked
+            }) {
+                Some(gloo_timers::callback::Timeout::new(900, move || {
+                    saving.set(true);
+                    let attempt = attempt.clone();
+                    let saving = saving.clone();
+                    let draft_error = draft_error.clone();
+                    spawn_local(async move {
+                        let result: Result<ShenlunAttempt, String> = post_json_response(
+                            &format!("/api/v1/question-bank/shenlun/attempts/{}/draft", record.id),
+                            &csrf,
+                            &SaveShenlunDraft {
+                                expected_revision: record.revision,
+                                text,
+                            },
+                            "自动保存申论草稿",
+                        )
+                        .await;
+                        match result {
+                            Ok(saved) => attempt.set(Some(saved)),
+                            Err(message) => draft_error.set(Some(format!(
+                                "草稿未保存，请修改或重试：{message}"
+                            ))),
+                        }
+                        saving.set(false);
+                    });
+                }))
+            } else {
+                None
+            };
+            move || drop(pending)
+        });
+    }
     {
         let papers = papers.clone();
         let loading = loading.clone();
@@ -104,6 +218,118 @@ pub(super) fn shenlun_training(props: &ShenlunTrainingProps) -> Html {
             paper.set(None);
         })
     };
+    let set_draft = {
+        let draft = draft.clone();
+        let draft_error = draft_error.clone();
+        Callback::from(move |event: InputEvent| {
+            let input: web_sys::HtmlTextAreaElement = event.target_unchecked_into();
+            draft_error.set(None);
+            draft.set(input.value());
+        })
+    };
+    let new_attempt = {
+        let key = question_key.clone();
+        let csrf = props.csrf.clone();
+        let attempt_busy = attempt_busy.clone();
+        let attempt = attempt.clone();
+        let draft = draft.clone();
+        let draft_error = draft_error.clone();
+        let attempt_history = attempt_history.clone();
+        Callback::from(move |_| {
+            let Some((paper_id, question_id)) = key.clone() else {
+                return;
+            };
+            if *attempt_busy {
+                return;
+            }
+            let request_id = match new_shenlun_attempt_id() {
+                Ok(id) => id,
+                Err(error) => {
+                    draft_error.set(Some(error));
+                    return;
+                }
+            };
+            attempt_busy.set(true);
+            let attempt_busy = attempt_busy.clone();
+            let attempt = attempt.clone();
+            let draft = draft.clone();
+            let draft_error = draft_error.clone();
+            let attempt_history = attempt_history.clone();
+            let csrf = csrf.clone();
+            spawn_local(async move {
+                let result: Result<ShenlunAttempt, String> = post_json_response(
+                    "/api/v1/question-bank/shenlun/attempts",
+                    &csrf,
+                    &CreateShenlunAttempt { request_id, paper_id, question_id },
+                    "开始申论作答",
+                )
+                .await;
+                match result {
+                    Ok(record) => {
+                        draft.set(record.text.clone());
+                        attempt.set(Some(record.clone()));
+                        let mut items = (*attempt_history).clone();
+                        items.insert(0, record);
+                        attempt_history.set(items);
+                        draft_error.set(None);
+                    }
+                    Err(message) => draft_error.set(Some(message)),
+                }
+                attempt_busy.set(false);
+            });
+        })
+    };
+    let submit = {
+        let attempt = attempt.clone();
+        let draft_error = draft_error.clone();
+        let attempt_busy = attempt_busy.clone();
+        let attempt_history = attempt_history.clone();
+        let csrf = props.csrf.clone();
+        Callback::from(move |_| {
+            let Some(record) = (*attempt).clone() else {
+                return;
+            };
+            if record.status != "draft" || record.text.trim().is_empty() || *attempt_busy {
+                return;
+            }
+            attempt_busy.set(true);
+            let attempt = attempt.clone();
+            let draft_error = draft_error.clone();
+            let attempt_busy = attempt_busy.clone();
+            let attempt_history = attempt_history.clone();
+            let csrf = csrf.clone();
+            spawn_local(async move {
+                let result: Result<ShenlunAttempt, String> = post_json_response(
+                    &format!("/api/v1/question-bank/shenlun/attempts/{}/submit", record.id),
+                    &csrf,
+                    &EmptyRequest {},
+                    "提交申论作答",
+                )
+                .await;
+                match result {
+                    Ok(submitted) => {
+                        let mut history = (*attempt_history).clone();
+                        if let Some(row) = history.iter_mut().find(|row| row.id == submitted.id) {
+                            *row = submitted.clone();
+                        }
+                        attempt_history.set(history);
+                        attempt.set(Some(submitted));
+                        draft_error.set(None);
+                    }
+                    Err(message) => draft_error.set(Some(message)),
+                }
+                attempt_busy.set(false);
+            });
+        })
+    };
+    let select_attempt = {
+        let attempt = attempt.clone();
+        let draft = draft.clone();
+        Callback::from(move |record: ShenlunAttempt| {
+            draft.set(record.text.clone());
+            attempt.set(Some(record));
+        })
+    };
     let set_year = {
         let year = year.clone();
         Callback::from(move |event: InputEvent| {
@@ -124,6 +350,9 @@ pub(super) fn shenlun_training(props: &ShenlunTrainingProps) -> Html {
         Callback::from(move |_| region.set("湖南".into()))
     };
 
+    let unsaved = (*attempt).as_ref()
+        .is_some_and(|record| record.status == "draft" && record.text != *draft);
+    let navigation_locked = *saving || *attempt_busy || unsaved;
     if let Some(current) = (*paper).as_ref() {
         let index = (*selected).min(current.questions.len().saturating_sub(1));
         let question = current.questions.get(index);
@@ -164,6 +393,7 @@ pub(super) fn shenlun_training(props: &ShenlunTrainingProps) -> Html {
                         html! {
                             <button type="button" key={item.id.clone()} class={classes!("btn","btn-xs", if number == index {"btn-primary"} else {"btn-outline"})}
                                 aria-current={(number == index).then_some("step")}
+                                disabled={navigation_locked}
                                 data-testid="shenlun-question-nav"
                                 onclick={Callback::from(move |_| selected.set(number))}>{item.number}</button>
                         }
@@ -177,21 +407,79 @@ pub(super) fn shenlun_training(props: &ShenlunTrainingProps) -> Html {
                             {question.max_score.map(|s| format!("{s} 分")).unwrap_or_else(|| "分值待确认".into())}
                         </p>
                         <div class="study-markdown">{render_markdown(&question.stem, &current.id)}</div>
-                        <div class="mt-6 rounded-lg border border-dashed border-base-300 p-4 text-sm opacity-70" data-testid="shenlun-readonly-notice">
-                            {"当前仅开放真题与材料预览。主观题持久草稿、手写校对和 AI 批改需要独立数据链路，尚未开放提交。"}
+                        <div class="mt-5 space-y-3" data-testid="shenlun-answer">
+                            if *attempt_loading {
+                                <p class="text-sm opacity-70">{"正在恢复历史草稿…"}</p>
+                            } else if let Some(record) = (*attempt).as_ref() {
+                                <div class="flex flex-wrap items-center justify-between gap-2">
+                                    <span class="text-xs opacity-70">
+                                        {if record.status == "submitted" {"已交卷 · 原稿不可修改"}
+                                         else if *saving {"自动保存中…"}
+                                         else if unsaved {"待自动保存"}
+                                         else {"草稿已保存"}}
+                                    </span>
+                                    <button type="button" class="btn btn-outline btn-xs" onclick={new_attempt.clone()}
+                                        disabled={navigation_locked}>{"重做新稿"}</button>
+                                </div>
+                                <textarea class="textarea textarea-bordered min-h-48 w-full leading-relaxed" rows="12"
+                                    data-testid="shenlun-answer-input" aria-label="申论文字作答"
+                                    placeholder="在此输入申论答案（最多 50000 字）"
+                                    disabled={record.status != "draft" || *attempt_busy}
+                                    value={(*draft).clone()} oninput={set_draft.clone()} />
+                                <div class="flex items-center justify-between gap-2">
+                                    <span class="text-xs opacity-70">{format!("{} 字", draft.chars().count())}</span>
+                                    if record.status == "draft" {
+                                        <button type="button" class="btn btn-primary btn-sm"
+                                            data-testid="shenlun-submit" onclick={submit.clone()}
+                                            disabled={navigation_locked || draft.trim().is_empty() || !draft_error.is_none()}>
+                                            {"确认提交"}
+                                        </button>
+                                    } else {
+                                        <span class="text-xs opacity-70">{"已保存正式作答。AI 评分功能尚未接入。"}</span>
+                                    }
+                                </div>
+                            } else {
+                                <button type="button" class="btn btn-primary btn-sm"
+                                    data-testid="shenlun-start" disabled={*attempt_busy || props.csrf.is_empty()}
+                                    onclick={new_attempt.clone()}>{"开始作答"}</button>
+                            }
+                            if let Some(message) = (*draft_error).as_ref() {
+                                <p class="text-error text-sm" role="alert">{message}</p>
+                            }
+                            if !attempt_history.is_empty() {
+                                <div class="border-t border-base-300 pt-2">
+                                    <h3 class="mb-2 text-xs font-semibold">{"本题作答历史"}</h3>
+                                    <div class="flex flex-wrap gap-2">
+                                        {for attempt_history.iter().map(|item| {
+                                            let item = item.clone();
+                                            let select = select_attempt.clone();
+                                            let label = if item.status == "submitted" {"已交卷"} else {"草稿"};
+                                            html! {
+                                                <button type="button" key={item.id.clone()}
+                                                    class="btn btn-ghost btn-xs"
+                                                    disabled={navigation_locked}
+                                                    onclick={Callback::from(move |_| select.emit(item.clone()))}>
+                                                    {format!("{} · v{}", label, item.revision)}
+                                                </button>
+                                            }
+                                        })}
+                                    </div>
+                                </div>
+                            }
+                            <p class="text-xs opacity-60">{"手写图片校对与 AI 批改仍待接入；不要将已交卷当作已评分。"} </p>
                         </div>
                     }
                 </div>
                 <footer class="flex justify-between gap-2 border-t border-base-300 px-3 py-2">
-                    <button type="button" class="btn btn-outline btn-sm" disabled={index == 0} onclick={previous}>{"上一题"}</button>
-                    <button type="button" class="btn btn-outline btn-sm" disabled={index + 1 >= current.questions.len()} onclick={next}>{"下一题"}</button>
+                    <button type="button" class="btn btn-outline btn-sm" disabled={index == 0 || navigation_locked} onclick={previous}>{"上一题"}</button>
+                    <button type="button" class="btn btn-outline btn-sm" disabled={index + 1 >= current.questions.len() || navigation_locked} onclick={next}>{"下一题"}</button>
                 </footer>
             </section>
         };
         html! {
             <div class="flex h-full min-h-0 flex-col gap-2" data-testid="shenlun-workspace">
                 <header class="flex shrink-0 items-center gap-3">
-                    <button type="button" class="btn btn-ghost btn-sm" onclick={close}>{"← 返回选题"}</button>
+                    <button type="button" class="btn btn-ghost btn-sm" disabled={navigation_locked} onclick={close}>{"← 返回选题"}</button>
                     <h2 class="min-w-0 truncate text-sm font-semibold">{current.title.clone()}</h2>
                 </header>
                 <div class="min-h-0 flex-1">
