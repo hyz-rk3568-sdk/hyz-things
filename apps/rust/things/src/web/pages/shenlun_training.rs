@@ -1,5 +1,6 @@
 //! 申论训练：复用 Question Bank 真题复盘工作区，而非建立第二套考试 Session。
 use super::favorite_flashcard::{favorite_can_create, FavoriteFlashcardWorkspace, FavoritePreview};
+use super::question_bank_practice::{use_practice_favorite, QuestionAiReview, QuestionBankQuestionHeader};
 use super::material_scroll::{use_training_scroll_pair, MaterialScrollButton};
 use super::*;
 use hyz_things::domain::question_bank::{
