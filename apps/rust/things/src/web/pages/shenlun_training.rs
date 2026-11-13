@@ -512,10 +512,9 @@ pub(super) fn shenlun_training(props: &ShenlunTrainingProps) -> Html {
                         } else if let Some(record)=(*attempt).as_ref() {
                             <ShenlunAiPanel key={record.id.clone()} attempt={record.clone()}
                                 csrf={props.csrf.clone()} attempts={(*attempts).clone()}
-                                is_essay={question.and_then(|q|q.question_type.as_deref())==Some("essay")}
                                 mode={mode_value.clone()}
                                 regrade_signal={*grade_regrade_signal} delete_signal={*grade_delete_signal}
-                                on_new_attempt={new_attempt.clone()} on_confirm={on_confirm.clone()}/>
+                                on_confirm={on_confirm.clone()}/>
                         }
                         if let Some(message)=(*error).as_ref() {
                             <p role="alert" class="mt-2 text-sm text-error">{message.clone()}</p>
