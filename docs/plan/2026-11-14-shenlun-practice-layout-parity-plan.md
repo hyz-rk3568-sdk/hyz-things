@@ -1,0 +1,61 @@
+# 申论训练：对照专项练习的一次性布局与菜单整改 Plan
+
+**状态：仅方案，未实施。** 本 PR 只提交本文档，不修改业务代码、CSS 或测试。  
+**参照源：** `apps/rust/things/src/web/pages/question_bank_practice.rs`（4100 行）及其依赖；**目标：** `shenlun_training.rs`。
+
+## 0. 已阅读并对照的现有实现
+
+- `question_bank_practice.rs`：工作区根节点（约 316 行、3106—3204 行）、题目头和 AI 菜单（580—682 行）、AI 会话状态与删除可用性（843—979 行）、训练状态、计时、导航和滑动（约 1919—3204 行）、目录与历史相关逻辑；其他辅助区域不作为申论业务原样移植的目标。
+- `shenlun_training.rs`：当前材料/题目栏、四种模式、菜单、顶栏、答题卡和目录（全文）。
+- `training.rs`：训练 shell 与沉浸模式、`FIXED_TRAINING_LAYOUT`、`TrainingWorkspace` 对申论/专项练习的挂载。
+- `training_split_workspace.rs`、`split_resize.js`、`frontend/question-bank.css`：分栏 DOM、拖拽比例、CSS 网格断点、手柄尺寸和基于容器 class 的样式。
+- `question_header_actions.rs`、`ai_composer.rs`、`shenlun_ai_panel.rs`：复用按钮样式、Composer、OCR/来源答案。
+- `e2e/question-bank.spec.ts` 与 `e2e/shenlun.spec.ts`：现有断言的范围；专项练习已经有多个视口的面板/Composer 几何测试，申论仍缺少同级别覆盖。
+
+## 1. 已明确的代码差异与直接复制点
+
+| 项目 | 专项练习已有实现 | 申论现状及整改方式 |
+| --- | --- | --- |
+| 沉浸式容器和左右留白 | `WORKSPACE = "question-bank-workspace training-workspace fixed inset-0 z-[70] flex h-dvh w-screen flex-col overflow-hidden bg-base-200 px-3 py-2"`，最外层负责视口与外边距 | 当前 `shenlun-workspace` 仅 `flex h-full min-h-0 flex-col gap-2`。在确认训练 shell 的 fixed 上下文后，**直接复用相同的工作区容器契约**；避免双重 fixed 与重复 padding |
+| 面板样式 | `question-bank.css` 中 `.question-bank-workspace .question-bank-pane-header` 及特定 `data-testid` 阅读区选择器 | 申论没有 `question-bank-workspace` 根 class；即使复用 `QuestionBankQuestionHeader`，部分既有 CSS 不会生效。统一根 class，同时明确申论材料/题目选择器或共享语义 class，不滥用测试 ID |
+| 中间双栏 | `TrainingSplitWorkspace` 使用 3:2 默认比例，分隔把手占 `.5rem`；768px 改左右布局，较窄时上下布局 | 组件已经复用，**不重新实现网格**；只检查外层可用宽度、`min-w-0`、两卡片与分隔条的边界，不用负 margin 硬挤 |
+| 顶部与底部 | `TrainingHeader`、`StudyGoalBars`、`CodexLimitBars`、剩余空间主区、`CompactQuestionNavigation` | 复用结构，固定 header/nav 占位和主区 `min-h-0 flex-1 overflow-hidden`；是否添加计时/状态须以实际业务数据为准，不能伪造 |
+| 题目工具栏 | `QuestionBankQuestionHeader` + `QuestionHeaderActions` + `QuestionAiHeaderActions`：操作位始终靠右、三点始终存在，`can_delete` 控制删除 | 保留申论的四个功能入口，但把菜单显示和状态生命周期**照抄成熟实现原则**，不再自行根据 `mode=="ai" || mode=="grade"` 直接显示删除 |
+| AI 对话 | `QuestionAiReview` 用 `on_delete_availability` 回报是否存在可删除会话；`delete_signal` 驱动删除流程 | 申论未消费 `on_delete_availability`，导致无对话也可点删除；应复用相同能力，并确保切题/切模式后清空状态 |
+| 滑动与阅读 | `TrainingSwipeSurface`、双面板滚动、`InkOverlay`、`touch-pan-y` 与多视口测试 | 申论已有滑动组件但滚动 class/涂鸦包装不完整。以专项练习已有机制为准，避免手势抢占 OCR 文件选择或 AI 文本输入 |
+
+**额外注意：** `question-bank.css` 只有 `.question-bank-workspace [data-testid="question-bank-practice-material-scroll"]` 和 `question-bank-practice-question-scroll` 等特定选择器会给阅读区更大内边距。只补 `question-bank-workspace` class 仍不能让申论内容样式完整一致，应提取共同样式语义或显式覆盖申论真实节点。
+
+## 2. 实施顺序（后续代码 PR 一次完成，不拆碎修）
+
+### A. 将专项练习的工作区骨架原样对齐
+
+1. 以专项练习 `WORKSPACE` 为唯一外层布局基准。核对训练 shell 在沉浸状态的 positioning，确保 `shenlun-workspace` 使用**同一固定视口规则、左右 padding、背景和 overflow**。确认左、右两侧距离一致，内容不触边。
+2. 保留 `TrainingSplitWorkspace` 与原 `split_resize.js`；不另写分栏逻辑。沿用 3:2 网格、手柄与 768px 断点，并验证拖动/刷新后的宽度；原卷材料、长标题、按钮多、AI Composer 上传图片状态下仍不得撑破 `min-w-0`。
+3. 直接沿用专项练习的 `TrainingHeader -> 主区 flex-1 -> 底部 CompactQuestionNavigation` 层级。材料栏/题目栏头、圆角、边框和内部滚动区统一按同一套样式。各自滚动、全文不横向溢出、不因切换 AI/OCR 改变左右留白。
+4. 申论继续是“原卷复盘”，**不复制交卷/暂停/虚假题量或计时状态**。`InkOverlay` 若复用，需检查可写区域、题目切换持久键及 OCR/AI 输入冲突后再启用。
+
+### B. 照抄成熟 AI 菜单的**状态判断**，修复非 AI 页的删除项
+
+1. 固定三点操作按钮在题目工具栏最右侧，始终可见；不再把菜单项与 `grade|ai` 模式字符串简单绑定。
+2. 参照 `QuestionAiHeaderActions` 的完整条件：**当前展示 AI 会话 + 当前会话实际可删除**才显示删除；否则菜单展开时展示“暂无可用操作”。不在 OCR、来源参考答案、加载/空会话页面显示删除。
+3. 参照 `QuestionAiReview::on_delete_availability` 把可删除状态回传父组件；切题、切模式、删除完成、异步响应返回、退出原卷均要清零或校验状态来源，避免旧题会话的按钮泄漏到新题或非 AI 模式。
+4. **后端会话隔离不可遗漏：** 当前 grade/analysis 都指向 `/practice/questions/{id}/ai`，会出现内容交叉。实施时先设计真实 `purpose`/scope 及独立读写/删除（含草稿键和事件流），再允许按各自会话显示和删除。不能只改前端文案就声称隔离完成。将此项纳入同一个代码整改任务的功能验收；如后端隔离未实现，PR 不能宣称已完成。
+
+### C. 复制成熟 E2E 的**几何验收方式**（不是只断言“元素可见”）
+
+在 `e2e/shenlun.spec.ts` 中仅新增相关用例，参考 `e2e/question-bank.spec.ts` 的 `boundingBox`、`toHaveCSS` 与无横向溢出断言；不需要全量测试。
+
+- 同一浏览器和视口比较两个页面：**1366×900、1133×744、1024×768、768×1024（iPad 竖屏）、390×844**；至少覆盖 iPad 横竖屏和窄屏。
+- 左右外边距：`materials.x >= viewport safe inset`、`question.right <= viewport - safe inset`，且与专项练习同视口工作区容器的边界差不超过 1—2 CSS px；没有横向溢出。
+- 宽度：>=768px 面板按共享分栏规则左右显示；<768px 上下显示，面板不相互覆盖。手柄可拖拽且比例可恢复默认；两个面板的标题栏高度与纵向对齐误差 <=1 CSS px（同专项练习现有测试）。
+- 上下：header、内容、底部答题卡互不重叠；材料和 AI 解析超长时只有各自面板滚动；Composer 留在右栏底部，发送按钮不出边界。切换四模式、展开/关闭菜单后再次测量。
+- 菜单：四种模式各验证；空 AI 会话、已有可删会话、切题、切模式、删除后、异步响应晚到时验证 **只在对应有效 AI 会话显示删除**；实际删除不会影响另一题或另一 scope。
+- 对关键视口保留申论与专项练习的**并排截图基准**供人工视觉检查（留白、分栏、页头、按钮、底栏）。CI 绿但截图未验收，不能说“布局已对齐”。
+
+## 3. 验收与提交约束
+
+- 目标是“一次性整改”，不再按失败断言打补丁。先确认所有差异，再由同一后续实现 PR 一并修正。
+- E2E 只跑申论相关用例；CSS/共用组件改动如影响专项练习，另外跑对应的**专项练习相关测试**，而不是盲目全量运行。
+- Rust format / clippy / targeted tests 与 Playwright 通过，**还需 iPad 几何和截图对比**；两项都合格才可称为完成。
+- 本文档 PR 不包含实际修复，**不合并为已完成整改**，等待用户确认方案后再实施。
