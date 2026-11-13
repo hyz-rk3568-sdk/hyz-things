@@ -172,6 +172,7 @@ pub(super) struct AiComposer<'a> {
     pub(super) input_testid: &'a str,
     pub(super) button_testid: &'a str,
     pub(super) value: &'a str,
+    pub(super) max_length: usize,
     pub(super) placeholder: &'a str,
     pub(super) button_label: &'a str,
     pub(super) is_stop: bool,
@@ -208,7 +209,7 @@ pub(super) fn ai_composer(props: AiComposer<'_>) -> Html {
                 uploading={props.uploading} disabled={props.picker_disabled} testid={props.picker_testid} compact={true}>
             <textarea ref={props.input_ref} id={props.id.to_owned()} rows="1"
                 class="block h-6 min-w-16 flex-1 resize-none overflow-y-auto border-0 bg-transparent px-1 py-0 text-sm leading-6 focus:outline-none focus:ring-0"
-                data-testid={props.input_testid.to_owned()} maxlength="2000"
+                data-testid={props.input_testid.to_owned()} maxlength={props.max_length.to_string()}
                 value={props.value.to_owned()}
                 placeholder={props.placeholder.to_owned()}
                 onkeydown={props.onkeydown}
