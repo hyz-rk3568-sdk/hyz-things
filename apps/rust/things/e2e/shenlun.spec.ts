@@ -92,85 +92,86 @@ test('申论原卷复用地区年份目录和统一答题卡，不出现独立�
   await expect(page.getByTestId('training-answer-sheet-toggle')).toContainText('2/2');
 });
 
-test('批改沿用原稿快照和评分服务；三点菜单查看并删除当前 AI 记录，保留作答', async ({ page }) => {
+test('批改复用 QuestionAiReview 的 Markdown、追问和删除，不创建独立评分记录', async ({ page }) => {
   await loginAsAdmin(page);
-  let attempt = draftAttempt('11111111-1111-4111-8111-111111111111');
-  const jobs: any[] = [];
-  let submissions = 0, deletions = 0, sourceReads = 0;
+  let state: any = {
+    question_id: questionId, status: 'idle', error: null, messages: [],
+  };
+  let startInstruction = '', followMessage = '', deletions = 0, legacyGradeJobs = 0;
   await page.route('**/api/v1/question-bank/shenlun/**', async route => {
     const { pathname } = new URL(route.request().url());
+    if (pathname.endsWith('/shenlun/papers')) return route.fulfill({ json: catalog });
+    if (pathname.endsWith('/shenlun/papers/' + paperId)) return route.fulfill({ json: paperView });
+    if (pathname.includes('/jobs') && route.request().method() === 'POST') legacyGradeJobs++;
+    throw new Error('Unexpected dedicated grading request: ' + pathname);
+  });
+  await page.route('**/api/v1/question-bank/practice/questions/*/ai**', async route => {
+    const { pathname } = new URL(route.request().url());
     const method = route.request().method();
-    if (pathname.endsWith('/shenlun/papers') && method === 'GET') return route.fulfill({ json: catalog });
-    if (pathname.endsWith('/shenlun/papers/' + paperId) && method === 'GET') return route.fulfill({ json: paperView });
-    if (pathname.endsWith('/shenlun/attempts') && method === 'GET') return route.fulfill({ json: [attempt] });
-    if (pathname.endsWith('/' + attempt.id + '/jobs') && method === 'GET')
-      return route.fulfill({ json: jobs });
-    if (pathname.endsWith('/draft') && method === 'POST') {
+    if (pathname.endsWith('/runs')) return route.fulfill({ json: { items: [], next_after: null, has_more: false } });
+    if (pathname.endsWith('/ai') && method === 'GET') return route.fulfill({ json: state });
+    if (pathname.endsWith('/ai') && method === 'POST') {
       const req = route.request().postDataJSON();
-      expect(req.expected_revision).toBe(attempt.revision);
-      attempt = { ...attempt, text: req.text, revision: attempt.revision + 1 };
-      return route.fulfill({ json: attempt });
-    }
-    if (pathname.endsWith('/submit') && method === 'POST') {
-      expect(attempt.text).toContain('明确责任');
-      submissions++;
-      attempt = { ...attempt, status: 'submitted', submitted_at_ms: 2000 };
-      return route.fulfill({ json: attempt });
-    }
-    if (pathname.endsWith('/' + attempt.id + '/jobs') && method === 'POST') {
-      const req = route.request().postDataJSON();
-      expect(req.kind).toBe('grade');
-      expect(req.attachments).toEqual([]);
-      const job = {
-        id: req.request_id, attempt_id: attempt.id, kind: 'grade', status: 'complete',
-        error: null, source_hash: attempt.source_hash, attempt_revision: attempt.revision,
-        result: { score: 10, max_score: 20, summary: '表达清楚，措施稍显笼统。',
-          items: [{ id: 'p1', criterion: '明确责任', evidence: '明确责任', coverage: 'partial',
-            weight: 20, earned: 10, quote: '明确责任', reason: '缺少具体主体',
-            suggestion: '写出执行主体', start: 0, end: 0 }] },
-        skill_version: 'hyz-shenlun-v1', model: 'mock-codex',
-        created_at_ms: 5000, updated_at_ms: 5001,
+      startInstruction = req.instruction;
+      state = {
+        question_id: questionId, status: 'complete', error: null,
+        messages: [
+          { id: 1, role: 'user', content: startInstruction, created_at: 1 },
+          { id: 2, role: 'assistant', content: '# 申论批改\\n\\n## 练习参考分\\n\\nAI 练习参考分：12/20（非官方）\\n\\n## 修改建议\\n\\n应补充执行主体。', created_at: 2 },
+        ],
       };
-      jobs.unshift(job);
-      return route.fulfill({ status: 202, json: job });
+      return route.fulfill({ status: 202, json: { ...state, request: {
+        request_id: req.request_id, intent: 'initial', status: 'complete',
+        error: null, remote_uncertain: false,
+      } } });
     }
-    if (pathname.endsWith('/source-answer') && method === 'GET') {
-      sourceReads++;
-      return route.fulfill({ json: {
-        text: '来源参考答案：压实基层责任。', provenance: '题库来源（非官方）',
-        source_hash: attempt.source_hash,
-      } });
+    if (pathname.endsWith('/messages') && method === 'POST') {
+      const req = route.request().postDataJSON();
+      followMessage = req.message;
+      state = { ...state, messages: [...state.messages,
+        { id: 3, role: 'user', content: followMessage, created_at: 3 },
+        { id: 4, role: 'assistant', content: '原因是材料要求明确执行主体，而原答案未展开。', created_at: 4 },
+      ] };
+      return route.fulfill({ status: 202, json: { ...state, request: {
+        request_id: req.request_id, intent: 'follow_up', status: 'complete',
+        error: null, remote_uncertain: false,
+      } } });
     }
-    if (pathname.endsWith('/delete') && method === 'POST') {
+    if (pathname.endsWith('/ai') && method === 'DELETE') {
       deletions++;
-      const id = pathname.split('/').at(-2);
-      const i = jobs.findIndex(job => job.id === id);
-      if (i !== -1) jobs.splice(i, 1);
-      return route.fulfill({ json: { deleted: true } });
+      state = { question_id: questionId, status: 'idle', error: null, messages: [] };
+      return route.fulfill({ json: state });
     }
-    throw new Error('Unexpected 申论 request: ' + method + ' ' + pathname);
+    if (pathname.includes('/requests/') && method === 'GET') return route.fulfill({ json: {
+      request_id: 'placeholder', intent: 'initial', status: 'complete',
+      error: null, remote_uncertain: false,
+    } });
+    if (pathname.endsWith('/events') || pathname.endsWith('/ai/events'))
+      return route.fulfill({ status: 200, contentType: 'text/event-stream', body: '' });
+    return route.fulfill({ status: 404, json: {} });
   });
   await openShenlun(page);
   await page.getByTestId('shenlun-mode-grade').click();
-  const answer = page.getByTestId('shenlun-answer-input');
-  await answer.fill('应明确责任分工，建立协同机制。');
-  await page.getByTestId('shenlun-grade-start').click();
-  await expect(page.getByTestId('shenlun-score')).toContainText('10/20');
-  expect(submissions).toBe(1);
-  expect(sourceReads).toBe(0);
-  await page.getByTestId('shenlun-mode-source').click();
-  await expect(page.getByTestId('shenlun-source-answer')).toContainText('压实基层责任');
-  expect(sourceReads).toBe(1);
-  await page.getByTestId('shenlun-mode-grade').click();
-  await page.getByTestId('shenlun-more').click();
-  await page.getByTestId('shenlun-history-open').click();
-  await expect(page.getByTestId('shenlun-job-history')).toHaveCount(1);
-  await page.getByTestId('shenlun-more').click();
-  await page.getByTestId('shenlun-delete-current').click();
-  await page.getByTestId('shenlun-delete-confirm').click();
-  await expect.poll(() => deletions).toBe(1);
+  await expect(page.getByTestId('question-bank-ai-review')).toBeVisible();
+  await page.getByTestId('question-bank-ai-instruction').fill('应明确责任分工，建立协同机制。');
+  await page.getByTestId('question-bank-ai-start').click();
+  await expect.poll(() => startInstruction).toContain('【申论批改】');
+  expect(startInstruction).toContain('应明确责任分工');
+  await expect(page.getByTestId('question-bank-ai-messages')).toContainText('练习参考分');
+  await page.getByTestId('question-bank-ai-input').fill('为什么这道题要明确执行主体？');
+  await page.getByTestId('question-bank-ai-send').click();
+  await expect.poll(() => followMessage).toContain('申论批改交流');
+  await page.getByTestId('shenlun-mode-ai').click();
+  await expect(page.getByTestId('question-bank-ai-messages')).toContainText('应补充执行主体');
   await expect(page.getByTestId('shenlun-job-history')).toHaveCount(0);
-  expect(attempt.text).toContain('明确责任分工');
+  await expect(page.getByTestId('shenlun-grade-compose')).toHaveCount(0);
+  await page.getByTestId('shenlun-more').click();
+  await expect(page.getByTestId('shenlun-new-grade')).toHaveCount(0);
+  await expect(page.getByTestId('shenlun-history-open')).toHaveCount(0);
+  await page.getByTestId('shenlun-delete-current').click();
+  await page.getByTestId('question-bank-ai-delete-confirm').click();
+  await expect.poll(() => deletions).toBe(1);
+  expect(legacyGradeJobs).toBe(0);
 });
 
 test('OCR 仅图片上传并要求校对确认，不会直接触发批改', async ({ page }) => {
@@ -234,13 +235,12 @@ test('OCR 仅图片上传并要求校对确认，不会直接触发批改', asyn
   await page.getByTestId('shenlun-transcription-confirm-button').click();
   await expect.poll(() => confirmed).toBe(true);
   await page.getByTestId('shenlun-mode-grade').click();
-  await expect(page.getByTestId('shenlun-answer-input')).toHaveValue('手写确认文本，保留我的原话。');
+  await expect(page.getByTestId('question-bank-ai-instruction')).toHaveValue('手写确认文本，保留我的原话。');
 });
 
-test('AI 解析直接复用 Question Bank 的原生聊天工作区', async ({ page }) => {
+test('申论解析和批改入口是同一个 AI 对话工作区', async ({ page }) => {
   await loginAsAdmin(page);
-  const attempt = draftAttempt('44444444-4444-4444-8444-444444444444');
-  await page.route('**/api/v1/question-bank/practice/questions/*/ai*', async route => {
+  await page.route('**/api/v1/question-bank/practice/questions/*/ai**', async route => {
     const path = new URL(route.request().url()).pathname;
     if (path.endsWith('/ai')) return route.fulfill({ json: {
       question_id: questionId, status: 'idle', error: null, messages: [],
@@ -248,19 +248,20 @@ test('AI 解析直接复用 Question Bank 的原生聊天工作区', async ({ pa
     if (path.endsWith('/runs')) return route.fulfill({ json: {
       items: [], next_after: null, has_more: false,
     } });
-    return route.fulfill({ status: 200, json: {} });
+    return route.fulfill({ status: 404, json: {} });
   });
   await page.route('**/api/v1/question-bank/shenlun/**', async route => {
     const path = new URL(route.request().url()).pathname;
     if (path.endsWith('/shenlun/papers')) return route.fulfill({ json: catalog });
     if (path.endsWith('/shenlun/papers/' + paperId)) return route.fulfill({ json: paperView });
-    if (path.endsWith('/shenlun/attempts')) return route.fulfill({ json: [attempt] });
-    if (path.endsWith('/jobs')) return route.fulfill({ json: [] });
     throw new Error('Unexpected 申论 request: ' + path);
   });
   await openShenlun(page);
-  await page.getByTestId('shenlun-mode-ai').click();
   await expect(page.getByTestId('question-bank-ai-review')).toBeVisible();
   await expect(page.getByTestId('question-bank-ai-requirements-compose')).toBeVisible();
-  await expect(page.getByTestId('shenlun-grade-compose')).toHaveCount(0);
+  await page.getByTestId('shenlun-mode-grade').click();
+  await expect(page.getByTestId('question-bank-ai-review')).toBeVisible();
+  await expect(page.getByTestId('question-bank-ai-instruction')).toHaveAttribute('placeholder', /粘贴申论作答/);
+  await page.getByTestId('shenlun-mode-ai').click();
+  await expect(page.getByTestId('question-bank-ai-instruction')).toHaveAttribute('placeholder', /输入解析要求/);
 });
