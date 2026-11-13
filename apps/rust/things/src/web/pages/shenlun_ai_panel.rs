@@ -52,14 +52,19 @@ fn highlighted_answer(text: &str, result: &serde_json::Value) -> Html {
     let mut ranges = Vec::new();
     if let Some(items) = result.get("items").and_then(serde_json::Value::as_array) {
         for item in items {
-            let range = item.get("start").and_then(serde_json::Value::as_u64)
+            let range = item
+                .get("start")
+                .and_then(serde_json::Value::as_u64)
                 .and_then(|value| usize::try_from(value).ok())
-                .zip(item.get("end").and_then(serde_json::Value::as_u64)
-                    .and_then(|value| usize::try_from(value).ok()));
+                .zip(
+                    item.get("end")
+                        .and_then(serde_json::Value::as_u64)
+                        .and_then(|value| usize::try_from(value).ok()),
+                );
             let quote = item.get("quote").and_then(serde_json::Value::as_str);
-            if let (Some((start,end)),Some(quote))=(range,quote) {
+            if let (Some((start, end)), Some(quote)) = (range, quote) {
                 if start < end && text.get(start..end) == Some(quote) {
-                    ranges.push((start,end));
+                    ranges.push((start, end));
                 }
             }
         }
@@ -67,20 +72,22 @@ fn highlighted_answer(text: &str, result: &serde_json::Value) -> Html {
     ranges.sort_unstable();
     let mut rendered = Vec::new();
     let mut cursor = 0_usize;
-    for (start,end) in ranges {
-        if start < cursor {continue;}
-        if let Some(prefix)=text.get(cursor..start) {
-            rendered.push(html!{<span>{prefix.to_owned()}</span>});
+    for (start, end) in ranges {
+        if start < cursor {
+            continue;
         }
-        if let Some(marked)=text.get(start..end) {
+        if let Some(prefix) = text.get(cursor..start) {
+            rendered.push(html! {<span>{prefix.to_owned()}</span>});
+        }
+        if let Some(marked) = text.get(start..end) {
             rendered.push(html!{<mark class="bg-warning/25 rounded-sm" data-testid="shenlun-quote-highlight">{marked.to_owned()}</mark>});
         }
-        cursor=end;
+        cursor = end;
     }
-    if let Some(tail)=text.get(cursor..) {
-        rendered.push(html!{<span>{tail.to_owned()}</span>});
+    if let Some(tail) = text.get(cursor..) {
+        rendered.push(html! {<span>{tail.to_owned()}</span>});
     }
-    html!{<div class="whitespace-pre-wrap rounded-lg border border-base-300 p-3 text-sm" data-testid="shenlun-highlighted-original">{for rendered}</div>}
+    html! {<div class="whitespace-pre-wrap rounded-lg border border-base-300 p-3 text-sm" data-testid="shenlun-highlighted-original">{for rendered}</div>}
 }
 
 #[function_component(ShenlunAiPanel)]
