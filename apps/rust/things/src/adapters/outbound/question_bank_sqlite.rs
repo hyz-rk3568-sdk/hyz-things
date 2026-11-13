@@ -281,7 +281,7 @@ impl QuestionBankRepositoryPort for SqliteQuestionBankRepository {
         start_ms: i64,
         end_ms: i64,
     ) -> Result<Vec<(String, i64)>, BankError> {
-        sqlx::query_as(
+        let mut objective: Vec<(String, i64)> = sqlx::query_as(
             "SELECT date(a.submitted_at / 1000.0, 'unixepoch', '+8 hours') AS day, COUNT(*)
              FROM practice_attempts a
              JOIN practice_sessions s ON s.id=a.session_id
@@ -296,7 +296,27 @@ impl QuestionBankRepositoryPort for SqliteQuestionBankRepository {
         .bind(end_ms)
         .fetch_all(&self.pool)
         .await
-        .map_err(|_| BankError::Storage)
+        .map_err(|_| BankError::Storage)?;
+        // Count each submitted subjective question ONCE, on the date of its
+        // first nonempty submission. OCR attempts, regrading and second drafts
+        // never inflate the existing study day KPI.
+        let subjective: Vec<(String, i64)> = sqlx::query_as(
+            "SELECT date(submitted_at_ms/1000.0,'unixepoch','+8 hours') AS day, COUNT(*) FROM
+             (SELECT MIN(submitted_at_ms) submitted_at_ms FROM shenlun_attempts
+              WHERE status='submitted' AND length(trim(answer_text)) > 0 GROUP BY question_id)
+             WHERE submitted_at_ms>=? AND submitted_at_ms<? GROUP BY day",
+        )
+        .bind(start_ms).bind(end_ms)
+        .fetch_all(&self.pool).await.map_err(|_| BankError::Storage)?;
+        for (day, count) in subjective {
+            if let Some(row) = objective.iter_mut().find(|row| row.0 == day) {
+                row.1 += count;
+            } else {
+                objective.push((day, count));
+            }
+        }
+        objective.sort_by(|left,right| left.0.cmp(&right.0));
+        Ok(objective)
     }
 
     async fn daily_answered_breakdown(
@@ -347,7 +367,7 @@ impl QuestionBankRepositoryPort for SqliteQuestionBankRepository {
         .fetch_all(&self.pool)
         .await
         .map_err(|_| BankError::Storage)?;
-        Ok(rows
+        let mut breakdown: Vec<DailyAnsweredBreakdownRow> = rows
             .into_iter()
             .map(
                 |(
@@ -370,7 +390,35 @@ impl QuestionBankRepositoryPort for SqliteQuestionBankRepository {
                     answered,
                 },
             )
-            .collect())
+            .collect();
+        let subjective: Vec<(String, Option<String>, i64)> = sqlx::query_as(
+            "SELECT date(first.first_at/1000.0,'unixepoch','+8 hours') AS day,
+                    json_extract(p.metadata,'$.summary.title') AS paper_title, COUNT(*)
+             FROM (
+                 SELECT question_id,MIN(submitted_at_ms) AS first_at
+                 FROM shenlun_attempts WHERE status='submitted'
+                   AND length(trim(answer_text)) > 0 GROUP BY question_id
+             ) first
+             JOIN questions q ON q.id=first.question_id
+             JOIN papers p ON p.id=q.paper_id
+             WHERE first.first_at>=? AND first.first_at<?
+             GROUP BY day,paper_title",
+        )
+        .bind(start_ms).bind(end_ms)
+        .fetch_all(&self.pool).await.map_err(|_| BankError::Storage)?;
+        breakdown.extend(subjective.into_iter().map(|(day, paper_title, answered)| {
+            DailyAnsweredBreakdownRow {
+                day,
+                is_module: false,
+                kind: "shenlun".into(),
+                collection_title: None,
+                module: None,
+                category: Some("申论".into()),
+                paper_title,
+                answered,
+            }
+        }));
+        Ok(breakdown)
     }
 
     async fn paper_summaries(&self) -> Result<Vec<PaperSummary>, BankError> {
@@ -1715,6 +1763,10 @@ B
             "favorites",
             "question_ai_reviews",
             "question_ai_messages",
+            "shenlun_attempts",
+            "shenlun_attempt_revisions",
+            "shenlun_jobs",
+            "shenlun_rubrics",
         ] {
             let exists: i64 = sqlx::query_scalar(
                 "SELECT count(*) FROM sqlite_master WHERE type='table' AND name=?",
