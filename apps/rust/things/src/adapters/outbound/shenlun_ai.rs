@@ -19,7 +19,7 @@ use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
 use sqlx::{Row, SqlitePool};
 use std::{collections::HashMap, sync::Arc};
-use tokio::sync::{watch, Mutex};
+use tokio::sync::{watch, Mutex, Semaphore};
 use uuid::Uuid;
 
 #[derive(Debug)]
@@ -114,6 +114,7 @@ pub struct ShenlunAiService {
     codex: Option<CodexConfig>,
     attachments: Option<Arc<QuestionBankAiService>>,
     active: Mutex<HashMap<String, watch::Sender<bool>>>,
+    in_flight: Arc<Semaphore>,
 }
 impl ShenlunAiService {
     pub fn new(
@@ -128,6 +129,7 @@ impl ShenlunAiService {
             codex,
             attachments,
             active: Mutex::new(HashMap::new()),
+            in_flight: Arc::new(Semaphore::new(2)),
         }
     }
 
@@ -242,7 +244,7 @@ impl ShenlunAiService {
     ) -> Result<ShenlunJob, ShenlunAiError> {
         if !canonical_uuid(&request.request_id)
             || !valid_kind(&request.kind)
-            || request.attachments.len() > 4
+            || request.attachments.len() > 3
             || request.attachments.iter().any(|id| !canonical_uuid(id))
             || (request.kind != "transcribe" && !request.attachments.is_empty())
             || (request.kind == "transcribe" && request.attachments.is_empty())
@@ -310,6 +312,9 @@ impl ShenlunAiService {
         if self.codex.is_none() {
             return Err(ShenlunAiError::Unavailable);
         }
+        let permit = Arc::clone(&self.in_flight)
+            .try_acquire_owned()
+            .map_err(|_| ShenlunAiError::NotReady)?;
         let now = timestamp();
         let job = ShenlunJob {
             id: request.request_id.clone(),
@@ -353,6 +358,14 @@ impl ShenlunAiService {
             sqlx::query("UPDATE shenlun_jobs SET status='complete',result_json=?,updated_at_ms=? WHERE id=? AND status='running'")
                 .bind(cached.to_string()).bind(timestamp()).bind(&job.id)
                 .execute(&self.pool).await.map_err(|_| ShenlunAiError::Storage)?;
+            if matches!(job.kind.as_str(), "independent_answer" | "full_essay") {
+                sqlx::query("UPDATE shenlun_attempts SET reference_viewed_at_ms=COALESCE(reference_viewed_at_ms,?) WHERE id=?")
+                    .bind(timestamp())
+                    .bind(&job.attempt_id)
+                    .execute(&self.pool)
+                    .await
+                    .map_err(|_| ShenlunAiError::Storage)?;
+            }
             return self.get(&job.id).await;
         }
         let (cancel, _rx) = watch::channel(false);
@@ -363,6 +376,7 @@ impl ShenlunAiService {
         let cloned = Arc::clone(&self);
         let task_id = job.id.clone();
         tokio::spawn(async move {
+            let _permit = permit;
             cloned.run(job, attempt, source, paths, cancel).await;
             cloned.active.lock().await.remove(&task_id);
         });
