@@ -929,6 +929,11 @@ test('AI delete busy conflict remains visible and cannot bypass uncertainty conf
     await route.fulfill({json:{question_id,status:'complete',error:null,messages:[{id:1,role:'assistant',content:'不可删除的解析',created_at:1}]}});
   });
   await openFixtureReview(page);
+  // AI history loads asynchronously and switches to its tab only once the
+  // saved response arrives. Opening the action menu before that transition
+  // can display the original-analysis menu, which has no delete action.
+  await expect(page.getByTestId('question-bank-ai-message')).toContainText('不可删除的解析');
+  await expect(page.getByTestId('question-bank-ai-tab')).toHaveAttribute('aria-pressed','true');
   await page.getByRole('button',{name:'更多解析操作'}).click();
   await page.getByTestId('question-bank-ai-delete').click();
   await page.getByTestId('question-bank-ai-delete-confirm').click();
