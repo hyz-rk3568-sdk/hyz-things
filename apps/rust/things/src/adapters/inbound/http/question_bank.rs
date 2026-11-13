@@ -2,8 +2,8 @@ use super::*;
 use crate::adapters::outbound::question_bank_ai::{AiReviewError, QuestionBankAiService};
 use crate::application::question_bank::{BankError, QuestionBankApplication};
 use crate::domain::question_bank::{
-    CreatePracticeRequest, ModulePracticeFilters, PracticeMode,
-    SavePracticeAnswer, SetFavorite, SetPracticePaused, StudyPlan,
+    CreatePracticeRequest, ModulePracticeFilters, PracticeMode, SavePracticeAnswer, SetFavorite,
+    SetPracticePaused, StudyPlan,
 };
 use axum::Extension;
 
