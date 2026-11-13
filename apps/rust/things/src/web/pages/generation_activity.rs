@@ -53,25 +53,25 @@ pub(super) fn generation_activity(props: &GenerationActivityProps) -> Html {
             let mut handlers: Vec<Closure<dyn FnMut(web_sys::MessageEvent)>> = Vec::new();
             let mut errors: Vec<Closure<dyn FnMut(web_sys::Event)>> = Vec::new();
             if let Some(source) = &source {
-                let current = current.clone();
-                let snapshot = snapshot.clone();
-                let disconnected = disconnected.clone();
+                let snapshot_current = current.clone();
+                let snapshot_state = snapshot.clone();
+                let snapshot_disconnected = disconnected.clone();
                 let handler = Closure::wrap(Box::new(move |event: web_sys::MessageEvent| {
                     let Some(raw) = event.data().as_string() else { return; };
                     let Ok(value) = serde_json::from_str::<GenerationSnapshot>(&raw) else { return; };
-                    *current.borrow_mut() = Some(value.clone());
-                    snapshot.set(Some(value));
-                    disconnected.set(false);
+                    *snapshot_current.borrow_mut() = Some(value.clone());
+                    snapshot_state.set(Some(value));
+                    snapshot_disconnected.set(false);
                 }) as Box<dyn FnMut(_)>);
                 let _ = source.add_event_listener_with_callback("snapshot", handler.as_ref().unchecked_ref());
                 handlers.push(handler);
 
-                let current = current.clone();
-                let snapshot = snapshot.clone();
+                let event_current = current.clone();
+                let event_state = snapshot.clone();
                 let handler = Closure::wrap(Box::new(move |event: web_sys::MessageEvent| {
                     let Some(raw) = event.data().as_string() else { return; };
                     let Ok(value) = serde_json::from_str::<GenerationEvent>(&raw) else { return; };
-                    let mut state = current.borrow_mut();
+                    let mut state = event_current.borrow_mut();
                     let Some(data) = state.as_mut() else { return; };
                     if value.seq <= data.seq { return; }
                     // The server sends a complete snapshot after a transport gap.
@@ -80,13 +80,13 @@ pub(super) fn generation_activity(props: &GenerationActivityProps) -> Html {
                     if value.kind == "run_finished" { data.status = "ready".into(); }
                     if value.kind == "run_failed" { data.status = "failed".into(); }
                     data.events.push(value);
-                    snapshot.set(Some(data.clone()));
+                    event_state.set(Some(data.clone()));
                 }) as Box<dyn FnMut(_)>);
                 let _ = source.add_event_listener_with_callback("activity", handler.as_ref().unchecked_ref());
                 handlers.push(handler);
 
-                let disconnected = disconnected.clone();
-                let handler = Closure::wrap(Box::new(move |_: web_sys::Event| disconnected.set(true)) as Box<dyn FnMut(_)>);
+                let error_disconnected = disconnected.clone();
+                let handler = Closure::wrap(Box::new(move |_: web_sys::Event| error_disconnected.set(true)) as Box<dyn FnMut(_)>);
                 source.set_onerror(Some(handler.as_ref().unchecked_ref()));
                 errors.push(handler);
             } else {
