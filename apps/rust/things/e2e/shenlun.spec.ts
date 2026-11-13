@@ -140,12 +140,12 @@ test('shenlun source answers remain gated until explicit grading; model answers 
       generated.push(req.kind);
       expect(req.attachments).toEqual([]);
       const grade = {
-        provisional: true, score: 14, max_score: 20, rubric_version: 'hyz-shenlun-v1',
+        provisional: true, score: 10, max_score: 20, rubric_version: 'hyz-shenlun-v1',
         summary: '表达清楚，措施稍显笼统。', unscored_reason: null,
         items: [{
           id: 'p1', criterion: '明确责任', material_id: 'material-1',
-          evidence: '明确责任', weight: 20, earned: 14, coverage: 'partial',
-          quote: '明确责任', start: 15, end: 27,
+          evidence: '明确责任', weight: 20, earned: 10, coverage: 'partial',
+          quote: '明确责任', start: 12, end: 24,
           reason: '缺少具体主体', suggestion: '写出执行主体',
         }],
       };
@@ -178,7 +178,7 @@ test('shenlun source answers remain gated until explicit grading; model answers 
   expect(sourceReads).toBe(0);
   expect(generated).toEqual([]);
   await page.getByTestId('shenlun-grade-start').click();
-  await expect(page.getByTestId('shenlun-score')).toContainText('14/20');
+  await expect(page.getByTestId('shenlun-score')).toContainText('10/20');
   await expect(page.getByText('来源参考答案（免费）')).toBeVisible();
   expect(sourceReads).toBe(0);
   await page.getByText('来源参考答案（免费）').click();
@@ -245,7 +245,7 @@ test('shenlun image transcription is ungraded until explicit editable confirmati
   await page.getByTestId('training-mode-shenlun').click();
   await page.getByTestId('shenlun-open-paper').click();
   await expect(page.getByTestId('shenlun-grade-start')).toHaveCount(0);
-  await page.locator('input[type="file"][accept="image/png,image/jpeg"]').setInputFiles({
+  await page.getByTestId('shenlun-transcribe').locator('input[type="file"]').setInputFiles({
     name: 'answer.png', mimeType: 'image/png',
     buffer: Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9W3Z7b0AAAAASUVORK5CYII=', 'base64'),
   });
