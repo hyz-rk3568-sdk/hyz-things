@@ -410,7 +410,7 @@ pub(super) fn shenlun_training(props: &ShenlunTrainingProps) -> Html {
                             <button type="button" class={classes!(icon_button,if mode_value=="source" {"text-primary"} else {""})}
                                 aria-label="来源参考答案" title="来源参考答案" data-testid="shenlun-mode-source"
                                 onclick={Callback::from({let mode=mode.clone();move |_|mode.set("source".into())})}>{"答"}</button>
-                            {menu}
+                            {if matches!(mode_value.as_str(),"grade"|"ai") {menu} else {Html::default()}}
                         </>
                     }}/>
                 if *flashcard_open {
