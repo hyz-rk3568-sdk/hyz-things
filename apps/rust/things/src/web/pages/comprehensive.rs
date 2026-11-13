@@ -1383,6 +1383,15 @@ pub(crate) fn comprehensive_training(props: &ComprehensiveProps) -> Html {
                             <p class="text-xs text-base-content/60">{"保存至 RK3568，可跨设备使用；正在生成的试卷继续采用启动时的版本。"}</p>
                         </div>
                     </details>
+                    if let Some(activity_id)=(*activity_job).as_ref() {
+                        <GenerationActivity module="data-analysis" job_id={activity_id.clone()} test_prefix="analysis"/>
+                    }
+                    if let Some(p)=(*progress).clone(){
+                        <div class="rounded-box bg-base-200 p-3 text-sm" data-testid="analysis-progress">
+                            <div class="font-semibold">{format!("{} · 已生成 {}/20",p.state,p.verified)}</div>
+                            <p>{p.message}</p>
+                        </div>
+                    }
                     if let Some(info)=(*status).clone(){
                         <TrainingMetrics answered={info.answer_summary.answered_count} correct={info.answer_summary.correct_count} prefix="analysis" />
                         <details class="min-w-0 max-w-full overflow-hidden rounded-box border border-base-content/15 p-3" data-testid="analysis-all-cards">
@@ -1456,15 +1465,6 @@ pub(crate) fn comprehensive_training(props: &ComprehensiveProps) -> Html {
                                     </section>
                                 </div>
                             </div>
-                        </div>
-                    }
-                    if let Some(activity_id)=(*activity_job).as_ref() {
-                        <GenerationActivity module="data-analysis" job_id={activity_id.clone()} test_prefix="analysis"/>
-                    }
-                    if let Some(p)=(*progress).clone(){
-                        <div class="rounded-box bg-base-200 p-3 text-sm" data-testid="analysis-progress">
-                            <div class="font-semibold">{format!("{} · 已生成 {}/20",p.state,p.verified)}</div>
-                            <p>{p.message}</p>
                         </div>
                     }
                     if let Some(err)=(*error).clone(){<p class="text-error text-sm" role="alert">{err}</p>}
