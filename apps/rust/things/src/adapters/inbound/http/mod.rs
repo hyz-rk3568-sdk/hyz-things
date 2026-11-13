@@ -3235,6 +3235,17 @@ mod tests {
     use hyz_contract::status::Issue;
 
     #[test]
+    fn shenlun_ocr_post_is_allowed_only_for_exact_question_route() {
+        let base = "/api/v1/question-bank/shenlun/questions/019a3d8e-1b32-7a60-9c83-f34217a6e210";
+        assert!(is_post_path(&format!("{base}/ocr")));
+        assert!(!is_shenlun_ocr_post_path(&format!("{base}/source-answer")));
+        assert!(!is_shenlun_ocr_post_path(&format!("{base}/ocr/extra")));
+        assert!(!is_shenlun_ocr_post_path(
+            "/api/v1/question-bank/shenlun/questions/not-an-id/ocr"
+        ));
+    }
+
+    #[test]
     fn ipv6_ice_candidate_comes_only_from_available_router_status_for_lan() {
         let address: Ipv6Addr = "240e:380:4308:da10:6605:3dff:fe02:430d".parse().unwrap();
         let router = Component::available(RouterStatus {
