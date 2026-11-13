@@ -63,6 +63,8 @@ pub(super) fn shenlun_training(props: &ShenlunTrainingProps) -> Html {
     let scroll = use_training_scroll_pair();
     let question_key = (*paper).as_ref().and_then(|p|
         p.questions.get(*selected).map(|question| (p.id.clone(), question.id.clone())));
+    let active_question = use_mut_ref(|| None::<(String, String)>);
+    *active_question.borrow_mut() = question_key.clone();
     let favorite=use_practice_favorite(question_key.as_ref().map(|(_,id)|id.clone()));
     let favorite_busy=use_state(||false);
     let flashcard_preview=use_state(||None::<(String,FavoritePreview)>);
@@ -226,6 +228,7 @@ pub(super) fn shenlun_training(props: &ShenlunTrainingProps) -> Html {
         let attempts = attempts.clone();
         let error = error.clone();
         let mode = mode.clone();
+        let active_question = active_question.clone();
         Callback::from(move |_| {
             let Some((paper_id, question_id)) = key.clone() else { return; };
             if *busy { return; }
@@ -240,11 +243,18 @@ pub(super) fn shenlun_training(props: &ShenlunTrainingProps) -> Html {
             let error = error.clone();
             let mode = mode.clone();
             let csrf = csrf.clone();
+            let active_question = active_question.clone();
+            let source = (paper_id.clone(), question_id.clone());
             spawn_local(async move {
                 let body = CreateShenlunAttempt { request_id, paper_id, question_id };
                 let result: Result<ShenlunAttempt, String> = post_json_response(
                     "/api/v1/question-bank/shenlun/attempts", &csrf, &body, "新批改"
                 ).await;
+                // The user may have navigated away before the POST returned.
+                if active_question.borrow().as_ref() != Some(&source) {
+                    busy.set(false);
+                    return;
+                }
                 match result {
                     Ok(created) => {
                         let mut history = (*attempts).clone();
@@ -262,7 +272,11 @@ pub(super) fn shenlun_training(props: &ShenlunTrainingProps) -> Html {
     let on_confirm = {
         let attempt = attempt.clone();
         let attempts = attempts.clone();
+        let active_question = active_question.clone();
         Callback::from(move |next: ShenlunAttempt| {
+            if active_question.borrow().as_ref() != Some(&(next.paper_id.clone(), next.question_id.clone())) {
+                return;
+            }
             let mut history = (*attempts).clone();
             if let Some(row) = history.iter_mut().find(|row| row.id == next.id) {
                 *row = next.clone();
