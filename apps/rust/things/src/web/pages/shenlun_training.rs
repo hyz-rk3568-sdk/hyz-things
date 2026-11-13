@@ -382,12 +382,17 @@ pub(super) fn shenlun_training(props: &ShenlunTrainingProps) -> Html {
     if let Some(current) = (*paper).as_ref() {
         let index = (*selected).min(current.questions.len().saturating_sub(1));
         let question = current.questions.get(index);
-        let filtered: Vec<usize> = current.questions.iter().enumerate()
-            .filter(|(_, question)| *question_type_filter == "all"
-                || question.question_type.as_deref() == Some(question_type_filter.as_str()))
+        let filtered: Vec<usize> = current
+            .questions
+            .iter()
+            .enumerate()
+            .filter(|(_, question)| {
+                *question_type_filter == "all"
+                    || question.question_type.as_deref() == Some(question_type_filter.as_str())
+            })
             .map(|(i, _)| i)
             .collect();
-        let at = filtered.iter().position(|&item|item==index).unwrap_or(0);
+        let at = filtered.iter().position(|&item| item == index).unwrap_or(0);
         let prev_index = filtered.get(at.saturating_sub(1)).copied().unwrap_or(index);
         let next_index = filtered.get(at + 1).copied().unwrap_or(index);
         let change_type = {
@@ -395,9 +400,11 @@ pub(super) fn shenlun_training(props: &ShenlunTrainingProps) -> Html {
             let filter = question_type_filter.clone();
             let paper = current.clone();
             Callback::from(move |kind: String| {
-                if let Some((number, _)) = paper.questions.iter().enumerate()
-                    .find(|(_, question)| kind == "all"
-                        || question.question_type.as_deref() == Some(kind.as_str())) {
+                if let Some((number, _)) =
+                    paper.questions.iter().enumerate().find(|(_, question)| {
+                        kind == "all" || question.question_type.as_deref() == Some(kind.as_str())
+                    })
+                {
                     selected.set(number);
                     filter.set(kind);
                 }
