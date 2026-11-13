@@ -236,8 +236,53 @@ pub(super) fn shenlun_ai_panel(props: &ShenlunAiPanelProps) -> Html {
                     error.set(Some("图片转写需要新批改，请先在三点菜单中选择「新批改」。".into()));
                     return;
                 }
-                let attachments=images.iter().map(|image|image.id.clone()).collect();
-                start_job.emit(("transcribe".into(),attachments));
+                let attachments:Vec<String>=images.iter().map(|image|image.id.clone()).collect();
+                if *text!=attempt.text && !text.trim().is_empty() {
+                    // A mixed text+image answer must preserve its typed part before
+                    // transcription, whose human confirmation appends the image text.
+                    task_busy.set(true);
+                    error.set(None);
+                    let typed=(*text).clone();
+                    let attempt=attempt.clone();
+                    let csrf=csrf.clone();
+                    let on_confirm=on_confirm.clone();
+                    let task_busy=task_busy.clone();
+                    let error=error.clone();
+                    let jobs=jobs.clone();
+                    let refresh=refresh.clone();
+                    let confirm_uncertain=*confirm_uncertain;
+                    spawn_local(async move {
+                        let result:Result<ShenlunJob,String>=async {
+                            let saved:ShenlunAttempt=post_json_response(
+                                &format!("/api/v1/question-bank/shenlun/attempts/{}/draft",attempt.id),
+                                &csrf,&SaveShenlunDraft{expected_revision:attempt.revision,text:typed},
+                                "保存图片批改中的文字"
+                            ).await?;
+                            on_confirm.emit(saved.clone());
+                            let request_id=super::shenlun_training::new_shenlun_attempt_id()?;
+                            post_json_response(
+                                &format!("/api/v1/question-bank/shenlun/attempts/{}/jobs",saved.id),
+                                &csrf,&ShenlunJobRequest{
+                                    request_id,kind:"transcribe".into(),attachments,
+                                    confirm_uncertain,
+                                },"识别手写图片"
+                            ).await
+                        }.await;
+                        match result {
+                            Ok(job)=>{
+                                let mut history=(*jobs).clone();
+                                history.retain(|item|item.id!=job.id);
+                                history.insert(0,job);
+                                jobs.set(history);
+                                refresh.set(refresh.wrapping_add(1));
+                            }
+                            Err(message)=>error.set(Some(message)),
+                        }
+                        task_busy.set(false);
+                    });
+                } else {
+                    start_job.emit(("transcribe".into(),attachments));
+                }
                 return;
             }
             if text.trim().is_empty(){
