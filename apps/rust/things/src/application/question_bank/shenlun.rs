@@ -25,13 +25,15 @@ impl QuestionBankApplication {
         &self,
         request: CreateShenlunAttempt,
     ) -> Result<ShenlunAttempt, BankError> {
-        if uuid::Uuid::parse_str(&request.request_id).is_err() {
-            return Err(BankError::Invalid);
-        }
+        check_attempt_id(&request.request_id)?;
         let hash = self
             .shenlun_question_hash(&request.paper_id, &request.question_id)
             .await?;
-        match self.repository.shenlun_get_attempt(&request.request_id).await {
+        match self
+            .repository
+            .shenlun_get_attempt(&request.request_id)
+            .await
+        {
             Ok(record) => {
                 return if record.paper_id == request.paper_id
                     && record.question_id == request.question_id
@@ -97,7 +99,9 @@ impl QuestionBankApplication {
         if current.status != "draft" {
             return Err(BankError::Conflict);
         }
-        if self.shenlun_question_hash(&current.paper_id, &current.question_id).await?
+        if self
+            .shenlun_question_hash(&current.paper_id, &current.question_id)
+            .await?
             != current.source_hash
         {
             return Err(BankError::Stale);
@@ -115,7 +119,9 @@ impl QuestionBankApplication {
         if current.text.trim().is_empty() {
             return Err(BankError::Invalid);
         }
-        if self.shenlun_question_hash(&current.paper_id, &current.question_id).await?
+        if self
+            .shenlun_question_hash(&current.paper_id, &current.question_id)
+            .await?
             != current.source_hash
         {
             return Err(BankError::Stale);
@@ -140,7 +146,8 @@ impl QuestionBankApplication {
         if !is_shenlun_scope(&paper.subject, &paper.role, &paper.kind) {
             return Err(BankError::NotFound);
         }
-        paper.questions
+        paper
+            .questions
             .retain(|question| question.answer_type == "subjective");
         if paper.questions.is_empty() {
             return Err(BankError::NotFound);
@@ -148,7 +155,6 @@ impl QuestionBankApplication {
         Ok(paper)
     }
 }
-
 
 fn check_attempt_id(id: &str) -> Result<(), BankError> {
     if uuid::Uuid::parse_str(id).is_ok_and(|uuid| uuid.to_string() == id) {
