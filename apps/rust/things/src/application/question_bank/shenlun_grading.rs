@@ -17,17 +17,27 @@ pub fn validate_transcription(value: &Value, expected_pages: usize) -> Result<Va
         if page.get("page").and_then(Value::as_u64) != Some((index + 1) as u64) {
             return Err("转写页码无序".into());
         }
-        let text = page.get("text").and_then(Value::as_str)
+        let text = page
+            .get("text")
+            .and_then(Value::as_str)
             .ok_or("转写缺少正文")?;
         total += text.chars().count();
-        let uncertain = page.get("uncertain").and_then(Value::as_array)
+        let uncertain = page
+            .get("uncertain")
+            .and_then(Value::as_array)
             .ok_or("转写缺少不确定段落列表")?;
-        if uncertain.len() > 100 || uncertain.iter().any(|region| {
-            region.get("text").and_then(Value::as_str)
-                .is_none_or(|part| part.len() > 300)
-                || region.get("reason").and_then(Value::as_str)
-                    .is_none_or(|reason| reason.len() > 500)
-        }) {
+        if uncertain.len() > 100
+            || uncertain.iter().any(|region| {
+                region
+                    .get("text")
+                    .and_then(Value::as_str)
+                    .is_none_or(|part| part.len() > 300)
+                    || region
+                        .get("reason")
+                        .and_then(Value::as_str)
+                        .is_none_or(|reason| reason.len() > 500)
+            })
+        {
             return Err("不确定段落结构无效".into());
         }
     }
@@ -53,9 +63,9 @@ mod tests {
 
     #[test]
     fn transcription_rejects_empty_pages_and_bad_uncertainty() {
-        let empty=json!({"pages":[{"page":1,"text":"","uncertain":[]}]});
-        assert!(validate_transcription(&empty,1).is_err());
-        let bad=json!({"pages":[{"page":1,"text":"原文","uncertain":[{"text":"不确定"}]}]});
-        assert!(validate_transcription(&bad,1).is_err());
+        let empty = json!({"pages":[{"page":1,"text":"","uncertain":[]}]});
+        assert!(validate_transcription(&empty, 1).is_err());
+        let bad = json!({"pages":[{"page":1,"text":"原文","uncertain":[{"text":"不确定"}]}]});
+        assert!(validate_transcription(&bad, 1).is_err());
     }
 }
