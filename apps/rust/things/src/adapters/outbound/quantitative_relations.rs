@@ -2,10 +2,10 @@
 
 use super::data_analysis::CodexConfig;
 use super::generation_events;
-use crate::application::question_bank::practice::AiReviewEventSink;
 use crate::application::quantitative_relations::{
     QuantitativeGenerationPort, QuantitativeGenerationRequest, QuantitativeGenerationTarget,
 };
+use crate::application::question_bank::practice::AiReviewEventSink;
 
 use crate::domain::quantitative_relations::{
     validate_shape, GeneratedQuestion, QUIZ_QUESTIONS, QUIZ_SECONDS,
@@ -555,8 +555,16 @@ impl QuantitativeRelationsService {
             return Err("服务正在停止".into());
         }
         let cancellation = watch::channel(false).0;
-        generation_events::phase("quantitative-relations", job, "Codex 正在处理已选 Flashcard");
-        let generation = generator.generate_stream(request, cancellation.clone(), generation_events::sink("quantitative-relations", job.to_owned(), "出题".into()));
+        generation_events::phase(
+            "quantitative-relations",
+            job,
+            "Codex 正在处理已选 Flashcard",
+        );
+        let generation = generator.generate_stream(
+            request,
+            cancellation.clone(),
+            generation_events::sink("quantitative-relations", job.to_owned(), "出题".into()),
+        );
         tokio::pin!(generation);
         let questions = tokio::select! {
             result=&mut generation=>result?,
@@ -856,7 +864,12 @@ impl QuantitativeGenerationPort for CodexConfig {
         request: QuantitativeGenerationRequest,
         cancellation: watch::Sender<bool>,
     ) -> Result<Vec<GeneratedQuestion>, String> {
-        self.generate_stream(request, cancellation, Arc::new(|_| Box::pin(async { Ok(()) }))).await
+        self.generate_stream(
+            request,
+            cancellation,
+            Arc::new(|_| Box::pin(async { Ok(()) })),
+        )
+        .await
     }
 
     async fn generate_stream(
