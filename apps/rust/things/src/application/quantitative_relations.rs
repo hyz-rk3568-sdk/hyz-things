@@ -66,4 +66,15 @@ pub trait QuantitativeGenerationPort: Send + Sync {
         request: QuantitativeGenerationRequest,
         cancellation: tokio::sync::watch::Sender<bool>,
     ) -> Result<Vec<crate::domain::quantitative_relations::GeneratedQuestion>, String>;
+    /// Default preserves mock generators: only the Codex adapter publishes
+    /// actual tool notifications, never fabricated progress.
+    async fn generate_stream(
+        &self,
+        request: QuantitativeGenerationRequest,
+        cancellation: tokio::sync::watch::Sender<bool>,
+        _sink: crate::application::question_bank::practice::AiReviewEventSink,
+    ) -> Result<Vec<crate::domain::quantitative_relations::GeneratedQuestion>, String> {
+        self.generate(request, cancellation).await
+    }
+
 }
