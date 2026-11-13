@@ -219,6 +219,17 @@
 - [ ] 收藏与 Flashcard 尽量调用现有题目级能力，不能为了完成 UI 接上无效装饰按钮；涉及跨学科不支持时在 PR 明确列为待修复，不伪装已完成。
 - [ ] 旧库采用**增量迁移与兼容读取**，既有已提交 attempt / job / score 不删除、不重置；如取消独立入口，只停用旧 Job 意图，不得损坏旧数据。最终移除产品界面上的不必要历史版本字样。
 
+### 复用优先：禁止再造申论 AI 解析会话（用户再次确认）
+
+**硬约束：所有已有可复用实现优先直接调用/抽公共组件，不能为申论开发平行的聊天框、历史表、人工拼接 Prompt 历史或第二套 Codex Thread 管理器。**
+
+- **AI 解析与追问后端**：直接使用 `QuestionBankAiService` 已有的 `start_request` / `follow_up_request` / `history_runs` / `history_events` / `delete_with_confirmation`、持久 `thread_id`、SSE、恢复/重试。按 `subject=shenlun` 配置申论专属初始 Prompt 与 `hyz-shenlun` Skill，**不能继续默认行测规则**；后续追问由 Codex App Server 原 Thread 保持上下文，不从 SQLite 重组消息写回 Prompt。
+- **AI 解析与追问前端**：直接复用 `QuestionAiReview`、`AiReviewActivity`、共享 `AiComposer` 与附件选择器，业务适配应尽量只传 `question_id`、上下文和配置。
+- **AI 批改**：已有 `ShenlunAiService` 的点池、校验、冻结原稿与评分功能保留；只为所需文字/图片输入、三点菜单操作及按题展示添加最小差异。它是**独立评分运行**，不是再造通用聊天服务。
+- **OCR**：复用现有上传与转写、手工校对机制，只开放图片上传；不要把转写塞进通用对话线程或重复实现 OCR 后端。
+- **共享 UI**：`TrainingSplitWorkspace`、`MaterialScrollButton`、`QuestionBankQuestionHeader`、`QuestionHeaderActions`、`CompactQuestionNavigation`、`AiComposer` 均先核对并复用；只在目前组件的参数不能表达申论行为时，小范围抽象现有组件。
+- **严禁重复存储**：不得新增 `shenlun_chat` 表、`chat` 型 `shenlun_jobs` 或为 AI 追问重建新的 SSE / Codex 历史后端。原 PR #122 中曾试验的手工 history-prompt/chat-schema 已撤销，不能恢复。
+
 ### 实施顺序：单 PR 逐项落实
 
 1. 共享组件抽取：AiComposer、题目工具栏、材料滚动、答题卡；专有业务适配器不直接粘贴 4300 行 question_bank_practice.rs。
