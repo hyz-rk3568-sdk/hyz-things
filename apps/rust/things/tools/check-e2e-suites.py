@@ -19,6 +19,7 @@ AUXILIARY_SPECS = (
     "pwa.spec.ts",
     "related-method-card.spec.ts",
     "training-subjects.spec.ts",
+    "shenlun.spec.ts",
     "question-bank.spec.ts",
     "question-bank-reference.spec.ts",
     "question-bank-theme.spec.ts",
