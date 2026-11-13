@@ -163,8 +163,6 @@ pub(super) fn ai_image_picker(props: &AiImagePickerProps) -> Html {
         </div>
     }
 }
-
-
 pub(super) struct AiComposer<'a> {
     pub(super) id: &'a str,
     pub(super) input_ref: NodeRef,
