@@ -88,6 +88,8 @@ test('申论原卷复用地区年份目录和统一答题卡，不出现独立�
   await expect(page.getByTestId('shenlun-more')).toBeVisible();
   await expect(page.getByTestId('shenlun-mode-ai').locator('svg')).toHaveCount(1);
   await expect(page.getByTestId('shenlun-mode-source').locator('svg')).toHaveCount(1);
+  // The default AI tab offers delete; verify the empty menu on the source tab.
+  await page.getByTestId('shenlun-mode-source').click();
   await page.getByTestId('shenlun-more').click();
   await expect(page.getByText('暂无可用操作')).toBeVisible();
   await page.getByTestId('shenlun-more').click();
@@ -226,7 +228,7 @@ test('OCR 只创建临时 Codex 转写并直接渲染 Markdown，不创建作答
   await page.getByTestId('shenlun-mode-ocr').click();
   await expect(page.getByTestId('shenlun-ai-panel')).toBeVisible();
   await expect(page.getByTestId('shenlun-ocr-composer')).toBeVisible();
-  await expect(page.getByTestId('shenlun-ocr-input')).toHaveAttribute('readonly', '');
+  await expect(page.getByTestId('shenlun-ocr-input')).toHaveJSProperty('readOnly', true);
   await expect(page.getByTestId('shenlun-ocr-input')).toHaveAttribute('maxlength', '0');
   await expect(page.getByTestId('shenlun-transcribe-start')).toBeDisabled();
   await page.getByTestId('shenlun-ocr-images').locator('input[type="file"]').setInputFiles({
