@@ -181,12 +181,11 @@ test('批改复用 QuestionAiReview 的 Markdown、追问和删除，不创建�
   expect(legacyGradeJobs).toBe(0);
 });
 
-test('OCR 仅图片上传并要求校对确认，不会直接触发批改', async ({ page }) => {
+test('OCR 只创建临时 Codex 转写并直接渲染 Markdown，不创建作答或确认', async ({ page }) => {
   await loginAsAdmin(page);
   const attachmentId = '22222222-2222-4222-8222-222222222222';
-  let attempt = draftAttempt('33333333-3333-4333-8333-333333333333');
-  let jobs: any[] = [];
-  let confirmed = false;
+  let ocrCount = 0;
+  let legacyWrites = 0;
   await page.route('**/api/v1/question-bank/practice/questions/*/ai/attachments', route =>
     route.fulfill({ json: { id: attachmentId } }));
   await page.route('**/api/v1/question-bank/shenlun/**', async route => {
@@ -196,54 +195,32 @@ test('OCR 仅图片上传并要求校对确认，不会直接触发批改', asyn
       return route.fulfill({ json: catalog });
     if (pathname.endsWith('/shenlun/papers/' + paperId) && method === 'GET')
       return route.fulfill({ json: paperView });
-    if (pathname.endsWith('/shenlun/attempts') && method === 'GET')
-      return route.fulfill({ json: [attempt] });
-    if (pathname.endsWith('/' + attempt.id + '/jobs') && method === 'GET')
-      return route.fulfill({ json: jobs });
-    if (pathname.endsWith('/' + attempt.id + '/jobs') && method === 'POST') {
+    if (pathname.endsWith('/shenlun/questions/' + questionId + '/ocr') && method === 'POST') {
       const req = route.request().postDataJSON();
-      expect(req.kind).toBe('transcribe');
       expect(req.attachments).toEqual([attachmentId]);
-      const job = {
-        id: req.request_id, attempt_id: attempt.id, kind: 'transcribe',
-        status: 'complete', error: null,
-        result: { pages: [{ page: 1, text: '手写的一句话', uncertain: [
-          { text: '一句话', reason: '笔画接近，请检查' },
-        ] }] },
-        source_hash: attempt.source_hash, attempt_revision: 0,
-        skill_version: 'hyz-shenlun-v1', model: 'mock',
-        created_at_ms: 3000, updated_at_ms: 3000,
-      };
-      jobs = [job];
-      return route.fulfill({ status: 202, json: job });
+      ocrCount++;
+      return route.fulfill({ json: { markdown: '## 第 1 页\\n\\n手写的一句话，保留原文。' } });
     }
-    if (pathname.endsWith('/transcription/confirm') && method === 'POST') {
-      const input = route.request().postDataJSON();
-      expect(input.expected_revision).toBe(0);
-      expect(input.text).toBe('手写确认文本，保留我的原话。');
-      confirmed = true;
-      attempt = { ...attempt, text: input.text, source_kind: 'vision-confirmed', revision: 1 };
-      jobs = []; // The real service discards OCR tasks after the confirmed text is saved.
-      return route.fulfill({ json: attempt });
-    }
-    throw new Error('Unexpected OCR request: ' + method + ' ' + pathname);
+    if (method !== 'GET') legacyWrites++;
+    throw new Error('Unexpected temporary OCR request: ' + method + ' ' + pathname);
   });
   await openShenlun(page);
   await page.getByTestId('shenlun-mode-ocr').click();
-  await expect(page.getByTestId('shenlun-grade-compose')).toHaveCount(0);
+  await expect(page.getByTestId('shenlun-ai-panel')).toBeVisible();
   await page.getByTestId('shenlun-ocr-images').locator('input[type="file"]').setInputFiles({
     name: 'answer.png', mimeType: 'image/png',
     buffer: Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9W3Z7b0AAAAASUVORK5CYII=', 'base64'),
   });
   await expect(page.getByTestId('shenlun-transcribe-start')).toBeEnabled();
   await page.getByTestId('shenlun-transcribe-start').click();
-  await expect(page.getByTestId('shenlun-transcribed-text')).toHaveValue('手写的一句话');
-  expect(confirmed).toBe(false);
-  await page.getByTestId('shenlun-transcribed-text').fill('手写确认文本，保留我的原话。');
-  await page.getByTestId('shenlun-transcription-confirm-button').click();
-  await expect.poll(() => confirmed).toBe(true);
+  await expect(page.getByTestId('shenlun-ocr-markdown')).toContainText('手写的一句话，保留原文');
+  await expect(page.getByTestId('shenlun-ocr-markdown').locator('h2')).toContainText('第 1 页');
+  await expect(page.getByTestId('shenlun-transcription-confirm')).toHaveCount(0);
+  await expect(page.getByTestId('shenlun-transcription-confirm-button')).toHaveCount(0);
+  expect(ocrCount).toBe(1);
+  expect(legacyWrites).toBe(0);
   await page.getByTestId('shenlun-mode-grade').click();
-  await expect(page.getByTestId('question-bank-ai-instruction')).toHaveValue('手写确认文本，保留我的原话。');
+  await expect(page.getByTestId('question-bank-ai-review')).toBeVisible();
 });
 
 test('申论解析和批改入口是同一个 AI 对话工作区', async ({ page }) => {
