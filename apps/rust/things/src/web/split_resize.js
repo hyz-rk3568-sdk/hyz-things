@@ -94,6 +94,10 @@ export function mountSplitResize(root, handle, breakpoint) {
       restoreScroll(previous.scrolls);
     } else if (!revert && previous.active) {
       writeRatio(previous.axis, preferred);
+      // WebKit can clamp scrollTop while the grid is still settling on
+      // pointerup. Restore the pre-drag offsets both now and after layout.
+      restoreScroll(previous.scrolls);
+      requestAnimationFrame(() => restoreScroll(previous.scrolls));
     }
     try { if (handle.hasPointerCapture(previous.id)) handle.releasePointerCapture(previous.id); } catch { /* Synthetic pointers have no capture. */ }
   };
