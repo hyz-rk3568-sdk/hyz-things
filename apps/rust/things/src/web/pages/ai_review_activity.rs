@@ -2,6 +2,27 @@ use super::ai_review_stream::{StreamEvent, StreamSnapshot};
 use super::*;
 use hyz_things::domain::question_bank::AiReviewMessage;
 
+/// Shared command/tool rendering for saved AI analysis and ephemeral question
+/// generation. Keep typography, indentation and output layout identical.
+pub(super) fn tool_execution_item(
+    label: &str,
+    command: &str,
+    output: &str,
+    test_prefix: &str,
+) -> Html {
+    html! {
+        <section data-testid={format!("{test_prefix}-tool")}>
+            <p>{label.to_owned()}</p>
+            if !command.is_empty() {
+                <pre class="mt-1 whitespace-pre-wrap break-all" data-testid={format!("{test_prefix}-command")}>{command.to_owned()}</pre>
+            }
+            if !output.is_empty() {
+                <pre class="mt-1 whitespace-pre-wrap break-all" data-testid={format!("{test_prefix}-output")}>{output.to_owned()}</pre>
+            }
+        </section>
+    }
+}
+
 #[derive(Clone, PartialEq, serde::Deserialize)]
 struct HistoryRun {
     run_id: String,
@@ -193,12 +214,8 @@ fn run_activity(props: &RunActivityProps) -> Html {
             </button>
             if *opened {
                 <div class="mt-2 space-y-3 border-l border-base-content/15 pl-3">
-                    {for tools.iter().map(|(_, label, command, output)| html! {
-                        <section data-testid="question-bank-ai-tool">
-                            <p>{label.clone()}</p>
-                            if !command.is_empty() { <pre class="mt-1 whitespace-pre-wrap break-all" data-testid="question-bank-ai-command">{command.clone()}</pre> }
-                            if !output.is_empty() { <pre class="mt-1 whitespace-pre-wrap break-all" data-testid="question-bank-ai-output">{output.clone()}</pre> }
-                        </section>
+                    {for tools.iter().map(|(_, label, command, output)| {
+                        tool_execution_item(label, command, output, "question-bank-ai")
                     })}
                     if *loading { <p role="status">{"正在加载工具输出…"}</p> }
                     if let Some(message) = error.as_ref() {

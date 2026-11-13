@@ -449,6 +449,22 @@ nav.tabs > button.tab:not(.tab-active) {
     margin-left: auto;
     margin-right: auto;
   }
+  /* The current Codex command stays visible above the fixed setup action
+     while the settings/card list scrolls independently. No separate card. */
+  .training-setup-activity {
+    flex-shrink: 0;
+    min-width: 0;
+    padding: .375rem calc(var(--training-gutter) + var(--app-safe-right)) .375rem calc(var(--training-gutter) + var(--app-safe-left));
+  }
+  .training-setup-activity-inner {
+    max-width: var(--training-content-max);
+    margin-left: 0;
+    margin-right: auto;
+    min-width: 0;
+  }
+  .training-setup-activity:has(.training-setup-activity-inner:empty) {
+    display: none;
+  }
   .training-setup-action {
     flex-shrink: 0;
     border-top: 1px solid color-mix(in srgb,var(--color-base-content) 12%,transparent);

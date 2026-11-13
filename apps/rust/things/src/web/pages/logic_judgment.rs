@@ -779,6 +779,9 @@ pub(crate) fn logic_judgment_training(props: &LogicJudgmentProps) -> Html {
     let correct: i64 = statistics.iter().map(|s| s.correct_count as i64).sum();
     html! {
         <TrainingSetupLayout test_id={format!("{prefix}-setup")} summary={format!("10题 · {}分钟",seconds/60)} detail="试卷准备完成后再进入答题"
+            activity={(*activity_job).as_ref().map(|id| html! {
+                <GenerationActivity module={if props.quantitative {"quantitative-relations"} else {"logic-judgment"}} job_id={id.clone()} test_prefix={prefix}/>
+            })}
             action={Some(html!{<button type="button" class={TRAINING_PRIMARY_BUTTON} data-testid={format!("{prefix}-prepare")}
                 disabled={*busy || job.is_some() || status.as_ref().is_none_or(|state|!state.configured || state.eligible_cards<10)} onclick={invoke(LogicAction::Prepare)}>
                 {if job.is_some() {"正在出题中…"} else {"准备试卷 →"}}</button>})}>
@@ -833,9 +836,6 @@ pub(crate) fn logic_judgment_training(props: &LogicJudgmentProps) -> Html {
                     </details>
                     if job.is_some() {
                         <div class="rounded-box bg-base-200 p-3 text-sm" role="status" data-testid={format!("{prefix}-progress")}>{if progress.is_empty() {"正在恢复出题任务…".to_owned()} else {(*progress).clone()}}</div>
-                    }
-                    if let Some(activity_id) = (*activity_job).as_ref() {
-                        <GenerationActivity module={if props.quantitative {"quantitative-relations"} else {"logic-judgment"}} job_id={activity_id.clone()} test_prefix={prefix}/>
                     }
                     <TrainingMetrics answered={answered} correct={correct} prefix={prefix} />
                     <details class="min-w-0 max-w-full overflow-hidden rounded-box border border-base-content/15 p-3" data-testid={format!("{prefix}-statistics")}>
