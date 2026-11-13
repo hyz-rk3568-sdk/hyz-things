@@ -56,6 +56,7 @@ use crate::{
 };
 
 mod data_analysis;
+mod generation_events;
 mod favorite_flashcards;
 mod flashcards;
 pub use favorite_flashcards::with_favorite_flashcards;
@@ -911,6 +912,10 @@ fn app_with_assets(
         .route(
             "/api/v1/study/plan/forecast",
             on(MethodFilter::GET, question_bank::study_plan_forecast),
+        )
+        .route(
+            "/api/v1/study/{module}/prepare/{id}/events",
+            on(MethodFilter::GET, generation_events::events),
         )
         .route(
             "/api/v1/study/logic-judgment/status",
