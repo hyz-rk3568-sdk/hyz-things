@@ -753,53 +753,13 @@ fn app_with_assets(
             on(MethodFilter::GET, question_bank::shenlun_paper),
         )
         .route(
-            "/api/v1/question-bank/shenlun/attempts",
-            on(MethodFilter::GET, question_bank::shenlun_attempts)
-                .on(MethodFilter::POST, question_bank::shenlun_attempt_create)
+            "/api/v1/question-bank/shenlun/questions/{id}/ocr",
+            on(MethodFilter::POST, shenlun::ocr)
                 .layer(DefaultBodyLimit::max(8 * 1024)),
-        )
-        .route(
-            "/api/v1/question-bank/shenlun/attempts/{id}",
-            on(MethodFilter::GET, question_bank::shenlun_attempt_read),
-        )
-        .route(
-            "/api/v1/question-bank/shenlun/attempts/{id}/draft",
-            on(MethodFilter::POST, question_bank::shenlun_attempt_save)
-                .layer(DefaultBodyLimit::max(200 * 1024)),
-        )
-        .route(
-            "/api/v1/question-bank/shenlun/attempts/{id}/submit",
-            on(MethodFilter::POST, question_bank::shenlun_attempt_submit),
-        )
-        .route(
-            "/api/v1/question-bank/shenlun/attempts/{id}/jobs",
-            on(MethodFilter::GET, shenlun::jobs)
-                .on(MethodFilter::POST, shenlun::start)
-                .layer(DefaultBodyLimit::max(16 * 1024)),
-        )
-        .route(
-            "/api/v1/question-bank/shenlun/attempts/{id}/transcription/confirm",
-            on(MethodFilter::POST, shenlun::confirm).layer(DefaultBodyLimit::max(200 * 1024)),
         )
         .route(
             "/api/v1/question-bank/shenlun/questions/{id}/source-answer",
             on(MethodFilter::GET, shenlun::reference),
-        )
-        .route(
-            "/api/v1/question-bank/shenlun/jobs/{id}",
-            on(MethodFilter::GET, shenlun::status),
-        )
-        .route(
-            "/api/v1/question-bank/shenlun/jobs/{id}/stop",
-            on(MethodFilter::POST, shenlun::stop),
-        )
-        .route(
-            "/api/v1/question-bank/shenlun/jobs/{id}/delete",
-            on(MethodFilter::POST, shenlun::delete_record),
-        )
-        .route(
-            "/api/v1/question-bank/shenlun/jobs/{id}/events",
-            on(MethodFilter::GET, shenlun::events),
         )
         .route(
             "/api/v1/question-bank/papers/{id}/modules",
