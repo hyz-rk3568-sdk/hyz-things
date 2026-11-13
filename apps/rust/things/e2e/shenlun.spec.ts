@@ -81,8 +81,8 @@ test('shenlun training opens materials, saves an independent draft and restores 
   await page.getByTestId('shenlun-start').click();
   const answer = page.getByTestId('shenlun-answer-input');
   await answer.fill('加强基层治理，需要明确责任分工。');
+  await expect.poll(() => versionedSaves).toBeGreaterThan(0);
   await expect(page.getByText('草稿已保存')).toBeVisible();
-  expect(versionedSaves).toBeGreaterThan(0);
   await page.getByTestId('shenlun-submit').click();
   await expect(page.getByText('已保存正式作答。AI 评分功能尚未接入。')).toBeVisible();
   expect(submissions).toBe(1);
