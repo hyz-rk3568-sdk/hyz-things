@@ -760,7 +760,8 @@ impl CodexSession {
         cancellation: watch::Sender<bool>,
         sink: AiReviewEventSink,
     ) -> Result<String, String> {
-        self.turn_cancellable_inner(prompt, &[], cancellation, Some(output_schema()), Some(sink)).await
+        self.turn_cancellable_inner(prompt, &[], cancellation, Some(output_schema()), Some(sink))
+            .await
     }
 
     /// Same Codex JSON Schema contract as other generation turns, with
@@ -773,7 +774,8 @@ impl CodexSession {
         schema: Value,
         sink: AiReviewEventSink,
     ) -> Result<String, String> {
-        self.turn_cancellable_inner(prompt, images, cancellation, Some(schema), Some(sink)).await
+        self.turn_cancellable_inner(prompt, images, cancellation, Some(schema), Some(sink))
+            .await
     }
 
     async fn turn_cancellable_inner(
