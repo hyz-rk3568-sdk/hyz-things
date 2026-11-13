@@ -112,7 +112,7 @@ impl ShenlunAiService {
         if attachment_ids.is_empty()
             || attachment_ids.len() > 3
             || attachment_ids.iter().any(|id| {
-                Uuid::parse_str(id).is_err_or(|uuid| uuid.to_string() != *id)
+                !Uuid::parse_str(id).is_ok_and(|uuid| uuid.to_string() == *id)
             })
         {
             return Err(ShenlunAiError::Invalid);
