@@ -225,6 +225,10 @@ test('OCR 只创建临时 Codex 转写并直接渲染 Markdown，不创建作答
   await openShenlun(page);
   await page.getByTestId('shenlun-mode-ocr').click();
   await expect(page.getByTestId('shenlun-ai-panel')).toBeVisible();
+  await expect(page.getByTestId('shenlun-ocr-composer')).toBeVisible();
+  await expect(page.getByTestId('shenlun-ocr-input')).toHaveAttribute('readonly', '');
+  await expect(page.getByTestId('shenlun-ocr-input')).toHaveAttribute('maxlength', '0');
+  await expect(page.getByTestId('shenlun-transcribe-start')).toBeDisabled();
   await page.getByTestId('shenlun-ocr-images').locator('input[type="file"]').setInputFiles({
     name: 'answer.png', mimeType: 'image/png',
     buffer: Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9W3Z7b0AAAAASUVORK5CYII=', 'base64'),
