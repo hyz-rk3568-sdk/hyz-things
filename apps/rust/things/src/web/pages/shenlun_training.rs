@@ -49,6 +49,7 @@ pub(super) fn shenlun_training(props: &ShenlunTrainingProps) -> Html {
     let region = use_state(|| "全部".to_string());
     let year = use_state(String::new);
     let variant = use_state(String::new);
+    let question_type_filter = use_state(|| "all".to_string());
     let busy = use_state(|| false);
     let loading = use_state(|| true);
     let error = use_state(|| None::<String>);
@@ -186,6 +187,7 @@ pub(super) fn shenlun_training(props: &ShenlunTrainingProps) -> Html {
         let busy = busy.clone();
         let paper = paper.clone();
         let selected = selected.clone();
+        let question_type_filter = question_type_filter.clone();
         let error = error.clone();
         let immersive = props.on_immersive_change.clone();
         Callback::from(move |id: String| {
@@ -197,6 +199,7 @@ pub(super) fn shenlun_training(props: &ShenlunTrainingProps) -> Html {
             let busy = busy.clone();
             let paper = paper.clone();
             let selected = selected.clone();
+            let question_type_filter = question_type_filter.clone();
             let error = error.clone();
             let immersive = immersive.clone();
             spawn_local(async move {
@@ -207,6 +210,7 @@ pub(super) fn shenlun_training(props: &ShenlunTrainingProps) -> Html {
                 .await
                 {
                     Ok(value) => {
+                        question_type_filter.set("all".into());
                         selected.set(0);
                         paper.set(Some(value));
                         immersive.emit(true);
@@ -378,14 +382,34 @@ pub(super) fn shenlun_training(props: &ShenlunTrainingProps) -> Html {
     if let Some(current) = (*paper).as_ref() {
         let index = (*selected).min(current.questions.len().saturating_sub(1));
         let question = current.questions.get(index);
+        let filtered: Vec<usize> = current.questions.iter().enumerate()
+            .filter(|(_, question)| *question_type_filter == "all"
+                || question.question_type.as_deref() == Some(question_type_filter.as_str()))
+            .map(|(i, _)| i)
+            .collect();
+        let at = filtered.iter().position(|&item|item==index).unwrap_or(0);
+        let prev_index = filtered.get(at.saturating_sub(1)).copied().unwrap_or(index);
+        let next_index = filtered.get(at + 1).copied().unwrap_or(index);
+        let change_type = {
+            let selected = selected.clone();
+            let filter = question_type_filter.clone();
+            let paper = current.clone();
+            Callback::from(move |kind: String| {
+                if let Some((number, _)) = paper.questions.iter().enumerate()
+                    .find(|(_, question)| kind == "all"
+                        || question.question_type.as_deref() == Some(kind.as_str())) {
+                    selected.set(number);
+                    filter.set(kind);
+                }
+            })
+        };
         let previous = {
             let selected = selected.clone();
-            Callback::from(move |_| selected.set(index.saturating_sub(1)))
+            Callback::from(move |_| selected.set(prev_index))
         };
         let next = {
             let selected = selected.clone();
-            let last = current.questions.len().saturating_sub(1);
-            Callback::from(move |_| selected.set((index + 1).min(last)))
+            Callback::from(move |_| selected.set(next_index))
         };
         let left = html! {
             <section class="flex h-full min-h-0 flex-col overflow-hidden rounded-xl border border-base-300 bg-base-100" data-testid="shenlun-materials">
@@ -409,8 +433,31 @@ pub(super) fn shenlun_training(props: &ShenlunTrainingProps) -> Html {
                     <h2 class="font-semibold">{"作答题目"}</h2>
                     <span class="text-xs opacity-70">{format!("第 {} / {} 题", index + 1, current.questions.len())}</span>
                 </header>
+                <div class="flex flex-wrap gap-1 px-3 pb-2" aria-label="申论题型筛选">
+                    {for [
+                        ("all","全部题型"), ("summary","归纳概括"),
+                        ("analysis","综合分析"), ("measures","提出对策"),
+                        ("document_writing","公文写作"), ("essay","大作文"),
+                        ("other","其他"),
+                    ].into_iter().filter(|(kind,_)| *kind=="all"
+                        || current.questions.iter().any(|q|q.question_type.as_deref()==Some(kind)))
+                    .map(|(kind,label)| {
+                        let change = change_type.clone();
+                        let value=kind.to_string();
+                        html! {
+                            <button type="button" key={value.clone()} class={classes!("btn","btn-xs",
+                                if *question_type_filter == kind {"btn-primary"} else {"btn-outline"})}
+                                disabled={navigation_locked} data-testid="shenlun-type-filter"
+                                onclick={Callback::from(move |_| change.emit(value.clone()))}>
+                                {label}
+                            </button>
+                        }
+                    })}
+                </div>
                 <div class="flex flex-wrap gap-1 px-3 pb-2" aria-label="题号导航">
-                    {for current.questions.iter().enumerate().map(|(number, item)| {
+                    {for current.questions.iter().enumerate()
+                        .filter(|(number,_)|filtered.contains(number))
+                        .map(|(number, item)| {
                         let selected = selected.clone();
                         html! {
                             <button type="button" key={item.id.clone()} class={classes!("btn","btn-xs", if number == index {"btn-primary"} else {"btn-outline"})}
@@ -516,8 +563,8 @@ pub(super) fn shenlun_training(props: &ShenlunTrainingProps) -> Html {
                     }
                 </div>
                 <footer class="flex justify-between gap-2 border-t border-base-300 px-3 py-2">
-                    <button type="button" class="btn btn-outline btn-sm" disabled={index == 0 || navigation_locked} onclick={previous}>{"上一题"}</button>
-                    <button type="button" class="btn btn-outline btn-sm" disabled={index + 1 >= current.questions.len() || navigation_locked} onclick={next}>{"下一题"}</button>
+                    <button type="button" class="btn btn-outline btn-sm" disabled={at == 0 || navigation_locked} onclick={previous}>{"上一题"}</button>
+                    <button type="button" class="btn btn-outline btn-sm" disabled={at + 1 >= filtered.len() || navigation_locked} onclick={next}>{"下一题"}</button>
                 </footer>
             </section>
         };
