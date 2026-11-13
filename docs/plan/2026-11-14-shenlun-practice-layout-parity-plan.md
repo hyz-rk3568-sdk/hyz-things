@@ -1,7 +1,7 @@
 # 申论训练：对照专项练习的一次性布局与菜单整改 Plan
 
-**状态：仅方案，未实施。** 本 PR 只提交本文档，不修改业务代码、CSS 或测试。  
-**参照源：** `apps/rust/things/src/web/pages/question_bank_practice.rs`（4100 行）及其依赖；**目标：** `shenlun_training.rs`。
+**状态：实施及本地验证完成。** Rust 集成测试 10/10、严格 Clippy 与 80 项 Playwright/WebKit 回归通过；五种视口截图已完成对照。PR #125 包含本计划对应的页面、会话隔离与 E2E 实现。
+**参照源：** `apps/rust/things/src/web/pages/question_bank_practice.rs`（4100 行）及其依赖；**目标：** `question_bank_shenlun.rs`（替代原 `shenlun_training.rs`）。
 
 ## 0. 已阅读并对照的现有实现
 
@@ -26,7 +26,7 @@
 
 **额外注意：** `question-bank.css` 只有 `.question-bank-workspace [data-testid="question-bank-practice-material-scroll"]` 和 `question-bank-practice-question-scroll` 等特定选择器会给阅读区更大内边距。只补 `question-bank-workspace` class 仍不能让申论内容样式完整一致，应提取共同样式语义或显式覆盖申论真实节点。
 
-## 2. 实施顺序（后续代码 PR 一次完成，不拆碎修）
+## 2. 实施内容（按顺序一次性完成，不拆碎修）
 
 ### A. 将专项练习的工作区骨架原样对齐
 
@@ -49,7 +49,7 @@
 - `shenlun_training.rs` 362—368 行：`grade`、`ai` 都渲染同一个 `QuestionAiReview`，仅通过 `mode` 改变提示词。组件 `key="{question_id}:{mode}"` 只负责前端重挂载，**不隔离服务器会话**。
 - `question_bank_practice.rs` 957 行：两种模式调用同一 URL `/practice/questions/{question_id}/ai`；`follow_key/start_key/request_key` 都未包含 mode，草稿和请求状态也会串。
 - `question_bank_ai.rs` 248、274—279 行：持久化 Key 为 `(question_id, stem_fingerprint)`，`question_ai_reviews.thread_id`、messages、requests、events、stream/stop/delete 都用同一 Key。
-- 现有 `e2e/shenlun.spec.ts` 用例名称甚至是“申论解析和批改入口是同一个 AI 对话工作区”；必须**删掉错误验收假设，替换为隔离断言**。
+- 申论 E2E 将共享工作区外观与会话隔离分开验收：解析/批改可复用同一套组件，但各自的 scope、Codex thread、历史/事件、请求和删除状态必须隔离。
 
 **明确目标不是“两个 tab 换标题”**，而是在题目右栏分别进入独立的 **AI 批改页面** 与 **AI 解析及追问页面**，同一题目也有独立持久会话和独立 Codex thread：
 
@@ -86,4 +86,4 @@
 - Rust format / clippy / targeted tests 与 Playwright 通过，**还需 iPad 几何和截图对比**；两项都合格才可称为完成。
 - **非草稿模式三点按钮常驻最右，草稿模式按专项练习逻辑隐藏三点**；按钮常驻与删除项有条件出现是两项独立阻断验收条件。
 - **批改页与解析/追问页拥有不同 Codex thread**、OCR 共享 AI Composer 并固定底部、四模式菜单不串状态，均为阻断验收条件；任何一个未满足都不能宣布“已全部修复”。
-- 本文档 PR 不包含实际修复，**不合并为已完成整改**，等待用户确认方案后再实施。
+- 本计划已用于 PR #125 的代码实现；最终完成状态以相关 Rust 检查、WebKit 多视口截图验收、PR 合并和网络 ADB Things 部署的实际结果为准。

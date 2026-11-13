@@ -313,7 +313,7 @@ fn browse_filter_url(
     format!("{ROOT}/practice/questions?{}", query.finish())
 }
 
-const WORKSPACE: &str = "question-bank-workspace training-workspace fixed inset-0 z-[70] flex h-dvh w-screen flex-col overflow-hidden bg-base-200 px-3 py-2";
+pub(super) const WORKSPACE: &str = "question-bank-workspace training-workspace fixed inset-0 z-[70] flex h-dvh w-screen flex-col overflow-hidden bg-base-200 px-3 py-2";
 
 #[derive(Properties, PartialEq)]
 pub(crate) struct QuestionBankTrainingProps {
@@ -583,6 +583,8 @@ pub(super) struct QuestionBankQuestionHeaderProps {
     pub(super) leading: Html,
     #[prop_or_default]
     pub(super) tabs: Html,
+    #[prop_or_default]
+    pub(super) trailing: Html,
     pub(super) title: String,
     #[prop_or_default]
     pub(super) subtitle: Option<String>,
@@ -620,7 +622,102 @@ pub(super) fn question_bank_question_header(props: &QuestionBankQuestionHeaderPr
                     {props.leading.clone()}{props.tabs.clone()}
                 }
                 <QuestionInkToggle />
+                if !scratch_open {
+                    {props.trailing.clone()}
+                }
             </div>
+        </div>
+    }
+}
+
+#[derive(Properties, PartialEq)]
+pub(super) struct QuestionAiModeTabsProps {
+    pub(super) active: bool,
+    pub(super) original: Callback<MouseEvent>,
+    pub(super) ai: Callback<MouseEvent>,
+    #[prop_or_default]
+    pub(super) original_active: Option<bool>,
+    #[prop_or("question-bank-original-tab")]
+    pub(super) original_test_id: &'static str,
+    #[prop_or("question-bank-ai-tab")]
+    pub(super) ai_test_id: &'static str,
+    #[prop_or("原始解析")]
+    pub(super) original_label: &'static str,
+    #[prop_or("AI 解析")]
+    pub(super) ai_label: &'static str,
+}
+
+#[function_component(QuestionAiModeTabs)]
+pub(super) fn question_ai_mode_tabs(props: &QuestionAiModeTabsProps) -> Html {
+    let original_active = props.original_active.unwrap_or(!props.active);
+    html! {
+        <div class="flex shrink-0 items-center gap-0" role="group" aria-label="AI 复盘模式">
+            <button type="button" class={classes!(super::question_header_actions::QUESTION_HEADER_ICON_BUTTON, if original_active {"btn-active"} else {""})}
+                aria-label={props.original_label} title={props.original_label}
+                data-testid={props.original_test_id} aria-pressed={original_active.to_string()} onclick={props.original.clone()}>
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 3h9l4 4v14H6zM14 3v5h5M9 12h7M9 16h7"/></svg>
+            </button>
+            <button type="button" class={classes!(super::question_header_actions::QUESTION_HEADER_ICON_BUTTON, if props.active {"btn-active"} else {""}, if props.active {"text-primary"} else {""})}
+                aria-label={props.ai_label} title={props.ai_label}
+                data-testid={props.ai_test_id} aria-pressed={props.active.to_string()} onclick={props.ai.clone()}>
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m12 3 1.5 4.5L18 9l-4.5 1.5L12 15l-1.5-4.5L6 9l4.5-1.5zM19 14l.8 2.2L22 17l-2.2.8L19 20l-.8-2.2L16 17l2.2-.8z"/></svg>
+            </button>
+        </div>
+    }
+}
+
+#[derive(Properties, PartialEq)]
+pub(super) struct QuestionAiMoreMenuProps {
+    pub can_delete: bool,
+    pub delete: Callback<MouseEvent>,
+    #[prop_or_default]
+    pub reset_key: String,
+    #[prop_or("question-bank-ai-more")]
+    pub button_test_id: &'static str,
+    #[prop_or("question-bank-ai-delete")]
+    pub delete_test_id: &'static str,
+    #[prop_or("更多解析操作")]
+    pub button_label: &'static str,
+    #[prop_or("删除 AI 解析")]
+    pub delete_label: &'static str,
+}
+
+#[function_component(QuestionAiMoreMenu)]
+pub(super) fn question_ai_more_menu(props: &QuestionAiMoreMenuProps) -> Html {
+    let open = use_state(|| false);
+    {
+        let open = open.clone();
+        use_effect_with(props.reset_key.clone(), move |_| {
+            open.set(false);
+            || ()
+        });
+    }
+    let delete = {
+        let open = open.clone();
+        let callback = props.delete.clone();
+        Callback::from(move |event: MouseEvent| {
+            open.set(false);
+            callback.emit(event);
+        })
+    };
+    html! {
+        <div class="relative shrink-0">
+            <button type="button" class={super::question_header_actions::QUESTION_HEADER_ICON_BUTTON}
+                aria-label={props.button_label} title={props.button_label}
+                data-testid={props.button_test_id} aria-expanded={open.to_string()}
+                onclick={Callback::from({let open=open.clone();move |_|open.set(!*open)})}>
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><circle cx="12" cy="5" r="1.5"/><circle cx="12" cy="12" r="1.5"/><circle cx="12" cy="19" r="1.5"/></svg>
+            </button>
+            if *open {
+                <div class="absolute right-0 top-full z-50 min-w-40 rounded-box border border-base-content/10 bg-base-100 p-1 shadow-lg">
+                    if props.can_delete {
+                        <button type="button" class="btn btn-ghost btn-sm w-full justify-start text-error"
+                            data-testid={props.delete_test_id} onclick={delete}>{props.delete_label}</button>
+                    } else {
+                        <span class="block px-3 py-2 text-xs text-base-content/60">{"暂无可用操作"}</span>
+                    }
+                </div>
+            }
         </div>
     }
 }
@@ -638,46 +735,13 @@ pub(super) struct QuestionAiHeaderActionsProps {
 
 #[function_component(QuestionAiHeaderActions)]
 pub(super) fn question_ai_header_actions(props: &QuestionAiHeaderActionsProps) -> Html {
-    let open = use_state(|| false);
-    {
-        let open = open.clone();
-        use_effect_with(props.active, move |_| {
-            open.set(false);
-            || ()
-        });
-    }
-    let delete = {
-        let open = open.clone();
-        let callback = props.delete.clone();
-        Callback::from(move |event: MouseEvent| {
-            open.set(false);
-            callback.emit(event);
-        })
-    };
     html! {
         <div class="flex shrink-0 items-center gap-0" data-testid="question-bank-review-tabs">
             if props.available {
-            <button type="button" class={classes!(super::question_header_actions::QUESTION_HEADER_ICON_BUTTON,if !props.active {"btn-active"} else {""})} aria-label="原始解析" title="原始解析"
-                data-testid="question-bank-original-tab" aria-pressed={(!props.active).to_string()} onclick={props.original.clone()}>
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 3h9l4 4v14H6zM14 3v5h5M9 12h7M9 16h7"/></svg>
-            </button>
-            <button type="button" class={classes!(super::question_header_actions::QUESTION_HEADER_ICON_BUTTON,if props.active {"btn-active"} else {""},if props.active {"text-primary"} else {""})} aria-label="AI 解析" title="AI 解析"
-                data-testid="question-bank-ai-tab" aria-pressed={props.active.to_string()} onclick={props.ai.clone()}>
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m12 3 1.5 4.5L18 9l-4.5 1.5L12 15l-1.5-4.5L6 9l4.5-1.5zM19 14l.8 2.2L22 17l-2.2.8L19 20l-.8-2.2L16 17l2.2-.8z"/></svg>
-            </button>
+                <QuestionAiModeTabs active={props.active} original={props.original.clone()} ai={props.ai.clone()}/>
             }
-                <div class="relative">
-                    <button type="button" class={super::question_header_actions::QUESTION_HEADER_ICON_BUTTON} aria-label="更多解析操作" title="更多解析操作" aria-expanded={open.to_string()} onclick={Callback::from({let open=open.clone();move |_|open.set(!*open)})}>
-                        <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><circle cx="12" cy="5" r="1.5"/><circle cx="12" cy="12" r="1.5"/><circle cx="12" cy="19" r="1.5"/></svg>
-                    </button>
-                    if *open { <div class="absolute right-0 top-full z-40 min-w-36 rounded-box border border-base-content/10 bg-base-100 p-1 shadow-lg">
-                        if props.available && props.active && props.can_delete {
-                            <button type="button" class="btn btn-ghost btn-sm w-full justify-start text-error" data-testid="question-bank-ai-delete" onclick={delete}>{"删除 AI 解析"}</button>
-                        } else {
-                            <span class="block px-3 py-2 text-xs text-base-content/60">{"暂无可用操作"}</span>
-                        }
-                    </div> }
-                </div>
+            <QuestionAiMoreMenu can_delete={props.available && props.active && props.can_delete}
+                reset_key={props.active.to_string()} delete={props.delete.clone()}/>
         </div>
     }
 }
@@ -817,8 +881,32 @@ fn streaming_markdown_complete(text: &str) -> bool {
         && text.matches("\\[").count() == text.matches("\\]").count()
 }
 
-pub(super) fn ai_draft_key(question_id: &str, kind: &str) -> String {
-    format!("hyz.ai-review.draft.{question_id}.{kind}")
+pub(super) fn ai_scope_url(
+    endpoint: &str,
+    suffix: &str,
+    scope: &str,
+    query: Option<&str>,
+) -> String {
+    let mut params = Vec::new();
+    if scope != "analysis" {
+        params.push(format!("scope={scope}"));
+    }
+    if let Some(query) = query.filter(|value| !value.is_empty()) {
+        params.push(query.to_owned());
+    }
+    if params.is_empty() {
+        format!("{endpoint}{suffix}")
+    } else {
+        format!("{endpoint}{suffix}?{}", params.join("&"))
+    }
+}
+
+pub(super) fn ai_draft_key(question_id: &str, scope: &str, kind: &str) -> String {
+    if scope == "grading" {
+        format!("hyz.ai-review.draft.{question_id}.grading.{kind}")
+    } else {
+        format!("hyz.ai-review.draft.{question_id}.{kind}")
+    }
 }
 
 fn ai_draft_read(key: &str) -> String {
@@ -875,11 +963,16 @@ pub(crate) fn question_ai_review(props: &QuestionAiReviewProps) -> Html {
     let diagram_root = use_node_ref();
     let failure = use_state(|| None::<String>);
     let submitting = use_state(|| false);
-    let follow_key = ai_draft_key(&props.question_id, "follow-up");
-    let start_key = ai_draft_key(&props.question_id, "start");
+    let scope = if props.mode == "grade" {
+        "grading"
+    } else {
+        "analysis"
+    };
+    let follow_key = ai_draft_key(&props.question_id, scope, "follow-up");
+    let start_key = ai_draft_key(&props.question_id, scope, "start");
     let follow_up = use_state(|| ai_draft_read(&follow_key));
     let start_instruction = use_state(|| ai_draft_read(&start_key));
-    let request_key = ai_draft_key(&props.question_id, "request-id");
+    let request_key = ai_draft_key(&props.question_id, scope, "request-id");
     let request_id = use_state(|| {
         let value = ai_draft_read(&request_key);
         if value.is_empty() {
@@ -959,6 +1052,7 @@ pub(crate) fn question_ai_review(props: &QuestionAiReviewProps) -> Html {
         let state = state.clone();
         let failure = failure.clone();
         let endpoint = endpoint.clone();
+        let scope = scope;
         let revision = revision.clone();
         let key = props.question_id.clone();
         use_effect_with(key, move |_| {
@@ -967,6 +1061,7 @@ pub(crate) fn question_ai_review(props: &QuestionAiReviewProps) -> Html {
             let alive = std::rc::Rc::new(std::cell::Cell::new(true));
             let request_alive = alive.clone();
             let request_revision = *revision.borrow();
+            let endpoint = ai_scope_url(&endpoint, "", scope, None);
             spawn_local(async move {
                 let response = fetch_json::<AiReviewState>(&endpoint, "AI 复盘记录").await;
                 if request_alive.get() && *revision.borrow() == request_revision {
@@ -982,6 +1077,7 @@ pub(crate) fn question_ai_review(props: &QuestionAiReviewProps) -> Html {
     let (stream, disconnected, reconnect_stream) = super::ai_review_stream::use_ai_review_stream(
         props.question_id.clone(),
         endpoint.clone(),
+        scope,
         state.clone(),
         revision.clone(),
     );
@@ -991,6 +1087,7 @@ pub(crate) fn question_ai_review(props: &QuestionAiReviewProps) -> Html {
         let request_not_found = request_not_found.clone();
         let state = state.clone();
         let endpoint = endpoint.clone();
+        let scope = scope;
         let key = (
             (*request_id).clone(),
             (*stream).as_ref().map(|value| value.status.clone()),
@@ -1007,7 +1104,7 @@ pub(crate) fn question_ai_review(props: &QuestionAiReviewProps) -> Html {
                 let state = state.clone();
                 spawn_local(async move {
                     match fetch_json_typed::<AiRequestInfo>(
-                        &format!("{endpoint}/requests/{id}"),
+                        &ai_scope_url(&endpoint, &format!("/requests/{id}"), scope, None),
                         "AI 请求状态",
                     )
                     .await
@@ -1023,8 +1120,11 @@ pub(crate) fn question_ai_review(props: &QuestionAiReviewProps) -> Html {
                         {
                             // Do not discard a missing ID on the strength of one 404: a
                             // server task may still be active after a lost response.
-                            let review =
-                                fetch_json::<AiReviewState>(&endpoint, "AI 复盘记录").await;
+                            let review = fetch_json::<AiReviewState>(
+                                &ai_scope_url(&endpoint, "", scope, None),
+                                "AI 复盘记录",
+                            )
+                            .await;
                             if alive.get() {
                                 request_info.set(None);
                                 match review {
@@ -1136,12 +1236,12 @@ pub(crate) fn question_ai_review(props: &QuestionAiReviewProps) -> Html {
         let failure = failure.clone();
         let submitting = submitting.clone();
         let endpoint = endpoint.clone();
+        let scope = scope;
         let csrf = props.csrf.clone();
         let start_instruction = start_instruction.clone();
         let start_images = start_images.clone();
         let uploading_start = uploading_start.clone();
         let start_key = start_key.clone();
-        let grade_mode = props.mode == "grade";
         Callback::from(move |_: ()| {
             if *submitting || *uploading_start {
                 return;
@@ -1186,14 +1286,10 @@ pub(crate) fn question_ai_review(props: &QuestionAiReviewProps) -> Html {
             let revision = revision.clone();
             let failure = failure.clone();
             let submitting = submitting.clone();
-            let endpoint = endpoint.clone();
+            let endpoint = ai_scope_url(&endpoint, "", scope, None);
             let csrf = csrf.clone();
             let draft = (*start_instruction).clone();
-            let instruction = if grade_mode {
-                format!("【申论批改】\n{}", draft.trim())
-            } else {
-                draft.trim().to_owned()
-            };
+            let instruction = draft.trim().to_owned();
             let start_key = start_key.clone();
             let start_instruction = start_instruction.clone();
             let start_images = start_images.clone();
@@ -1262,7 +1358,7 @@ pub(crate) fn question_ai_review(props: &QuestionAiReviewProps) -> Html {
         let revision = revision.clone();
         let failure = failure.clone();
         let submitting = submitting.clone();
-        let endpoint = format!("{endpoint}/stop");
+        let endpoint = ai_scope_url(&endpoint, "/stop", scope, None);
         let csrf = props.csrf.clone();
         Callback::from(move |_| {
             if *submitting {
@@ -1315,7 +1411,7 @@ pub(crate) fn question_ai_review(props: &QuestionAiReviewProps) -> Html {
         let pending_message = pending_message.clone();
         let follow_bottom = follow_bottom.clone();
         let follow_key = follow_key.clone();
-        let endpoint = format!("{endpoint}/messages");
+        let endpoint = ai_scope_url(&endpoint, "/messages", scope, None);
         let csrf = props.csrf.clone();
         let grade_mode = props.mode == "grade";
         Callback::from(move |_: ()| {
@@ -1471,7 +1567,7 @@ pub(crate) fn question_ai_review(props: &QuestionAiReviewProps) -> Html {
         let delete_confirmation_required = delete_confirmation_required.clone();
         let confirm_delete_uncertain = confirm_delete_uncertain.clone();
         let delete_error = delete_error.clone();
-        let endpoint = endpoint.clone();
+        let endpoint = ai_scope_url(&endpoint, "", scope, None);
         let csrf = props.csrf.clone();
         Callback::from(move |_| {
             if *submitting || (*delete_confirmation_required && !*confirm_delete_uncertain) {
@@ -1611,7 +1707,12 @@ pub(crate) fn question_ai_review(props: &QuestionAiReviewProps) -> Html {
             let retry_images = retry_images.clone();
             let reconnect_stream = reconnect_stream.clone();
             let revision = revision.clone();
-            let endpoint = format!("{endpoint}/requests/{}/retry", source.request_id);
+            let endpoint = ai_scope_url(
+                &endpoint,
+                &format!("/requests/{}/retry", source.request_id),
+                scope,
+                None,
+            );
             let csrf = csrf.clone();
             spawn_local(async move {
                 let result = post_json_response_typed::<_, AiRequestReceipt>(
@@ -1764,7 +1865,7 @@ pub(crate) fn question_ai_review(props: &QuestionAiReviewProps) -> Html {
                         }
                         if *retry_expired {
                             <p class="text-sm text-warning" role="alert">{"原临时图片已失效，请重新上传与原请求相同数量的图片，然后确认重试。"}</p>
-                            <AiImagePicker endpoint={format!("{endpoint}/attachments")} csrf={props.csrf.clone()}
+                            <AiImagePicker endpoint={ai_scope_url(&endpoint, "/attachments", scope, None)} csrf={props.csrf.clone()}
                                 attachments={retry_images.clone()} uploading={retry_uploading.clone()} disabled={*submitting}
                                 testid="question-bank-ai-retry-images">
                                 <span class="text-sm">{"重新上传原请求的图片"}</span>
@@ -1788,6 +1889,7 @@ pub(crate) fn question_ai_review(props: &QuestionAiReviewProps) -> Html {
                     (&value.status, value.messages.iter().rev().find(|message| message.role == "assistant").map(|message| message.id))
                 }))}
                 endpoint={endpoint.clone()}
+                scope={scope}
                 stream={if current.as_ref().is_some_and(|value| value.status == "idle") {None} else {(*stream).clone()}}
                 messages={current.as_ref().map(|value| value.messages.clone()).unwrap_or_default()}/>
             if let Some(active) = stream.as_ref().as_ref() {
@@ -1865,7 +1967,7 @@ pub(crate) fn question_ai_review(props: &QuestionAiReviewProps) -> Html {
                         placeholder: if props.mode=="grade" {"粘贴申论作答，或上传手写图片…"} else {"输入解析要求（可选）…"},
                         button_label: if props.mode=="grade" {"发送批改"} else {"开始 AI 解析"}, is_stop: false,
                         disabled: *submitting || *uploading_start || request_unresolved || request_uncertain || (props.mode=="grade" && start_instruction.trim().is_empty() && start_images.is_empty()),
-                        endpoint: format!("{endpoint}/attachments"), csrf: props.csrf.clone(),
+                        endpoint: ai_scope_url(&endpoint, "/attachments", scope, None), csrf: props.csrf.clone(),
                         attachments: start_images.clone(), uploading: uploading_start.clone(),
                         picker_disabled: *submitting, picker_testid: "question-bank-ai-start-images",
                         oninput: Callback::from({
@@ -1894,7 +1996,7 @@ pub(crate) fn question_ai_review(props: &QuestionAiReviewProps) -> Html {
                         placeholder: if props.mode=="grade" {"追问扣分原因，或发送修改后的答案…"} else {"输入消息…"},
                         button_label: if running {"停止生成"} else {"发送追问"}, is_stop: running,
                         disabled: *submitting || (!running && (*uploading_follow || request_unresolved || request_uncertain || (follow_up.trim().is_empty() && follow_images.is_empty()))),
-                        endpoint: format!("{endpoint}/attachments"), csrf: props.csrf.clone(),
+                        endpoint: ai_scope_url(&endpoint, "/attachments", scope, None), csrf: props.csrf.clone(),
                         attachments: follow_images.clone(), uploading: uploading_follow.clone(),
                         picker_disabled: *submitting, picker_testid: "question-bank-ai-follow-up-images",
                         oninput: Callback::from({

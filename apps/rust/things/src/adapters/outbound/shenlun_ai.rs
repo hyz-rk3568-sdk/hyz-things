@@ -1,5 +1,8 @@
 //! 申论 AI：评分与追问复用 Question Bank；OCR 是一次性 Codex Markdown 转写。
-use super::{data_analysis::CodexConfig, question_bank_ai::QuestionBankAiService};
+use super::{
+    data_analysis::CodexConfig,
+    question_bank_ai::{AiReviewScope, QuestionBankAiService},
+};
 use crate::{
     application::question_bank::{
         practice::{AiReviewEventSink, AiReviewProgress},
@@ -103,7 +106,7 @@ impl ShenlunAiService {
             .attachments
             .as_ref()
             .ok_or(ShenlunAiError::Unavailable)?
-            .resolve_attachments(attachment_ids)
+            .resolve_attachments_in_scope(question_id, AiReviewScope::Ocr, attachment_ids)
             .await
             .map_err(|_| ShenlunAiError::Invalid)?;
         let config = self.codex.as_ref().ok_or(ShenlunAiError::Unavailable)?;

@@ -144,60 +144,71 @@ pub(super) fn shenlun_ai_panel(props: &ShenlunAiPanelProps) -> Html {
         .as_ref()
         .map(|response| ocr_tools(&response.events))
         .unwrap_or_default();
-    let image_endpoint = format!(
-        "/api/v1/question-bank/practice/questions/{}/ai/attachments",
-        props.question_id
+    let image_endpoint = super::question_bank_practice::ai_scope_url(
+        &format!(
+            "/api/v1/question-bank/practice/questions/{}/ai",
+            props.question_id
+        ),
+        "/attachments",
+        "ocr",
+        None,
     );
     html! {
-        <section class="mt-3 space-y-3" data-testid="shenlun-ai-panel">
-            <h3 class="font-semibold">{"手写图片 OCR"}</h3>
-            <p class="text-sm text-base-content/60">
-                {"临时 Codex 识别：直接返回 Markdown 原文，不创建批改记录、不要求确认，也不会自动评分。"}
-            </p>
-            {ai_composer(AiComposer {
-                id: "shenlun-ocr-input",
-                input_ref: ocr_input_ref,
-                compose_testid: "shenlun-ocr-composer",
-                input_testid: "shenlun-ocr-input",
-                button_testid: "shenlun-transcribe-start",
-                value: "",
-                max_length: 0,
-                read_only: true,
-                placeholder: "仅上传手写图片，不支持文字输入…",
-                button_label: if *busy {"正在识别…"} else {"转写为 Markdown"},
-                is_stop: false,
-                disabled: *busy || *uploading || images.is_empty(),
-                endpoint: image_endpoint,
-                csrf: props.csrf.clone(),
-                attachments: images.clone(),
-                uploading: uploading.clone(),
-                picker_disabled: *busy || *uploading,
-                picker_testid: "shenlun-ocr-images",
-                oninput: Callback::noop(),
-                onkeydown: Callback::noop(),
-                onclick: start_ocr,
-            })}
-            if let Some(response) = (*result).as_ref() {
-                if !tools.is_empty() {
-                    <section class="py-1" data-testid="shenlun-ocr-tool-activity">
-                        <p class="text-xs text-base-content/60">{"工具调用 · 本次临时转写"}</p>
-                        <div class="mt-2 space-y-3 border-l border-base-content/15 pl-3 text-xs text-base-content/60">
-                            {for tools.iter().map(|(_, label, command, output)| {
-                                super::ai_review_activity::tool_execution_item(
-                                    label, command, output, "shenlun-ocr"
-                                )
-                            })}
-                        </div>
-                    </section>
+        <section class="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden" data-testid="shenlun-ai-panel">
+            <div class="shrink-0 space-y-1 px-3 py-2">
+                <h3 class="font-semibold">{"手写图片 OCR"}</h3>
+                <p class="text-sm text-base-content/60">
+                    {"临时 Codex 识别：直接返回 Markdown 原文，不创建批改记录、不要求确认，也不会自动评分。"}
+                </p>
+            </div>
+            <div class="min-h-0 flex-1 space-y-3 overflow-y-auto overscroll-contain px-3 py-2" data-testid="shenlun-ocr-results">
+                if let Some(response) = (*result).as_ref() {
+                    if !tools.is_empty() {
+                        <section class="py-1" data-testid="shenlun-ocr-tool-activity">
+                            <p class="text-xs text-base-content/60">{"工具调用 · 本次临时转写"}</p>
+                            <div class="mt-2 space-y-3 border-l border-base-content/15 pl-3 text-xs text-base-content/60">
+                                {for tools.iter().map(|(_, label, command, output)| {
+                                    super::ai_review_activity::tool_execution_item(
+                                        label, command, output, "shenlun-ocr"
+                                    )
+                                })}
+                            </div>
+                        </section>
+                    }
+                    <article class="study-markdown space-y-2 rounded-box border border-base-content/10 p-3"
+                        data-testid="shenlun-ocr-markdown">
+                        {render_question_bank_user_markdown(&response.markdown)}
+                    </article>
                 }
-                <article class="study-markdown space-y-2 rounded-box border border-base-content/10 p-3"
-                    data-testid="shenlun-ocr-markdown">
-                    {render_question_bank_user_markdown(&response.markdown)}
-                </article>
-            }
-            if let Some(message) = (*error).as_ref() {
-                <p role="alert" class="text-sm text-error">{message.clone()}</p>
-            }
+                if let Some(message) = (*error).as_ref() {
+                    <p role="alert" class="text-sm text-error">{message.clone()}</p>
+                }
+            </div>
+            <div class="shrink-0 border-t border-base-content/10 bg-base-100 px-2 py-2">
+                {ai_composer(AiComposer {
+                    id: "shenlun-ocr-input",
+                    input_ref: ocr_input_ref,
+                    compose_testid: "shenlun-ocr-composer",
+                    input_testid: "shenlun-ocr-input",
+                    button_testid: "shenlun-transcribe-start",
+                    value: "",
+                    max_length: 0,
+                    read_only: true,
+                    placeholder: "仅上传手写图片，不支持文字输入…",
+                    button_label: if *busy {"正在识别…"} else {"转写为 Markdown"},
+                    is_stop: false,
+                    disabled: *busy || *uploading || images.is_empty(),
+                    endpoint: image_endpoint,
+                    csrf: props.csrf.clone(),
+                    attachments: images.clone(),
+                    uploading: uploading.clone(),
+                    picker_disabled: *busy || *uploading,
+                    picker_testid: "shenlun-ocr-images",
+                    oninput: Callback::noop(),
+                    onkeydown: Callback::noop(),
+                    onclick: start_ocr,
+                })}
+            </div>
         </section>
     }
 }
