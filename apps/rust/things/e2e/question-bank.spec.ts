@@ -831,6 +831,13 @@ test('saved AI analysis opens by default and remains scoped to its question', as
   await page.getByRole('button',{name:'确认交卷'}).click();
   await expect(page.getByTestId('question-bank-ai-tab')).toHaveAttribute('aria-pressed','true');
   await expect(page.getByTestId('question-bank-ai-message')).toContainText('已经保存的 AI 解析');
+  const more = page.getByRole('button',{name:'更多解析操作'});
+  await more.click();
+  await expect(page.getByTestId('question-bank-ai-delete')).toBeVisible();
+  await openSheet(page);
+  await page.getByTestId('question-bank-practice-number').nth(1).click();
+  await expect(more).toHaveAttribute('aria-expanded','false');
+  await expect(page.getByTestId('question-bank-ai-delete')).toHaveCount(0);
   await page.getByTestId('question-bank-original-tab').click();
   await expect(page.getByTestId('question-bank-original-tab')).toHaveAttribute('aria-pressed','true');
   await openSheet(page);

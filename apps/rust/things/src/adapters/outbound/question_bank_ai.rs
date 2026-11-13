@@ -30,6 +30,34 @@ const MAX_STREAM_TEXT: usize = 512 * 1024;
 const MAX_STREAM_PROGRESS: usize = 256;
 const MAX_STREAM_CONNECTIONS: usize = 32;
 
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum AiReviewScope {
+    #[default]
+    Analysis,
+    Grading,
+    Ocr,
+}
+
+impl AiReviewScope {
+    fn validate_subject(self, locator: &QuestionAiLocator) -> Result<(), AiReviewError> {
+        match self {
+            Self::Analysis => Ok(()),
+            Self::Grading | Self::Ocr if locator.subject == "shenlun" => Ok(()),
+            Self::Grading | Self::Ocr => Err(AiReviewError::Invalid),
+        }
+    }
+}
+
+pub struct AiRetryCommand {
+    pub scope: AiReviewScope,
+    pub source_request_id: String,
+    pub request_id: String,
+    pub confirm_uncertain: bool,
+    pub confirm_new_thread: bool,
+    pub replacement_attachments: Option<Vec<String>>,
+}
+
 #[derive(Clone, Debug, serde::Serialize)]
 pub struct AiReviewStreamEventV1 {
     pub version: u8,
@@ -248,6 +276,8 @@ struct ActiveTask {
 type Key = (String, String);
 struct UploadedAttachment {
     path: String,
+    question_id: Option<String>,
+    scope: AiReviewScope,
     expires_at: Instant,
 }
 struct ReviewInput {
@@ -278,6 +308,24 @@ fn key(locator: &QuestionAiLocator) -> Key {
     )
 }
 
+fn scoped_key(locator: &QuestionAiLocator, scope: AiReviewScope) -> Result<Key, AiReviewError> {
+    scope.validate_subject(locator)?;
+    if scope == AiReviewScope::Analysis && locator.subject != "shenlun" {
+        return Ok(key(locator));
+    }
+    let name = match scope {
+        AiReviewScope::Analysis => "analysis",
+        AiReviewScope::Grading => "grading",
+        AiReviewScope::Ocr => return Err(AiReviewError::Invalid),
+    };
+    let digest = Sha256::digest(format!(
+        "hyz-question-ai-scope-v1:{name}:{}",
+        locator.stem_fingerprint
+    ));
+    let fingerprint = digest.iter().map(|byte| format!("{byte:02x}")).collect();
+    Ok((locator.question_id.clone(), fingerprint))
+}
+
 const AI_REVIEW_ENVELOPE: &str =
     "输出格式：直接输出 Markdown 正文，不要用 JSON 包装或用代码围栏包裹全文。\n";
 
@@ -293,11 +341,14 @@ const AI_SVG_INSTRUCTIONS: &str = concat!(
     "图形显示在白色背景上，请使用深色文字和线条。无需画图时直接使用文字、表格或公式，不必强制绘图。\n",
 );
 
-fn shenlun_initial_prompt(locator: &QuestionAiLocator, instruction: Option<&str>) -> String {
+fn shenlun_initial_prompt(
+    locator: &QuestionAiLocator,
+    instruction: Option<&str>,
+    scope: AiReviewScope,
+) -> String {
     let material_ids = serde_json::to_string(&locator.material_ids).unwrap_or_else(|_| "[]".into());
     let paper_path = format!("question_bank/{}", locator.paper_path);
-    let grading = instruction.is_some_and(|value| value.trim_start().starts_with("【申论批改】"));
-    let task = if grading {
+    let task = if scope == AiReviewScope::Grading {
         "【任务：申论练习批改】\n\
          判断这道题是归纳概括、综合分析、提出对策、公文写作还是大作文，并据题型按需阅读 references/xiaoti.md 或 references/dazuowen.md，以及 references/scoring.md。\n\
          先确认题目问法、作答对象、范围、字数、文种、材料关联和已知满分；根据题干与给定材料提炼采分要点，来源参考答案只能作为线索，必须回到材料核对，不得奉为唯一官方标准。\n\
@@ -335,9 +386,13 @@ fn shenlun_initial_prompt(locator: &QuestionAiLocator, instruction: Option<&str>
     )
 }
 
-fn initial_prompt(locator: &QuestionAiLocator, instruction: Option<&str>) -> String {
+fn initial_prompt(
+    locator: &QuestionAiLocator,
+    instruction: Option<&str>,
+    scope: AiReviewScope,
+) -> String {
     if locator.subject == "shenlun" {
-        return shenlun_initial_prompt(locator, instruction);
+        return shenlun_initial_prompt(locator, instruction, scope);
     }
     let materials = serde_json::to_string(&locator.material_ids).unwrap_or_else(|_| "[]".into());
     let paper_path = format!("question_bank/{}", locator.paper_path);
@@ -490,7 +545,17 @@ impl QuestionBankAiService {
         &self,
         question_id: &str,
     ) -> Result<(String, String), AiReviewError> {
-        Ok(key(&self.bank.question_ai_locator(question_id).await?))
+        self.stream_identity_in_scope(question_id, AiReviewScope::Analysis)
+            .await
+    }
+
+    pub async fn stream_identity_in_scope(
+        &self,
+        question_id: &str,
+        scope: AiReviewScope,
+    ) -> Result<(String, String), AiReviewError> {
+        let locator = self.bank.question_ai_locator(question_id).await?;
+        scoped_key(&locator, scope)
     }
 
     pub async fn history_runs(
@@ -499,10 +564,21 @@ impl QuestionBankAiService {
         after: i64,
         limit: i64,
     ) -> Result<AiHistoryPage<AiHistoryRun>, AiReviewError> {
+        self.history_runs_in_scope(question_id, AiReviewScope::Analysis, after, limit)
+            .await
+    }
+
+    pub async fn history_runs_in_scope(
+        &self,
+        question_id: &str,
+        scope: AiReviewScope,
+        after: i64,
+        limit: i64,
+    ) -> Result<AiHistoryPage<AiHistoryRun>, AiReviewError> {
         if after < 0 || !(1..=100).contains(&limit) {
             return Err(AiReviewError::Invalid);
         }
-        let key = self.stream_identity(question_id).await?;
+        let key = self.stream_identity_in_scope(question_id, scope).await?;
         let rows = sqlx::query("SELECT rowid,request_id,run_id,status,assistant_message_id,created_at FROM question_ai_requests WHERE question_id=? AND stem_fingerprint=? AND rowid>? ORDER BY rowid LIMIT ?")
             .bind(&key.0).bind(&key.1).bind(after).bind(limit + 1)
             .fetch_all(&self.pool).await.map_err(|_| AiReviewError::Storage)?;
@@ -534,11 +610,23 @@ impl QuestionBankAiService {
         after: i64,
         limit: i64,
     ) -> Result<AiHistoryPage<AiReviewStreamEventV1>, AiReviewError> {
+        self.history_events_in_scope(question_id, AiReviewScope::Analysis, run_id, after, limit)
+            .await
+    }
+
+    pub async fn history_events_in_scope(
+        &self,
+        question_id: &str,
+        scope: AiReviewScope,
+        run_id: &str,
+        after: i64,
+        limit: i64,
+    ) -> Result<AiHistoryPage<AiReviewStreamEventV1>, AiReviewError> {
         if after < 0 || !(1..=100).contains(&limit) {
             return Err(AiReviewError::Invalid);
         }
         let run_id = request_uuid(run_id)?;
-        let key = self.stream_identity(question_id).await?;
+        let key = self.stream_identity_in_scope(question_id, scope).await?;
         let exists: i64 = sqlx::query_scalar("SELECT count(*) FROM question_ai_requests WHERE question_id=? AND stem_fingerprint=? AND run_id=?")
             .bind(&key.0).bind(&key.1).bind(&run_id).fetch_one(&self.pool).await.map_err(|_| AiReviewError::Storage)?;
         if exists == 0 {
@@ -662,6 +750,30 @@ impl QuestionBankAiService {
     /// Validate and forward one browser image to the PC receiver, returning an
     /// opaque attachment ID. The browser never sees or supplies the host path.
     pub async fn attach(&self, media_type: &str, bytes: &[u8]) -> Result<String, AiReviewError> {
+        self.attach_with_context(None, AiReviewScope::Analysis, media_type, bytes)
+            .await
+    }
+
+    pub async fn attach_in_scope(
+        &self,
+        question_id: &str,
+        scope: AiReviewScope,
+        media_type: &str,
+        bytes: &[u8],
+    ) -> Result<String, AiReviewError> {
+        let locator = self.bank.question_ai_locator(question_id).await?;
+        scope.validate_subject(&locator)?;
+        self.attach_with_context(Some(question_id), scope, media_type, bytes)
+            .await
+    }
+
+    async fn attach_with_context(
+        &self,
+        question_id: Option<&str>,
+        scope: AiReviewScope,
+        media_type: &str,
+        bytes: &[u8],
+    ) -> Result<String, AiReviewError> {
         let image = validate_image(bytes, media_type)?;
         let relay = self.relay.as_ref().ok_or(AiReviewError::Unavailable)?;
         let path = relay
@@ -679,16 +791,26 @@ impl QuestionBankAiService {
             id.clone(),
             UploadedAttachment {
                 path,
+                question_id: question_id.map(str::to_owned),
+                scope,
                 expires_at: now + ATTACHMENT_TTL,
             },
         );
         Ok(id)
     }
 
-    pub(crate) async fn resolve_attachments(
+    pub(crate) async fn resolve_attachments_in_scope(
         &self,
+        question_id: &str,
+        scope: AiReviewScope,
         attachment_ids: &[String],
     ) -> Result<Vec<String>, AiReviewError> {
+        if !question_id.is_empty() {
+            let locator = self.bank.question_ai_locator(question_id).await?;
+            scope.validate_subject(&locator)?;
+        } else if scope != AiReviewScope::Analysis {
+            return Err(AiReviewError::Invalid);
+        }
         if attachment_ids.len() > MAX_IMAGES_PER_MESSAGE {
             return Err(AiReviewError::Invalid);
         }
@@ -711,7 +833,14 @@ impl QuestionBankAiService {
             .map(|id| {
                 uploads
                     .get(id)
-                    .filter(|entry| entry.expires_at > now)
+                    .filter(|entry| {
+                        entry.expires_at > now
+                            && entry.scope == scope
+                            && entry
+                                .question_id
+                                .as_deref()
+                                .is_none_or(|expected| expected == question_id)
+                    })
                     .map(|entry| entry.path.clone())
                     .ok_or(AiReviewError::AttachmentExpired)
             })
@@ -753,9 +882,19 @@ impl QuestionBankAiService {
     }
 
     pub async fn state(&self, question_id: &str) -> Result<AiReviewState, AiReviewError> {
+        self.state_in_scope(question_id, AiReviewScope::Analysis)
+            .await
+    }
+
+    pub async fn state_in_scope(
+        &self,
+        question_id: &str,
+        scope: AiReviewScope,
+    ) -> Result<AiReviewState, AiReviewError> {
         let locator = self.bank.question_ai_locator(question_id).await?;
+        let key = scoped_key(&locator, scope)?;
         let _active = self.active.lock().await;
-        self.state_for_key(&key(&locator)).await
+        self.state_for_key(&key).await
     }
 
     async fn request_for_key(
@@ -795,11 +934,22 @@ impl QuestionBankAiService {
         question_id: &str,
         request_id: &str,
     ) -> Result<AiRequestInfo, AiReviewError> {
+        self.request_status_in_scope(question_id, AiReviewScope::Analysis, request_id)
+            .await
+    }
+
+    pub async fn request_status_in_scope(
+        &self,
+        question_id: &str,
+        scope: AiReviewScope,
+        request_id: &str,
+    ) -> Result<AiRequestInfo, AiReviewError> {
         let request_id = request_uuid(request_id)?;
         let locator = self.bank.question_ai_locator(question_id).await?;
+        let key = scoped_key(&locator, scope)?;
         let _active = self.active.lock().await;
         Ok(self
-            .request_for_key(&key(&locator), &request_id)
+            .request_for_key(&key, &request_id)
             .await?
             .ok_or(AiReviewError::RequestNotFound)?
             .info)
@@ -811,9 +961,26 @@ impl QuestionBankAiService {
         instruction: Option<String>,
         attachment_ids: Vec<String>,
     ) -> Result<AiReviewState, AiReviewError> {
+        self.start_in_scope(
+            question_id,
+            AiReviewScope::Analysis,
+            instruction,
+            attachment_ids,
+        )
+        .await
+    }
+
+    pub async fn start_in_scope(
+        self: &Arc<Self>,
+        question_id: &str,
+        scope: AiReviewScope,
+        instruction: Option<String>,
+        attachment_ids: Vec<String>,
+    ) -> Result<AiReviewState, AiReviewError> {
         match self
-            .start_request(
+            .start_request_in_scope(
                 question_id,
+                scope,
                 &uuid::Uuid::now_v7().to_string(),
                 instruction,
                 attachment_ids,
@@ -822,7 +989,7 @@ impl QuestionBankAiService {
         {
             Ok(receipt) => Ok(receipt.state),
             Err(AiReviewError::Busy) => {
-                let state = self.state(question_id).await?;
+                let state = self.state_in_scope(question_id, scope).await?;
                 if matches!(state.status.as_str(), "running" | "complete") {
                     Ok(state)
                 } else {
@@ -840,8 +1007,27 @@ impl QuestionBankAiService {
         instruction: Option<String>,
         attachment_ids: Vec<String>,
     ) -> Result<AiRequestReceipt, AiReviewError> {
+        self.start_request_in_scope(
+            question_id,
+            AiReviewScope::Analysis,
+            request_id,
+            instruction,
+            attachment_ids,
+        )
+        .await
+    }
+
+    pub async fn start_request_in_scope(
+        self: &Arc<Self>,
+        question_id: &str,
+        scope: AiReviewScope,
+        request_id: &str,
+        instruction: Option<String>,
+        attachment_ids: Vec<String>,
+    ) -> Result<AiRequestReceipt, AiReviewError> {
         self.begin_request(
             question_id,
+            scope,
             request_id,
             RequestIntent::Initial {
                 instruction,
@@ -857,9 +1043,26 @@ impl QuestionBankAiService {
         message: String,
         attachment_ids: Vec<String>,
     ) -> Result<AiReviewState, AiReviewError> {
+        self.follow_up_in_scope(
+            question_id,
+            AiReviewScope::Analysis,
+            message,
+            attachment_ids,
+        )
+        .await
+    }
+
+    pub async fn follow_up_in_scope(
+        self: &Arc<Self>,
+        question_id: &str,
+        scope: AiReviewScope,
+        message: String,
+        attachment_ids: Vec<String>,
+    ) -> Result<AiReviewState, AiReviewError> {
         Ok(self
-            .follow_up_request(
+            .follow_up_request_in_scope(
                 question_id,
+                scope,
                 &uuid::Uuid::now_v7().to_string(),
                 message,
                 attachment_ids,
@@ -875,8 +1078,27 @@ impl QuestionBankAiService {
         message: String,
         attachment_ids: Vec<String>,
     ) -> Result<AiRequestReceipt, AiReviewError> {
+        self.follow_up_request_in_scope(
+            question_id,
+            AiReviewScope::Analysis,
+            request_id,
+            message,
+            attachment_ids,
+        )
+        .await
+    }
+
+    pub async fn follow_up_request_in_scope(
+        self: &Arc<Self>,
+        question_id: &str,
+        scope: AiReviewScope,
+        request_id: &str,
+        message: String,
+        attachment_ids: Vec<String>,
+    ) -> Result<AiRequestReceipt, AiReviewError> {
         self.begin_request(
             question_id,
+            scope,
             request_id,
             RequestIntent::FollowUp {
                 message,
@@ -895,10 +1117,38 @@ impl QuestionBankAiService {
         confirm_new_thread: bool,
         replacement_attachments: Option<Vec<String>>,
     ) -> Result<AiRequestReceipt, AiReviewError> {
-        let source_request_id = request_uuid(source_request_id)?;
+        self.retry_request_in_scope(
+            question_id,
+            AiRetryCommand {
+                scope: AiReviewScope::Analysis,
+                source_request_id: source_request_id.to_owned(),
+                request_id: request_id.to_owned(),
+                confirm_uncertain,
+                confirm_new_thread,
+                replacement_attachments,
+            },
+        )
+        .await
+    }
+
+    pub async fn retry_request_in_scope(
+        self: &Arc<Self>,
+        question_id: &str,
+        command: AiRetryCommand,
+    ) -> Result<AiRequestReceipt, AiReviewError> {
+        let AiRetryCommand {
+            scope,
+            source_request_id,
+            request_id,
+            confirm_uncertain,
+            confirm_new_thread,
+            replacement_attachments,
+        } = command;
+        let source_request_id = request_uuid(&source_request_id)?;
         self.begin_request(
             question_id,
-            request_id,
+            scope,
+            &request_id,
             RequestIntent::Retry {
                 source_request_id,
                 confirm_uncertain,
@@ -912,18 +1162,19 @@ impl QuestionBankAiService {
     async fn begin_request(
         self: &Arc<Self>,
         question_id: &str,
+        scope: AiReviewScope,
         request_id: &str,
         intent: RequestIntent,
     ) -> Result<AiRequestReceipt, AiReviewError> {
         let request_id = request_uuid(request_id)?;
         let hash = request_hash(&intent)?;
         let locator = self.bank.question_ai_locator(question_id).await?;
+        let key = scoped_key(&locator, scope)?;
         let max_input = if locator.subject == "shenlun" {
             50_256
         } else {
             MAX_FOLLOW_UP
         };
-        let key = key(&locator);
         let mut active = self.active.lock().await;
         if let Some(existing) = self.request_for_key(&key, &request_id).await? {
             if existing.payload_hash != hash {
@@ -1073,7 +1324,9 @@ impl QuestionBankAiService {
         {
             return Err(AiReviewError::Invalid);
         }
-        let images = self.resolve_attachments(&attachments).await?;
+        let images = self
+            .resolve_attachments_in_scope(question_id, scope, &attachments)
+            .await?;
         let mut tx = self
             .pool
             .begin()
@@ -1134,7 +1387,7 @@ impl QuestionBankAiService {
         }
         tx.commit().await.map_err(|_| AiReviewError::Storage)?;
         let prompt = if kind == "initial" {
-            initial_prompt(&locator, text.as_deref())
+            initial_prompt(&locator, text.as_deref(), scope)
         } else {
             text.clone()
                 .filter(|text| !text.is_empty())
@@ -1226,8 +1479,17 @@ impl QuestionBankAiService {
     }
 
     pub async fn stop(&self, question_id: &str) -> Result<AiReviewState, AiReviewError> {
+        self.stop_in_scope(question_id, AiReviewScope::Analysis)
+            .await
+    }
+
+    pub async fn stop_in_scope(
+        &self,
+        question_id: &str,
+        scope: AiReviewScope,
+    ) -> Result<AiReviewState, AiReviewError> {
         let locator = self.bank.question_ai_locator(question_id).await?;
-        let key = key(&locator);
+        let key = scoped_key(&locator, scope)?;
         let task = {
             let active = self.active.lock().await;
             active.get(&key).cloned()
@@ -1243,7 +1505,8 @@ impl QuestionBankAiService {
     }
 
     pub async fn delete(&self, question_id: &str) -> Result<AiReviewState, AiReviewError> {
-        self.delete_with_confirmation(question_id, false).await
+        self.delete_with_confirmation_in_scope(question_id, AiReviewScope::Analysis, false)
+            .await
     }
 
     pub async fn delete_with_confirmation(
@@ -1251,8 +1514,22 @@ impl QuestionBankAiService {
         question_id: &str,
         confirm_uncertain: bool,
     ) -> Result<AiReviewState, AiReviewError> {
+        self.delete_with_confirmation_in_scope(
+            question_id,
+            AiReviewScope::Analysis,
+            confirm_uncertain,
+        )
+        .await
+    }
+
+    pub async fn delete_with_confirmation_in_scope(
+        &self,
+        question_id: &str,
+        scope: AiReviewScope,
+        confirm_uncertain: bool,
+    ) -> Result<AiReviewState, AiReviewError> {
         let locator = self.bank.question_ai_locator(question_id).await?;
-        let key = key(&locator);
+        let key = scoped_key(&locator, scope)?;
         let task = {
             let active = self.active.lock().await;
             active.get(&key).cloned()
@@ -1537,7 +1814,7 @@ mod tests {
             material_ids: Vec::new(),
             stem_fingerprint: "test-hash".into(),
         };
-        let prompt = initial_prompt(&locator, Some("帮我分析采分点"));
+        let prompt = initial_prompt(&locator, Some("帮我分析采分点"), AiReviewScope::Analysis);
         assert!(prompt.contains("hyz-shenlun/SKILL.md"));
         assert!(prompt.contains("申论真题解析"));
         assert!(prompt.contains("帮我分析采分点"));
@@ -1557,13 +1834,17 @@ mod tests {
             material_ids: vec!["m1".into()],
             stem_fingerprint: "fingerprint".into(),
         };
-        let grade = initial_prompt(&locator, Some("【申论批改】\n请批改这份答案"));
+        let grade = initial_prompt(
+            &locator,
+            Some("【申论批改】\n请批改这份答案"),
+            AiReviewScope::Grading,
+        );
         assert!(grade.contains("Markdown 报告格式"));
         assert!(grade.contains("AI 练习参考分（非官方）"));
         assert!(grade.contains("关键字迹无法辨认"));
         assert!(grade.contains("材料依据"));
         assert!(!grade.contains("Codex Thread"));
-        let analysis = initial_prompt(&locator, Some("请解析题目"));
+        let analysis = initial_prompt(&locator, Some("请解析题目"), AiReviewScope::Analysis);
         assert!(analysis.contains("申论真题解析"));
         assert!(!analysis.contains("Markdown 报告格式"));
     }
@@ -1578,7 +1859,7 @@ mod tests {
             material_ids: Vec::new(),
             stem_fingerprint: "fingerprint".into(),
         };
-        let prompt = initial_prompt(&locator, None);
+        let prompt = initial_prompt(&locator, None, AiReviewScope::Analysis);
         assert!(prompt.contains("```svg"), "{prompt}");
         assert!(prompt.contains("viewBox"), "{prompt}");
         assert!(prompt.contains("foreignObject"), "{prompt}");
@@ -1596,7 +1877,7 @@ mod tests {
             stem_fingerprint: "fingerprint".into(),
         };
 
-        let prompt = initial_prompt(&locator, None);
+        let prompt = initial_prompt(&locator, None, AiReviewScope::Analysis);
 
         assert!(prompt.contains("多栏或双栏排版"), "{prompt}");
         assert!(prompt.contains("blocks"), "{prompt}");
@@ -1633,7 +1914,11 @@ mod tests {
             material_ids: Vec::new(),
             stem_fingerprint: "fingerprint".into(),
         };
-        let prompt = initial_prompt(&locator, Some("用线段图讲解，只讲速算"));
+        let prompt = initial_prompt(
+            &locator,
+            Some("用线段图讲解，只讲速算"),
+            AiReviewScope::Analysis,
+        );
         assert!(prompt.contains("【用户要求】"), "{prompt}");
         assert!(prompt.contains("用线段图讲解，只讲速算"), "{prompt}");
     }
@@ -1649,7 +1934,7 @@ mod tests {
             stem_fingerprint: "fingerprint".into(),
         };
 
-        let prompt = initial_prompt(&locator, None);
+        let prompt = initial_prompt(&locator, None, AiReviewScope::Analysis);
 
         assert!(
             prompt.contains("question_bank/collections/xiaop-2026-shuliang/01-方程关系.md"),

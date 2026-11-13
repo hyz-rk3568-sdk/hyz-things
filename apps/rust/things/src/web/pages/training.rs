@@ -342,7 +342,7 @@ fn training_workspace(props: &TrainingWorkspaceProps) -> Html {
                     quantitative={*mode == TrainingMode::QuantitativeRelations}
                     show_history={false} />
             } else if *mode == TrainingMode::Shenlun {
-                <ShenlunTraining csrf={props.csrf.clone()} on_immersive_change={on_immersive_change.clone()} />
+                <QuestionBankShenlun csrf={props.csrf.clone()} on_immersive_change={on_immersive_change.clone()} />
             } else if *mode == TrainingMode::Comprehensive {
                 <ComprehensiveTraining csrf={props.csrf.clone()} show_history={false} on_immersive_change={on_immersive_change} on_paper_pause_change={on_paper_pause_change} on_exit={exit_comprehensive} />
             }

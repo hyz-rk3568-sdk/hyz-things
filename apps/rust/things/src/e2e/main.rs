@@ -31,6 +31,7 @@ use hyz_things::{
         },
         question_bank::{
             document::{self, Document},
+            practice::AiAttachmentRelay,
             BankAsset, BankError, BankSnapshot, IndexedPaper, QuestionBankApplication,
             QuestionBankSourcePort,
         },
@@ -257,6 +258,65 @@ category: 方程关系
 
 "#;
 
+const QUESTION_BANK_SHENLUN_FIXTURE: &str = r#"---
+schema: hyz-paper/v2
+kind: exam
+subject: shenlun
+title: 申论 OCR 端到端样卷
+year: 2025
+region: 国考
+variant: 地市级
+role: primary
+---
+
+<!-- hyz-paper-id: 019a3d8c-7f23-7b6e-927d-3c951851d3a6 -->
+
+# 申论 OCR 端到端样卷
+
+## Material M1
+
+<!-- hyz-material-id: 019a3d8d-4a21-739a-8b15-7c54e259b612 -->
+基层治理需要明确责任，完善公共服务。
+
+## Question 1
+
+<!-- hyz-question-id: 019a3d8e-1b32-7a60-9c83-f34217a6e250 -->
+```yaml
+answer_type: subjective
+grading_mode: ai
+question_type: summary
+max_score: 20
+materials: [M1]
+```
+### Stem
+请概括基层治理的要求。
+### Options
+### Answer
+### Reference Answer
+压实基层责任，完善公共服务。
+### Explanation
+本题依据给定材料概括基层治理要求。
+
+## Question 2
+
+<!-- hyz-question-id: 019a3d8e-1b32-7a60-9c83-f34217a6e251 -->
+```yaml
+answer_type: subjective
+grading_mode: ai
+question_type: measures
+max_score: 20
+materials: [M1]
+```
+### Stem
+请提出优化基层服务的对策。
+### Options
+### Answer
+### Reference Answer
+健全服务机制，提升基层治理效能。
+### Explanation
+本题依据给定材料提出可行对策。
+"#;
+
 const E2E_IMAGE_NAME: &str = "431ced6916a2a21a156e38701afe55bbd7f88969fbbfc56d7fe099d47f265460.png";
 const E2E_IMAGE: &[u8] = &[
     137, 80, 78, 71, 13, 10, 26, 10, 0, 0, 0, 13, 73, 72, 68, 82, 0, 0, 0, 1, 0, 0, 0, 1, 8, 4, 0,
@@ -264,39 +324,80 @@ const E2E_IMAGE: &[u8] = &[
     39, 24, 227, 102, 0, 0, 0, 0, 73, 69, 78, 68, 174, 66, 96, 130,
 ];
 
+#[derive(Clone, Debug, Serialize)]
+struct FixtureAiUploadObservation {
+    media_type: String,
+    bytes: Vec<u8>,
+}
+
+#[derive(Clone)]
+struct FixtureAiAttachmentRelay {
+    observation: Arc<Mutex<Option<FixtureAiUploadObservation>>>,
+}
+
+#[async_trait]
+impl AiAttachmentRelay for FixtureAiAttachmentRelay {
+    async fn upload(&self, media_type: &str, bytes: &[u8]) -> Result<String, String> {
+        let extension = match media_type {
+            "image/png" => "png",
+            "image/jpeg" => "jpg",
+            _ => return Err("unsupported fixture image type".to_owned()),
+        };
+        *self
+            .observation
+            .lock()
+            .map_err(|_| "fixture image observation lock is poisoned".to_owned())? =
+            Some(FixtureAiUploadObservation {
+                media_type: media_type.to_owned(),
+                bytes: bytes.to_vec(),
+            });
+        Ok(format!("/fixture/ai-uploads/e2e-upload.{extension}"))
+    }
+}
+
 struct QuestionBankFixture;
 
 #[async_trait]
 impl QuestionBankSourcePort for QuestionBankFixture {
     async fn scan(&self, _known: Vec<IndexedPaper>) -> Result<BankSnapshot, BankError> {
+        let mut papers = vec![
+            IndexedPaper::new(
+                "papers/e2e.md".into(),
+                "e2e-test-hash".into(),
+                document::parse(QUESTION_BANK_FIXTURE).map_err(|_| BankError::Invalid)?,
+            ),
+            IndexedPaper::new(
+                "papers/second.md".into(),
+                "e2e-second-hash".into(),
+                document::parse(QUESTION_BANK_SECOND_FIXTURE).map_err(|_| BankError::Invalid)?,
+            ),
+            IndexedPaper::new(
+                "papers/duplicate.md".into(),
+                "e2e-duplicate-hash".into(),
+                document::parse(&duplicate_fixture()).map_err(|_| BankError::Invalid)?,
+            ),
+            IndexedPaper::new(
+                "collections/xiaop-2026-shuliang/01.md".into(),
+                "e2e-drill-hash".into(),
+                document::parse(QUESTION_BANK_DRILL_FIXTURE).map_err(|_| BankError::Invalid)?,
+            ),
+        ];
+        if env::var_os("HYZ_THINGS_E2E_SHENLUN_UPLOAD_FIXTURE").is_some() {
+            papers.push(IndexedPaper::new(
+                "papers/shenlun-e2e.md".into(),
+                "e2e-shenlun-hash".into(),
+                document::parse(QUESTION_BANK_SHENLUN_FIXTURE).map_err(|_| BankError::Invalid)?,
+            ));
+        }
         Ok(BankSnapshot {
-            papers: vec![
-                IndexedPaper::new(
-                    "papers/e2e.md".into(),
-                    "e2e-test-hash".into(),
-                    document::parse(QUESTION_BANK_FIXTURE).map_err(|_| BankError::Invalid)?,
-                ),
-                IndexedPaper::new(
-                    "papers/second.md".into(),
-                    "e2e-second-hash".into(),
-                    document::parse(QUESTION_BANK_SECOND_FIXTURE)
-                        .map_err(|_| BankError::Invalid)?,
-                ),
-                IndexedPaper::new(
-                    "papers/duplicate.md".into(),
-                    "e2e-duplicate-hash".into(),
-                    document::parse(&duplicate_fixture()).map_err(|_| BankError::Invalid)?,
-                ),
-                IndexedPaper::new(
-                    "collections/xiaop-2026-shuliang/01.md".into(),
-                    "e2e-drill-hash".into(),
-                    document::parse(QUESTION_BANK_DRILL_FIXTURE).map_err(|_| BankError::Invalid)?,
-                ),
-            ],
+            papers,
             generated_ids: 0,
         })
     }
     async fn load(&self, paper: IndexedPaper) -> Result<Document, BankError> {
+        if paper.summary.id == "019a3d8c-7f23-7b6e-927d-3c951851d3a6" {
+            return document::parse(QUESTION_BANK_SHENLUN_FIXTURE).map_err(|_| BankError::Invalid);
+        }
         if paper.summary.id == "019a3d8c-7f23-7b6e-927d-3c951851d3a4" {
             return document::parse(&duplicate_fixture()).map_err(|_| BankError::Invalid);
         }
@@ -706,6 +807,7 @@ struct HarnessControlState {
     admin: Arc<AdminApplication>,
     camera: Arc<CameraApplication>,
     question_bank: sqlx::SqlitePool,
+    ai_upload_observation: Arc<Mutex<Option<FixtureAiUploadObservation>>>,
 }
 
 impl Default for HarnessBackend {
@@ -1553,11 +1655,16 @@ async fn main() -> Result<(), Box<dyn Error>> {
     bank.sync()
         .await
         .map_err(|error| std::io::Error::other(error.to_string()))?;
-    let ai = Arc::new(QuestionBankAiService::new(
-        bank.clone(),
-        bank_repository.pool().clone(),
-        None,
-    ));
+    let ai_upload_observation = Arc::new(Mutex::new(None));
+    let ai = Arc::new(
+        QuestionBankAiService::new(bank.clone(), bank_repository.pool().clone(), None)
+            .with_attachment_relay(
+                Some(Arc::new(FixtureAiAttachmentRelay {
+                    observation: Arc::clone(&ai_upload_observation),
+                })),
+                Some("/fixture/ai-uploads".to_owned()),
+            ),
+    );
     let favorite_flashcards = Arc::new(FavoriteFlashcardApplication::new(
         bank.clone(),
         flashcards,
@@ -1570,7 +1677,13 @@ async fn main() -> Result<(), Box<dyn Error>> {
     let web_app = with_favorite_flashcards(web_app, Some(favorite_flashcards));
     let web_app = with_question_bank_ai(web_app, Some(ai));
     let web_app = with_training_time(web_app, Some(training_time));
-    let harness_app = harness_control_app(backend, admin, camera, bank_repository.pool().clone());
+    let harness_app = harness_control_app(
+        backend,
+        admin,
+        camera,
+        bank_repository.pool().clone(),
+        ai_upload_observation,
+    );
 
     println!(
         "{}",
@@ -1596,18 +1709,21 @@ fn harness_control_app(
     admin: Arc<AdminApplication>,
     camera: Arc<CameraApplication>,
     question_bank: sqlx::SqlitePool,
+    ai_upload_observation: Arc<Mutex<Option<FixtureAiUploadObservation>>>,
 ) -> Router {
     Router::new()
         .route("/health", get(harness_health))
         .route("/state", get(harness_state).put(replace_harness_state))
         .route("/reset", put(reset_harness_state))
         .route("/reset-question-bank", put(reset_question_bank))
+        .route("/ai-uploads", get(harness_ai_upload))
         .layer(DefaultBodyLimit::max(MAX_HARNESS_JSON_BYTES))
         .with_state(HarnessControlState {
             backend,
             admin,
             camera,
             question_bank,
+            ai_upload_observation,
         })
 }
 
@@ -1645,6 +1761,17 @@ async fn harness_health() -> Json<serde_json::Value> {
     Json(serde_json::json!({"status": "ok"}))
 }
 
+async fn harness_ai_upload(
+    State(control): State<HarnessControlState>,
+) -> Result<Json<Option<FixtureAiUploadObservation>>, (axum::http::StatusCode, String)> {
+    let observation = control
+        .ai_upload_observation
+        .lock()
+        .map_err(|_| harness_internal_error("fixture image observation lock is poisoned".into()))?
+        .clone();
+    Ok(Json(observation))
+}
+
 async fn harness_state(
     State(control): State<HarnessControlState>,
 ) -> Result<Json<HarnessState>, (axum::http::StatusCode, String)> {
@@ -1674,6 +1801,9 @@ async fn reset_harness_state(
         .admin
         .reset_e2e_bootstrap()
         .map_err(|error| harness_internal_error(error.to_string()))?;
+    *control.ai_upload_observation.lock().map_err(|_| {
+        harness_internal_error("fixture image observation lock is poisoned".into())
+    })? = None;
     control
         .backend
         .replace(HarnessState::default())

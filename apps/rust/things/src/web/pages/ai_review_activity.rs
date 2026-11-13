@@ -41,6 +41,7 @@ struct HistoryPage<T> {
 #[derive(Properties, PartialEq)]
 struct RunActivityProps {
     endpoint: String,
+    scope: &'static str,
     run: HistoryRun,
     index: usize,
     stream: Option<StreamSnapshot>,
@@ -57,6 +58,7 @@ fn run_activity(props: &RunActivityProps) -> Html {
     let in_flight = use_mut_ref(|| false);
     let load = {
         let endpoint = props.endpoint.clone();
+        let scope = props.scope;
         let run_id = props.run.run_id.clone();
         let events = events.clone();
         let after = after.clone();
@@ -83,7 +85,12 @@ fn run_activity(props: &RunActivityProps) -> Html {
             let in_flight = in_flight.clone();
             spawn_local(async move {
                 loop {
-                    let url = format!("{endpoint}/runs/{run_id}/events?after={cursor}&limit=50");
+                    let url = super::question_bank_practice::ai_scope_url(
+                        &endpoint,
+                        &format!("/runs/{run_id}/events"),
+                        scope,
+                        Some(&format!("after={cursor}&limit=50")),
+                    );
                     match fetch_json::<HistoryPage<StreamEvent>>(&url, "AI 执行历史").await {
                         Ok(page) => {
                             if page.has_more && page.next_after.is_none_or(|next| next <= cursor) {
@@ -231,6 +238,7 @@ fn run_activity(props: &RunActivityProps) -> Html {
 #[derive(Properties, PartialEq)]
 pub(super) struct AiReviewActivityProps {
     pub endpoint: String,
+    pub scope: &'static str,
     pub refresh_key: String,
     pub stream: Option<StreamSnapshot>,
     pub messages: Vec<AiReviewMessage>,
@@ -247,18 +255,29 @@ pub(super) fn ai_review_activity(props: &AiReviewActivityProps) -> Html {
         let loading = loading.clone();
         let error = error.clone();
         use_effect_with(
-            (props.endpoint.clone(), props.refresh_key.clone(), *retry),
-            move |(endpoint, _, _)| {
+            (
+                props.endpoint.clone(),
+                props.scope,
+                props.refresh_key.clone(),
+                *retry,
+            ),
+            move |(endpoint, scope, _, _)| {
                 let alive = Rc::new(Cell::new(true));
                 let request_alive = alive.clone();
                 let endpoint = endpoint.clone();
+                let scope = *scope;
                 loading.set(true);
                 error.set(None);
                 spawn_local(async move {
                     let mut cursor = 0i64;
                     let mut all = Vec::new();
                     loop {
-                        let url = format!("{endpoint}/runs?after={cursor}&limit=50");
+                        let url = super::question_bank_practice::ai_scope_url(
+                            &endpoint,
+                            "/runs",
+                            scope,
+                            Some(&format!("after={cursor}&limit=50")),
+                        );
                         let response =
                             fetch_json::<HistoryPage<HistoryRun>>(&url, "AI 执行历史").await;
                         if !request_alive.get() {
@@ -314,7 +333,7 @@ pub(super) fn ai_review_activity(props: &AiReviewActivityProps) -> Html {
             .enumerate()
             .filter(|(_, run)| run.assistant_message_id == Some(message.id) && message.id != 0)
         {
-            rows.push(html! { <RunActivity key={format!("run-{}", run.run_id)} endpoint={props.endpoint.clone()} run={run.clone()} {index} stream={props.stream.clone()}/> });
+            rows.push(html! { <RunActivity key={format!("run-{}", run.run_id)} endpoint={props.endpoint.clone()} scope={props.scope} run={run.clone()} {index} stream={props.stream.clone()}/> });
         }
         rows.push(html! {
             <div key={format!("message-{}-{message_index}", message.id)} class={if message.role == "user" {"rounded-xl bg-primary/10 p-3"} else {"py-2"}} data-testid="question-bank-ai-message">
@@ -331,7 +350,7 @@ pub(super) fn ai_review_activity(props: &AiReviewActivityProps) -> Html {
                 .iter()
                 .any(|message| message.id != 0 && Some(message.id) == run.assistant_message_id)
     }) {
-        rows.push(html! { <RunActivity key={format!("run-{}", run.run_id)} endpoint={props.endpoint.clone()} run={run.clone()} {index} stream={props.stream.clone()}/> });
+        rows.push(html! { <RunActivity key={format!("run-{}", run.run_id)} endpoint={props.endpoint.clone()} scope={props.scope} run={run.clone()} {index} stream={props.stream.clone()}/> });
     }
     html! {
         <div data-testid="question-bank-ai-activity" aria-label="执行活动" class="space-y-2 text-xs text-base-content/60">

@@ -27,6 +27,7 @@ pub(super) struct StreamSnapshot {
 pub(super) fn use_ai_review_stream(
     question_id: String,
     endpoint: String,
+    scope: &'static str,
     history: UseStateHandle<Option<AiReviewState>>,
     revision: Rc<RefCell<u64>>,
 ) -> (
@@ -53,22 +54,28 @@ pub(super) fn use_ai_review_stream(
         let disconnected = disconnected.clone();
         let reconnect_now = reconnect_now.clone();
         use_effect_with(
-            (question_id, endpoint, *reconnect),
-            move |(question_id, endpoint, _)| {
+            (question_id, endpoint, scope, *reconnect),
+            move |(question_id, endpoint, scope, _)| {
                 let alive = Rc::new(Cell::new(true));
                 let cursor = Rc::new(RefCell::new(None::<StreamSnapshot>));
-                let source = web_sys::EventSource::new(&format!("{endpoint}/events"));
+                let scope = *scope;
+                let source = web_sys::EventSource::new(
+                    &super::question_bank_practice::ai_scope_url(endpoint, "/events", scope, None),
+                );
                 let mut handlers: Vec<Closure<dyn FnMut(web_sys::MessageEvent)>> = Vec::new();
                 let mut error_handler: Option<Closure<dyn FnMut(Event)>> = None;
                 if let Ok(source) = &source {
                     let refresh: Rc<dyn Fn()> = {
                         let history = history.clone();
                         let endpoint = endpoint.clone();
+                        let scope = scope;
                         let revision = revision.clone();
                         let alive = alive.clone();
                         Rc::new(move || {
                             let history = history.clone();
-                            let endpoint = endpoint.clone();
+                            let endpoint = super::question_bank_practice::ai_scope_url(
+                                &endpoint, "", scope, None,
+                            );
                             let revision = revision.clone();
                             let alive = alive.clone();
                             *revision.borrow_mut() += 1;

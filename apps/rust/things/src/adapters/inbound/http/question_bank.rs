@@ -1,5 +1,7 @@
 use super::*;
-use crate::adapters::outbound::question_bank_ai::{AiReviewError, QuestionBankAiService};
+use crate::adapters::outbound::question_bank_ai::{
+    AiRetryCommand, AiReviewError, AiReviewScope, QuestionBankAiService,
+};
 use crate::application::question_bank::{BankError, QuestionBankApplication};
 use crate::domain::question_bank::{
     CreatePracticeRequest, ModulePracticeFilters, PracticeMode, SavePracticeAnswer, SetFavorite,
@@ -146,11 +148,25 @@ pub(super) async fn ai_rate_limits(
     }
 }
 
+#[derive(Default, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(super) struct AiScopeQuery {
+    #[serde(default)]
+    scope: Option<AiReviewScope>,
+}
+
+impl AiScopeQuery {
+    fn scope(&self) -> AiReviewScope {
+        self.scope.unwrap_or_default()
+    }
+}
+
 pub(super) async fn ai_read(
     State(state): State<AppState>,
     headers: HeaderMap,
     service: AiService,
     Path(question_id): Path<String>,
+    axum::extract::Query(query): axum::extract::Query<AiScopeQuery>,
 ) -> Response {
     if let Err(response) = authorize_sensitive_read(&state, &headers).await {
         return response;
@@ -159,7 +175,7 @@ pub(super) async fn ai_read(
         Ok(service) => service,
         Err(e) => return e,
     };
-    match service.state(&question_id).await {
+    match service.state_in_scope(&question_id, query.scope()).await {
         Ok(value) => Json(value).into_response(),
         Err(error) => ai_error(error),
     }
@@ -171,6 +187,8 @@ pub(super) struct AiHistoryQuery {
     after: i64,
     #[serde(default = "history_limit")]
     limit: i64,
+    #[serde(default)]
+    scope: Option<AiReviewScope>,
 }
 
 fn history_limit() -> i64 {
@@ -192,7 +210,12 @@ pub(super) async fn ai_history_runs(
         Err(error) => return error,
     };
     match service
-        .history_runs(&question_id, query.after, query.limit)
+        .history_runs_in_scope(
+            &question_id,
+            query.scope.unwrap_or_default(),
+            query.after,
+            query.limit,
+        )
         .await
     {
         Ok(page) => Json(page).into_response(),
@@ -215,7 +238,13 @@ pub(super) async fn ai_history_events(
         Err(error) => return error,
     };
     match service
-        .history_events(&question_id, &run_id, query.after, query.limit)
+        .history_events_in_scope(
+            &question_id,
+            query.scope.unwrap_or_default(),
+            &run_id,
+            query.after,
+            query.limit,
+        )
         .await
     {
         Ok(page) => Json(page).into_response(),
@@ -227,6 +256,7 @@ struct AiEventConnection {
     state: AppState,
     headers: HeaderMap,
     service: Arc<QuestionBankAiService>,
+    scope: AiReviewScope,
     identity: (String, String),
     receiver: tokio::sync::broadcast::Receiver<
         crate::adapters::outbound::question_bank_ai::StreamMessage,
@@ -249,7 +279,7 @@ impl AiEventConnection {
             .is_err()
             || self
                 .service
-                .stream_identity(&self.identity.0)
+                .stream_identity_in_scope(&self.identity.0, self.scope)
                 .await
                 .ok()
                 .as_ref()
@@ -267,6 +297,7 @@ pub(super) async fn ai_events(
     headers: HeaderMap,
     service: AiService,
     Path(question_id): Path<String>,
+    axum::extract::Query(query): axum::extract::Query<AiScopeQuery>,
 ) -> Response {
     if let Err(response) = authorize_sensitive_read(&state, &headers).await {
         return response;
@@ -279,11 +310,14 @@ pub(super) async fn ai_events(
         Ok(permit) => permit,
         Err(error) => return ai_error(error),
     };
-    let identity = match service.stream_identity(&question_id).await {
+    let identity = match service
+        .stream_identity_in_scope(&question_id, query.scope())
+        .await
+    {
         Ok(identity) => identity,
         Err(error) => return ai_error(error),
     };
-    let review = match service.state(&question_id).await {
+    let review = match service.state_in_scope(&question_id, query.scope()).await {
         Ok(review) => review,
         Err(error) => return ai_error(error),
     };
@@ -292,6 +326,7 @@ pub(super) async fn ai_events(
         state,
         headers,
         service,
+        scope: query.scope(),
         identity,
         receiver,
         snapshot: Some(snapshot),
@@ -342,7 +377,7 @@ pub(super) async fn ai_events(
                 Some(Err(tokio::sync::broadcast::error::RecvError::Lagged(_))) => {
                     let review = connection
                         .service
-                        .state(&connection.identity.0)
+                        .state_in_scope(&connection.identity.0, connection.scope)
                         .await
                         .ok()?;
                     connection.snapshot = Some(
@@ -367,7 +402,7 @@ pub(super) async fn ai_events(
                     {
                         let review = connection
                             .service
-                            .state(&connection.identity.0)
+                            .state_in_scope(&connection.identity.0, connection.scope)
                             .await
                             .ok()?;
                         connection.snapshot = Some(
@@ -404,6 +439,7 @@ pub(super) async fn ai_start(
     service: AiService,
     bank: Service,
     Path(question_id): Path<String>,
+    axum::extract::Query(query): axum::extract::Query<AiScopeQuery>,
     payload: Result<Json<AiStartRequest>, JsonRejection>,
 ) -> Response {
     if let Err(response) = authorize_sensitive_control_admin(&state, &headers).await {
@@ -434,8 +470,9 @@ pub(super) async fn ai_start(
     };
     if let Some(request_id) = request.request_id {
         match service
-            .start_request(
+            .start_request_in_scope(
                 &question_id,
+                query.scope(),
                 &request_id,
                 request.instruction,
                 request.attachments,
@@ -447,7 +484,12 @@ pub(super) async fn ai_start(
         }
     } else {
         match service
-            .start(&question_id, request.instruction, request.attachments)
+            .start_in_scope(
+                &question_id,
+                query.scope(),
+                request.instruction,
+                request.attachments,
+            )
             .await
         {
             Ok(value) => (StatusCode::ACCEPTED, Json(value)).into_response(),
@@ -460,6 +502,8 @@ pub(super) async fn ai_attachment(
     State(state): State<AppState>,
     headers: HeaderMap,
     service: AiService,
+    Path(question_id): Path<String>,
+    axum::extract::Query(query): axum::extract::Query<AiScopeQuery>,
     payload: Result<axum::body::Bytes, axum::extract::rejection::BytesRejection>,
 ) -> Response {
     if let Err(response) = authorize_sensitive_image_admin(&state, &headers).await {
@@ -488,7 +532,10 @@ pub(super) async fn ai_attachment(
         Ok(service) => service,
         Err(error) => return error,
     };
-    match service.attach(media_type, &bytes).await {
+    match service
+        .attach_in_scope(&question_id, query.scope(), media_type, &bytes)
+        .await
+    {
         Ok(id) => Json(AiAttachmentResponse { id }).into_response(),
         Err(error) => ai_error(error),
     }
@@ -499,6 +546,7 @@ pub(super) async fn ai_follow_up(
     service: AiService,
     bank: Service,
     Path(question_id): Path<String>,
+    axum::extract::Query(query): axum::extract::Query<AiScopeQuery>,
     payload: Result<Json<AiFollowUpRequest>, JsonRejection>,
 ) -> Response {
     if let Err(response) = authorize_sensitive_control_admin(&state, &headers).await {
@@ -529,8 +577,9 @@ pub(super) async fn ai_follow_up(
     };
     if let Some(request_id) = payload.request_id {
         match service
-            .follow_up_request(
+            .follow_up_request_in_scope(
                 &question_id,
+                query.scope(),
                 &request_id,
                 payload.message,
                 payload.attachments,
@@ -542,7 +591,12 @@ pub(super) async fn ai_follow_up(
         }
     } else {
         match service
-            .follow_up(&question_id, payload.message, payload.attachments)
+            .follow_up_in_scope(
+                &question_id,
+                query.scope(),
+                payload.message,
+                payload.attachments,
+            )
             .await
         {
             Ok(value) => (StatusCode::ACCEPTED, Json(value)).into_response(),
@@ -556,6 +610,7 @@ pub(super) async fn ai_request_status(
     headers: HeaderMap,
     service: AiService,
     Path((question_id, request_id)): Path<(String, String)>,
+    axum::extract::Query(query): axum::extract::Query<AiScopeQuery>,
 ) -> Response {
     if let Err(response) = authorize_sensitive_read(&state, &headers).await {
         return response;
@@ -564,7 +619,10 @@ pub(super) async fn ai_request_status(
         Ok(service) => service,
         Err(error) => return error,
     };
-    match service.request_status(&question_id, &request_id).await {
+    match service
+        .request_status_in_scope(&question_id, query.scope(), &request_id)
+        .await
+    {
         Ok(value) => Json(value).into_response(),
         Err(error) => ai_error(error),
     }
@@ -575,6 +633,7 @@ pub(super) async fn ai_retry(
     headers: HeaderMap,
     service: AiService,
     Path((question_id, source_request_id)): Path<(String, String)>,
+    axum::extract::Query(query): axum::extract::Query<AiScopeQuery>,
     payload: Result<Json<AiRetryRequest>, JsonRejection>,
 ) -> Response {
     if let Err(response) = authorize_sensitive_control_admin(&state, &headers).await {
@@ -589,13 +648,16 @@ pub(super) async fn ai_retry(
         Err(error) => return error,
     };
     match service
-        .retry_request(
+        .retry_request_in_scope(
             &question_id,
-            &source_request_id,
-            &payload.request_id,
-            payload.confirm_uncertain,
-            payload.confirm_new_thread,
-            payload.replacement_attachments,
+            AiRetryCommand {
+                scope: query.scope(),
+                source_request_id,
+                request_id: payload.request_id,
+                confirm_uncertain: payload.confirm_uncertain,
+                confirm_new_thread: payload.confirm_new_thread,
+                replacement_attachments: payload.replacement_attachments,
+            },
         )
         .await
     {
@@ -608,6 +670,7 @@ pub(super) async fn ai_stop(
     headers: HeaderMap,
     service: AiService,
     Path(question_id): Path<String>,
+    axum::extract::Query(query): axum::extract::Query<AiScopeQuery>,
     payload: Result<Json<EmptyJsonRequest>, JsonRejection>,
 ) -> Response {
     if let Err(response) = authorize_sensitive_control_admin(&state, &headers).await {
@@ -620,7 +683,7 @@ pub(super) async fn ai_stop(
         Ok(service) => service,
         Err(e) => return e,
     };
-    match service.stop(&question_id).await {
+    match service.stop_in_scope(&question_id, query.scope()).await {
         Ok(value) => Json(value).into_response(),
         Err(error) => ai_error(error),
     }
@@ -637,6 +700,7 @@ pub(super) async fn ai_delete(
     headers: HeaderMap,
     service: AiService,
     Path(question_id): Path<String>,
+    axum::extract::Query(query): axum::extract::Query<AiScopeQuery>,
     payload: Result<axum::body::Bytes, axum::extract::rejection::BytesRejection>,
 ) -> Response {
     if let Err(response) = authorize_sensitive_control_admin(&state, &headers).await {
@@ -666,7 +730,7 @@ pub(super) async fn ai_delete(
         Err(error) => return error,
     };
     match service
-        .delete_with_confirmation(&question_id, request.confirm_uncertain)
+        .delete_with_confirmation_in_scope(&question_id, query.scope(), request.confirm_uncertain)
         .await
     {
         Ok(value) => Json(value).into_response(),

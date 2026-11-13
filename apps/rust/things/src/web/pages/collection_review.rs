@@ -334,6 +334,7 @@ pub(crate) fn collection_question_review(props: &CollectionQuestionReviewProps) 
                     title={format!("第 {} 题", current.item.number)}
                     subtitle={Some([current.item.module.as_deref(),current.item.category.as_deref()].into_iter().flatten().collect::<Vec<_>>().join(" · "))}
                     tabs={html! {<QuestionAiHeaderActions active={*ai_tab} can_delete={*ai_can_delete}
+                        reset_key={current.item.question_id.clone()}
                         original={Callback::from({let ai_tab=ai_tab.clone();let chosen=ai_tab_chosen.clone();move |_|{*chosen.borrow_mut()=true;ai_tab.set(false);}})}
                         ai={Callback::from({let ai_tab=ai_tab.clone();let chosen=ai_tab_chosen.clone();move |_|{*chosen.borrow_mut()=true;ai_tab.set(true);}})}
                         delete={Callback::from({let signal=ai_delete_signal.clone();move |_|signal.set(signal.wrapping_add(1))})}/>}}

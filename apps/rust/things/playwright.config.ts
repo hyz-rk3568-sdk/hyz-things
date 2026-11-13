@@ -18,6 +18,14 @@ const reuseExistingServer = process.env.HYZ_THINGS_E2E_REUSE_SERVER === '1';
 process.env.HYZ_THINGS_E2E_WEB_PORT = String(webPort);
 process.env.HYZ_THINGS_E2E_CONTROL_PORT = String(controlPort);
 
+// The Shenlun spec needs its subject-valid fixture in the production upload path.
+const explicitSpecs = process.argv.slice(2).filter((arg) => /\.spec\.[cm]?[jt]sx?$/i.test(arg));
+const shenlunUploadFixtureNeeded = explicitSpecs.length === 0
+  || explicitSpecs.some((path) => path.endsWith('shenlun.spec.ts') || /[*?{]/.test(path));
+if (shenlunUploadFixtureNeeded) {
+  process.env.HYZ_THINGS_E2E_SHENLUN_UPLOAD_FIXTURE ??= '1';
+}
+
 // A specific, explicit PR title marker limits this recovery check to the two
 // previously failing regressions. For every other PR and for main, use all tests.
 function focusedRegressionFilter(): RegExp | undefined {

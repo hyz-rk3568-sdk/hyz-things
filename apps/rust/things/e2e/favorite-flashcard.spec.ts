@@ -531,6 +531,13 @@ test('collection review prefers existing question AI analysis', async ({ page })
   const review = await openReview(page);
   await expect(review.getByTestId('question-bank-ai-tab')).toHaveAttribute('aria-pressed', 'true');
   await expect(review.getByTestId('question-bank-ai-message')).toContainText('收藏题已有 AI 解析');
+  const more = review.getByRole('button', { name: '更多解析操作' });
+  await more.click();
+  await expect(review.getByTestId('question-bank-ai-delete')).toBeVisible();
+  await review.getByTestId('collection-review-next').click();
+  await expect(review.getByTestId('collection-review-heading')).toContainText('第 2 题');
+  await expect(more).toHaveAttribute('aria-expanded', 'false');
+  await expect(review.getByTestId('question-bank-ai-delete')).toHaveCount(0);
 });
 
 test('question AI image picker uploads validated attachments and sends IDs', async ({ page }) => {
