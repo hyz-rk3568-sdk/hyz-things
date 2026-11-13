@@ -487,8 +487,9 @@ pub(super) fn shenlun_training(props: &ShenlunTrainingProps) -> Html {
         let groups = vec![NavigationGroup {
             label: "全部题目".into(), subtitle: None, start: 0, end: current.questions.len()
         }];
-        let answered = current.questions.iter().map(|question| attempts.iter().any(|record|
-            record.question_id==question.id && record.status=="submitted")).collect::<Vec<_>>();
+        // No formal paper session: do not show a misleading paper-wide "answered" tally.
+        // This shared answer sheet is the sole question switcher in review mode.
+        let answered = vec![false; current.questions.len()];
         html! {
             <div class="flex h-full min-h-0 flex-col gap-2" data-testid="shenlun-workspace">
                 <div class="flex shrink-0 items-center gap-3">
