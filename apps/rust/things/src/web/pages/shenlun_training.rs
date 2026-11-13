@@ -420,28 +420,34 @@ pub(super) fn shenlun_training(props: &ShenlunTrainingProps) -> Html {
         };
         let right = html! {
             <section class="flex min-h-0 min-w-0 flex-col overflow-hidden rounded-box border border-base-content/10 bg-base-100" data-testid="shenlun-question">
-                <div class={classes!(TRAINING_PANE_HEADER, "question-bank-pane-header")}>
-                    <div class="min-w-0 flex-1">
-                        <strong class="text-sm">{format!("原卷第 {} 题", question.map(|q|q.number).unwrap_or(0))}</strong>
-                        <span class="ml-2 text-xs text-base-content/55">{question.map(topic_label).unwrap_or("申论")}</span>
-                    </div>
-                    <div class="ml-auto flex shrink-0 items-center gap-0">
-                        {leading}
-                        <button type="button" class={classes!(icon_button,if mode_value=="grade" {"text-primary"} else {""})}
-                            aria-label="AI 批改" title="AI 批改" data-testid="shenlun-mode-grade"
-                            onclick={Callback::from({let mode=mode.clone();move |_|mode.set("grade".into())})}>{"批"}</button>
-                        <button type="button" class={classes!(icon_button,if mode_value=="ocr" {"text-primary"} else {""})}
-                            aria-label="OCR 转写" title="OCR 转写" data-testid="shenlun-mode-ocr"
-                            onclick={Callback::from({let mode=mode.clone();move |_|mode.set("ocr".into())})}>{"识"}</button>
-                        <button type="button" class={classes!(icon_button,if mode_value=="ai" {"text-primary"} else {""})}
-                            aria-label="AI 解析与追问" title="AI 解析与追问" data-testid="shenlun-mode-ai"
-                            onclick={Callback::from({let mode=mode.clone();move |_|mode.set("ai".into())})}>{"✦"}</button>
-                        <button type="button" class={classes!(icon_button,if mode_value=="source" {"text-primary"} else {""})}
-                            aria-label="来源参考答案" title="来源参考答案" data-testid="shenlun-mode-source"
-                            onclick={Callback::from({let mode=mode.clone();move |_|mode.set("source".into())})}>{"答"}</button>
-                        {menu}
-                    </div>
-                </div>
+                <QuestionBankQuestionHeader
+                    title_test_id="shenlun-question-heading"
+                    title={format!("原卷第 {} 题", question.map(|q|q.number).unwrap_or(0))}
+                    subtitle={Some(question.map(topic_label).unwrap_or("申论").to_string())}
+                    question_index={index}
+                    target="题目"
+                    label="申论题目与解析滚动"
+                    passage={Some(scroll.second.clone())}
+                    can_scroll_up={scroll.second_edges.can_scroll_up}
+                    can_scroll_down={scroll.second_edges.can_scroll_down}
+                    leading={leading}
+                    tabs={html! {
+                        <>
+                            <button type="button" class={classes!(icon_button,if mode_value=="grade" {"text-primary"} else {""})}
+                                aria-label="AI 批改" title="AI 批改" data-testid="shenlun-mode-grade"
+                                onclick={Callback::from({let mode=mode.clone();move |_|mode.set("grade".into())})}>{"批"}</button>
+                            <button type="button" class={classes!(icon_button,if mode_value=="ocr" {"text-primary"} else {""})}
+                                aria-label="OCR 转写" title="OCR 转写" data-testid="shenlun-mode-ocr"
+                                onclick={Callback::from({let mode=mode.clone();move |_|mode.set("ocr".into())})}>{"识"}</button>
+                            <button type="button" class={classes!(icon_button,if mode_value=="ai" {"text-primary"} else {""})}
+                                aria-label="AI 解析与追问" title="AI 解析与追问" data-testid="shenlun-mode-ai"
+                                onclick={Callback::from({let mode=mode.clone();move |_|mode.set("ai".into())})}>{"✦"}</button>
+                            <button type="button" class={classes!(icon_button,if mode_value=="source" {"text-primary"} else {""})}
+                                aria-label="来源参考答案" title="来源参考答案" data-testid="shenlun-mode-source"
+                                onclick={Callback::from({let mode=mode.clone();move |_|mode.set("source".into())})}>{"答"}</button>
+                            {menu}
+                        </>
+                    }}/>
                 if *flashcard_open {
                     if let Some(preview)=card_preview {
                         <div class="min-h-0 flex-1 overflow-y-auto p-3" data-testid="shenlun-flashcard-workspace">
