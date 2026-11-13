@@ -208,11 +208,19 @@ pub(super) fn shenlun_ai_panel(props: &ShenlunAiPanelProps) -> Html {
     {
         let transcribed = transcribed.clone();
         let selected_transcription = latest_transcription.clone();
+        let saved_text = props.attempt.text.clone();
         use_effect_with(
             latest_transcription.as_ref().map(|job| job.id.clone()),
             move |_| {
                 if let Some(job) = selected_transcription {
-                    transcribed.set(transcription_text(&job));
+                    let extracted = transcription_text(&job);
+                    if saved_text.trim().is_empty() {
+                        transcribed.set(extracted);
+                    } else {
+                        // Review subsequent image batches against the already
+                        // confirmed first pages, never silently replace them.
+                        transcribed.set(format!("{saved_text}\n\n{extracted}"));
+                    }
                 } else {
                     transcribed.set(String::new());
                 }
@@ -532,7 +540,10 @@ pub(super) fn shenlun_ai_panel(props: &ShenlunAiPanelProps) -> Html {
                         {"开始忠实转写"}
                     </button>
                     if let Some(job)=latest_transcription.as_ref() {
-                        <p class="text-xs opacity-70">{"请逐页对照原图核对；不确定文字必须手动确认。"}</p>
+                        <p class="text-xs opacity-70">{"请逐页对照原图核对；支持下一批图片的转写追加到已确认正文。不确定文字必须手动确认。"}</p>
+                        if images.is_empty() {
+                            <p class="text-warning text-xs">{"原始临时图片已不在当前页面：需重新上传并发起转写，才可核对确认。"}</p>
+                        }
                         if let Some(pages)=job.result.as_ref().and_then(|value|value.get("pages"))
                             .and_then(serde_json::Value::as_array) {
                             {for pages.iter().map(|page|html!{
@@ -553,7 +564,7 @@ pub(super) fn shenlun_ai_panel(props: &ShenlunAiPanelProps) -> Html {
                             aria-label="人工校对手写转写" data-testid="shenlun-transcribed-edit"
                             value={(*transcribed).clone()} oninput={edit_transcribed}/>
                         <button type="button" class="btn btn-primary btn-sm" data-testid="shenlun-transcribe-confirm"
-                            disabled={*task_busy || transcribed.trim().is_empty()} onclick={confirm_text}>
+                            disabled={*task_busy || transcribed.trim().is_empty() || images.is_empty()} onclick={confirm_text}>
                             {"我已对照原图确认文本"}
                         </button>
                     }
