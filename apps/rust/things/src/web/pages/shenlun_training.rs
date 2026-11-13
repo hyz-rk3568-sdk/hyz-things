@@ -341,6 +341,9 @@ pub(super) fn shenlun_training(props: &ShenlunTrainingProps) -> Html {
             let csrf=props.csrf.clone();
             let qid=question_id.clone();
             let favorite_value=favorite.value.clone();
+            let favorite_source=favorite.source.clone();
+            let favorite_generation=favorite.generation.clone();
+            let generation=*favorite.generation.borrow();
             let favorite_busy=favorite_busy.clone();
             let error=error.clone();
             Callback::from(move |_|{
@@ -349,6 +352,8 @@ pub(super) fn shenlun_training(props: &ShenlunTrainingProps) -> Html {
                 let csrf=csrf.clone();
                 let qid=qid.clone();
                 let favorite_value=favorite_value.clone();
+                let favorite_source=favorite_source.clone();
+                let favorite_generation=favorite_generation.clone();
                 let favorite_busy=favorite_busy.clone();
                 let error=error.clone();
                 spawn_local(async move{
@@ -357,7 +362,12 @@ pub(super) fn shenlun_training(props: &ShenlunTrainingProps) -> Html {
                         &csrf,&SetFavorite{favorite:!starred},"收藏申论原题"
                     ).await;
                     match result{
-                        Ok(state) if state.question_id==qid=>favorite_value.set(Some(state)),
+                        Ok(state) if state.question_id==qid=>{
+                            if favorite_source.borrow().as_ref()==Some(&qid)
+                                && *favorite_generation.borrow()==generation {
+                                favorite_value.set(Some(state));
+                            }
+                        },
                         Ok(_)=>error.set(Some("收藏响应与当前题目不一致".into())),
                         Err(message)=>error.set(Some(message)),
                     }
