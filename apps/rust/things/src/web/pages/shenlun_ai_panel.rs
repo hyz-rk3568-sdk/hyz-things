@@ -431,8 +431,7 @@ pub(super) fn shenlun_ai_panel(props: &ShenlunAiPanelProps) -> Html {
             ||()
         });
     }
-    let display_job=selected_job.as_ref()
-        .as_ref().and_then(|id|jobs.iter().find(|job|job.id==*id)).cloned()
+    let display_job=(*selected_job).as_ref().and_then(|id|jobs.iter().find(|job|job.id==*id)).cloned()
         .or_else(||latest_grade.clone());
     let delete = {
         let selected=display_job.clone();
@@ -535,7 +534,7 @@ pub(super) fn shenlun_ai_panel(props: &ShenlunAiPanelProps) -> Html {
                     onclick={start_ocr}>{"转写图片"}</button>
             } else if props.mode=="source" {
                 <h3 class="text-sm font-semibold">{"来源参考答案"}</h3>
-                if let Some(answer)=source_answer.as_ref() {
+                if let Some(answer)=(*source_answer).as_ref() {
                     <div class="rounded-box border border-base-content/10 p-3" data-testid="shenlun-source-answer">
                         <p class="text-xs opacity-60">{answer.provenance.clone()}</p>
                         <div class="whitespace-pre-wrap text-sm">{answer.text.clone()}</div>
