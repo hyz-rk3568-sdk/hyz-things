@@ -458,7 +458,8 @@ nav.tabs > button.tab:not(.tab-active) {
   }
   .training-setup-activity-inner {
     max-width: var(--training-content-max);
-    margin-inline: auto;
+    margin-left: 0;
+    margin-right: auto;
     min-width: 0;
   }
   .training-setup-activity:has(.training-setup-activity-inner:empty) {
