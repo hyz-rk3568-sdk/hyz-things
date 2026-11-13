@@ -190,6 +190,45 @@ impl ShenlunAiService {
         })
     }
 
+    /// Cache generated answer content at the correct isolation scope.
+    /// Independent answers never depend on student wording; rewrites do.
+    async fn cached_generation(
+        &self,
+        job: &ShenlunJob,
+        source: &ShenlunSourceContext,
+    ) -> Result<Option<Value>, ShenlunAiError> {
+        let cached: Option<String> = match job.kind.as_str() {
+            "independent_answer" | "full_essay" => {
+                sqlx::query_scalar(
+                    "SELECT j.result_json FROM shenlun_jobs j
+                     JOIN shenlun_attempts a ON a.id=j.attempt_id
+                     WHERE a.question_id=? AND j.kind=? AND j.status='complete'
+                       AND j.source_hash=? AND j.skill_version=? AND j.result_json IS NOT NULL
+                     ORDER BY j.updated_at_ms DESC LIMIT 1",
+                )
+                .bind(&source.question_id)
+                .bind(&job.kind)
+                .bind(&job.source_hash)
+                .bind(SKILL_VERSION)
+                .fetch_optional(&self.pool).await.map_err(|_| ShenlunAiError::Storage)?
+            }
+            "rewrite" => {
+                sqlx::query_scalar(
+                    "SELECT result_json FROM shenlun_jobs WHERE attempt_id=? AND attempt_revision=?
+                     AND kind='rewrite' AND status='complete' AND source_hash=?
+                     AND skill_version=? AND result_json IS NOT NULL
+                     ORDER BY updated_at_ms DESC LIMIT 1",
+                )
+                .bind(&job.attempt_id).bind(job.attempt_revision)
+                .bind(&job.source_hash).bind(SKILL_VERSION)
+                .fetch_optional(&self.pool).await.map_err(|_| ShenlunAiError::Storage)?
+            }
+            _ => None,
+        };
+        cached.map(|data| serde_json::from_str(&data)
+            .map_err(|_| ShenlunAiError::Storage)).transpose()
+    }
+
     pub async fn start(
         self: Arc<Self>,
         attempt_id: &str,
@@ -242,6 +281,10 @@ impl ShenlunAiService {
             .await?;
         if source.source_hash != attempt.source_hash {
             return Err(ShenlunAiError::Stale);
+        }
+        if request.kind == "full_essay"
+            && source.question_type.as_deref() != Some("essay") {
+            return Err(ShenlunAiError::Invalid);
         }
         if matches!(
             request.kind.as_str(),
@@ -300,6 +343,12 @@ impl ShenlunAiService {
                 return Err(ShenlunAiError::Conflict);
             }
             return record(&old);
+        }
+        if let Some(cached) = self.cached_generation(&job, &source).await? {
+            sqlx::query("UPDATE shenlun_jobs SET status='complete',result_json=?,updated_at_ms=? WHERE id=? AND status='running'")
+                .bind(cached.to_string()).bind(timestamp()).bind(&job.id)
+                .execute(&self.pool).await.map_err(|_| ShenlunAiError::Storage)?;
+            return self.get(&job.id).await;
         }
         let (cancel, _rx) = watch::channel(false);
         self.active
@@ -440,11 +489,7 @@ impl ShenlunAiService {
             }
             _ => return Err("未知申论任务".into()),
         };
-        let prompt = if job.kind == "grade" || job.kind == "transcribe" {
-            prompt
-        } else {
-            prompt
-        };
+
         // No student answer is passed to independent answer generation.
         let raw = codex
             .turn_cancellable_with_schema(
