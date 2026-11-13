@@ -87,7 +87,7 @@ test('申论原卷复用地区年份目录和统一答题卡，不出现独立�
   await expect(page.getByTestId('shenlun-question-nav')).toHaveCount(0);
   await expect(page.getByTestId('shenlun-draft-comparison')).toHaveCount(0);
   await page.getByTestId('training-answer-sheet-toggle').click();
-  await page.getByTestId('training-answer-sheet-number').nth(1).click();
+  await page.getByTestId('question-bank-practice-number').nth(1).click();
   await expect(page.getByTestId('shenlun-question')).toContainText('请提出优化基层服务');
   await expect(page.getByTestId('training-answer-sheet-toggle')).toContainText('2/2');
 });
