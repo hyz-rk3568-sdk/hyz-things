@@ -43,64 +43,94 @@ pub(super) fn generation_activity(props: &GenerationActivityProps) -> Html {
     {
         let snapshot = snapshot.clone();
         let disconnected = disconnected.clone();
-        use_effect_with((props.module, props.job_id.clone()), move |(module, job_id)| {
-            let current = Rc::new(RefCell::new(None::<GenerationSnapshot>));
-            snapshot.set(None);
-            disconnected.set(false);
-            let source = web_sys::EventSource::new(&format!(
-                "/api/v1/study/{module}/prepare/{job_id}/events"
-            )).ok();
-            let mut handlers: Vec<Closure<dyn FnMut(web_sys::MessageEvent)>> = Vec::new();
-            let mut errors: Vec<Closure<dyn FnMut(web_sys::Event)>> = Vec::new();
-            if let Some(source) = &source {
-                let snapshot_current = current.clone();
-                let snapshot_state = snapshot.clone();
-                let snapshot_disconnected = disconnected.clone();
-                let handler = Closure::wrap(Box::new(move |event: web_sys::MessageEvent| {
-                    let Some(raw) = event.data().as_string() else { return; };
-                    let Ok(value) = serde_json::from_str::<GenerationSnapshot>(&raw) else { return; };
-                    *snapshot_current.borrow_mut() = Some(value.clone());
-                    snapshot_state.set(Some(value));
-                    snapshot_disconnected.set(false);
-                }) as Box<dyn FnMut(_)>);
-                let _ = source.add_event_listener_with_callback("snapshot", handler.as_ref().unchecked_ref());
-                handlers.push(handler);
-
-                let event_current = current.clone();
-                let event_state = snapshot.clone();
-                let handler = Closure::wrap(Box::new(move |event: web_sys::MessageEvent| {
-                    let Some(raw) = event.data().as_string() else { return; };
-                    let Ok(value) = serde_json::from_str::<GenerationEvent>(&raw) else { return; };
-                    let mut state = event_current.borrow_mut();
-                    let Some(data) = state.as_mut() else { return; };
-                    if value.seq <= data.seq { return; }
-                    // The server sends a complete snapshot after a transport gap.
-                    if value.seq != data.seq + 1 { return; }
-                    data.seq = value.seq;
-                    if value.kind == "run_finished" { data.status = "ready".into(); }
-                    if value.kind == "run_failed" { data.status = "failed".into(); }
-                    data.events.push(value);
-                    event_state.set(Some(data.clone()));
-                }) as Box<dyn FnMut(_)>);
-                let _ = source.add_event_listener_with_callback("activity", handler.as_ref().unchecked_ref());
-                handlers.push(handler);
-
-                let error_disconnected = disconnected.clone();
-                let handler = Closure::wrap(Box::new(move |_: web_sys::Event| error_disconnected.set(true)) as Box<dyn FnMut(_)>);
-                source.set_onerror(Some(handler.as_ref().unchecked_ref()));
-                errors.push(handler);
-            } else {
-                disconnected.set(true);
-            }
-            move || {
+        use_effect_with(
+            (props.module, props.job_id.clone()),
+            move |(module, job_id)| {
+                let current = Rc::new(RefCell::new(None::<GenerationSnapshot>));
+                snapshot.set(None);
+                disconnected.set(false);
+                let source = web_sys::EventSource::new(&format!(
+                    "/api/v1/study/{module}/prepare/{job_id}/events"
+                ))
+                .ok();
+                let mut handlers: Vec<Closure<dyn FnMut(web_sys::MessageEvent)>> = Vec::new();
+                let mut errors: Vec<Closure<dyn FnMut(web_sys::Event)>> = Vec::new();
                 if let Some(source) = &source {
-                    source.close();
-                    source.set_onerror(None);
+                    let snapshot_current = current.clone();
+                    let snapshot_state = snapshot.clone();
+                    let snapshot_disconnected = disconnected.clone();
+                    let handler = Closure::wrap(Box::new(move |event: web_sys::MessageEvent| {
+                        let Some(raw) = event.data().as_string() else {
+                            return;
+                        };
+                        let Ok(value) = serde_json::from_str::<GenerationSnapshot>(&raw) else {
+                            return;
+                        };
+                        *snapshot_current.borrow_mut() = Some(value.clone());
+                        snapshot_state.set(Some(value));
+                        snapshot_disconnected.set(false);
+                    }) as Box<dyn FnMut(_)>);
+                    let _ = source.add_event_listener_with_callback(
+                        "snapshot",
+                        handler.as_ref().unchecked_ref(),
+                    );
+                    handlers.push(handler);
+
+                    let event_current = current.clone();
+                    let event_state = snapshot.clone();
+                    let handler = Closure::wrap(Box::new(move |event: web_sys::MessageEvent| {
+                        let Some(raw) = event.data().as_string() else {
+                            return;
+                        };
+                        let Ok(value) = serde_json::from_str::<GenerationEvent>(&raw) else {
+                            return;
+                        };
+                        let mut state = event_current.borrow_mut();
+                        let Some(data) = state.as_mut() else {
+                            return;
+                        };
+                        if value.seq <= data.seq {
+                            return;
+                        }
+                        // The server sends a complete snapshot after a transport gap.
+                        if value.seq != data.seq + 1 {
+                            return;
+                        }
+                        data.seq = value.seq;
+                        if value.kind == "run_finished" {
+                            data.status = "ready".into();
+                        }
+                        if value.kind == "run_failed" {
+                            data.status = "failed".into();
+                        }
+                        data.events.push(value);
+                        event_state.set(Some(data.clone()));
+                    }) as Box<dyn FnMut(_)>);
+                    let _ = source.add_event_listener_with_callback(
+                        "activity",
+                        handler.as_ref().unchecked_ref(),
+                    );
+                    handlers.push(handler);
+
+                    let error_disconnected = disconnected.clone();
+                    let handler = Closure::wrap(Box::new(move |_: web_sys::Event| {
+                        error_disconnected.set(true)
+                    }) as Box<dyn FnMut(_)>);
+                    source.set_onerror(Some(handler.as_ref().unchecked_ref()));
+                    errors.push(handler);
+                } else {
+                    disconnected.set(true);
                 }
-                drop(handlers);
-                drop(errors);
-            }
-        });
+                move || {
+                    if let Some(source) = &source {
+                        source.close();
+                        source.set_onerror(None);
+                    }
+                    drop(handlers);
+                    drop(errors);
+                }
+            },
+        );
     }
     let mut tools = Vec::<ToolActivity>::new();
     let mut phases = Vec::<String>::new();
