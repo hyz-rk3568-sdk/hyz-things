@@ -12,6 +12,9 @@ pub(super) struct TrainingSetupLayoutProps {
     pub(super) detail: AttrValue,
     #[prop_or_default]
     pub(super) action: Option<Html>,
+    /// Bottom-docked, non-scrolling content above the prepare/enter action.
+    #[prop_or_default]
+    pub(super) activity: Option<Html>,
     #[prop_or_default]
     pub(super) heading: Option<Html>,
     /// Use the wider content column for question-bank setup.
@@ -40,6 +43,11 @@ pub(super) fn training_setup_layout(props: &TrainingSetupLayoutProps) -> Html {
             <div ref={scroll} class="training-setup-scroll" data-testid="training-setup-scroll">
                 <div class="training-setup-content">{for props.children.iter()}</div>
             </div>
+            if let Some(activity) = props.activity.clone() {
+                <div class="training-setup-activity" data-testid="training-setup-activity">
+                    <div class="training-setup-activity-inner">{activity}</div>
+                </div>
+            }
             if let Some(action) = props.action.clone() {
                 <footer class="training-setup-action" data-testid="training-setup-action">
                     <div class="training-action-inner">
