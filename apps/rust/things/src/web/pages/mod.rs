@@ -1,5 +1,6 @@
 use super::*;
 
+mod ai_composer;
 mod ai_reply;
 mod ai_review_activity;
 mod ai_review_stream;
@@ -39,6 +40,7 @@ mod training_split_workspace;
 mod training_statistics;
 mod training_time;
 
+use ai_composer::*;
 use ai_reply::AiReply;
 pub(crate) use calculation::*;
 pub(crate) use camera::*;
