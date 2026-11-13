@@ -100,7 +100,6 @@ pub struct PaperView {
     pub materials: Vec<MaterialView>,
 }
 
-
 /// Subjective 申论 work is independent of the A–Z objective answer contract.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
