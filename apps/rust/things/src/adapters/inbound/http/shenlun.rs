@@ -12,7 +12,7 @@ pub fn with_shenlun_ai(router: Router, ai: Option<Arc<ShenlunAiService>>) -> Rou
 }
 type Service = Option<Extension<Arc<ShenlunAiService>>>;
 
-fn service(service: Service) -> Result<Arc<ShenlunAiService>, Response> {
+fn require_service(service: Service) -> Result<Arc<ShenlunAiService>, Response> {
     service.map(|Extension(service)| service).ok_or_else(|| {
         error_json(
             StatusCode::SERVICE_UNAVAILABLE,
@@ -71,7 +71,7 @@ pub(super) async fn jobs(
     if let Err(response) = authorize_sensitive_read(&state, &headers).await {
         return response;
     }
-    let service = match service(service) {
+    let service = match require_service(service) {
         Ok(service) => service,
         Err(error) => return error,
     };
@@ -94,7 +94,7 @@ pub(super) async fn start(
         Ok(request) => request,
         Err(error) => return error.response(),
     };
-    let service = match service(service) {
+    let service = match require_service(service) {
         Ok(service) => service,
         Err(error) => return error,
     };
@@ -112,7 +112,7 @@ pub(super) async fn status(
     if let Err(response) = authorize_sensitive_read(&state, &headers).await {
         return response;
     }
-    let service = match service(service) {
+    let service = match require_service(service) {
         Ok(service) => service,
         Err(error) => return error,
     };
@@ -134,7 +134,7 @@ pub(super) async fn stop(
     if let Err(error) = decode_control_json(payload) {
         return error.response();
     }
-    let service = match service(service) {
+    let service = match require_service(service) {
         Ok(service) => service,
         Err(error) => return error,
     };
@@ -157,7 +157,7 @@ pub(super) async fn confirm(
         Ok(value) => value,
         Err(error) => return error.response(),
     };
-    let service = match service(service) {
+    let service = match require_service(service) {
         Ok(service) => service,
         Err(error) => return error,
     };
@@ -175,7 +175,7 @@ pub(super) async fn reference(
     if let Err(response) = authorize_sensitive_read(&state, &headers).await {
         return response;
     }
-    let service = match service(service) {
+    let service = match require_service(service) {
         Ok(service) => service,
         Err(error) => return error,
     };
@@ -196,7 +196,7 @@ pub(super) async fn events(
     if let Err(response) = authorize_sensitive_read(&state, &headers).await {
         return response;
     }
-    let service = match service(service) {
+    let service = match require_service(service) {
         Ok(service) => service,
         Err(error) => return error,
     };
