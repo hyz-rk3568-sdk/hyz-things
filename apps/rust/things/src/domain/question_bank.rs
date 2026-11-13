@@ -106,9 +106,6 @@ pub struct PaperView {
 pub struct ShenlunJobRequest {
     pub request_id: String,
     pub kind: String,
-    /// User message for the reusable Question Bank-style AI follow-up composer.
-    #[serde(default)]
-    pub prompt: String,
     #[serde(default)]
     pub attachments: Vec<String>,
     #[serde(default)]
@@ -120,8 +117,6 @@ pub struct ShenlunJob {
     pub id: String,
     pub attempt_id: String,
     pub kind: String,
-    #[serde(default)]
-    pub prompt: String,
     pub status: String,
     pub error: Option<String>,
     pub result: Option<serde_json::Value>,
