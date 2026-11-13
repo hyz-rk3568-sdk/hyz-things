@@ -43,4 +43,4 @@ description: hyz-things 申论原题解析、练习批改和手写答案转写�
 
 ## 维护说明
 
-本目录独立编写，参考申论练习的一般原则与 [coffe-d/Shenlun.skill](https://github.com/coffe-d/Shenlun.skill) 的组织思路；未复制第三方老师讲义、题本或参考答案。
+本目录独立编写，参考申论练习的一般原则与 [coffe-d/Shenlun.skill](https://github.com/coffe-d/Shenlun.skill) 的组织思路；未复制第三方老师讲义、题本或参考答案。新增的白鹭方法论检查来自用户提供的《白鹭-申论》整理文件，并未逐一核验原始课程；仅提炼可用于题目分析的教学启发，不冒充本人意见、官方阅卷细则或固定评分依据。
