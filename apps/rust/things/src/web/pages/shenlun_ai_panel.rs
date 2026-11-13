@@ -107,6 +107,7 @@ pub(super) fn shenlun_ai_panel(props: &ShenlunAiPanelProps) -> Html {
     let comparison_jobs = use_state(Vec::<ShenlunJob>::new);
     let comparison_error = use_state(|| None::<String>);
     let confirm_uncertain = use_state(|| false);
+    let pending_request = use_state(|| None::<ShenlunJobRequest>);
     let attempt_id = props.attempt.id.clone();
     {
         // Clear private results when switching questions/attempts.
@@ -116,6 +117,7 @@ pub(super) fn shenlun_ai_panel(props: &ShenlunAiPanelProps) -> Html {
         let source_answer = source_answer.clone();
         let showing_answer = showing_answer.clone();
         let selected_history = selected_history.clone();
+        let pending_request = pending_request.clone();
         let comparison_target = comparison_target.clone();
         let comparison_jobs = comparison_jobs.clone();
         let comparison_error = comparison_error.clone();
@@ -127,6 +129,7 @@ pub(super) fn shenlun_ai_panel(props: &ShenlunAiPanelProps) -> Html {
             source_answer.set(None);
             showing_answer.set(false);
             selected_history.set(None);
+            pending_request.set(None);
             comparison_target.set(None);
             comparison_jobs.set(Vec::new());
             comparison_error.set(None);
@@ -245,6 +248,7 @@ pub(super) fn shenlun_ai_panel(props: &ShenlunAiPanelProps) -> Html {
         let csrf = props.csrf.clone();
         let jobs = jobs.clone();
         let confirm_uncertain = confirm_uncertain.clone();
+        let pending_request = pending_request.clone();
         let error = error.clone();
         let task_busy = task_busy.clone();
         let poll = poll.clone();
@@ -256,37 +260,48 @@ pub(super) fn shenlun_ai_panel(props: &ShenlunAiPanelProps) -> Html {
                 error.set(Some("上一任务的远端状态不确定，请先勾选确认再新建请求。".into()));
                 return;
             }
-            let request_id = match super::shenlun_training::new_shenlun_attempt_id() {
-                Ok(id) => id,
-                Err(message) => {
-                    error.set(Some(message));
-                    return;
-                }
-            };
-            let attachments = if kind == "transcribe" {
+            let attachments: Vec<String> = if kind == "transcribe" {
                 images.iter().map(|image| image.id.clone()).collect()
             } else {
                 Vec::new()
             };
+            let request = if let Some(previous) = (*pending_request).as_ref().filter(|previous| {
+                previous.kind == kind
+                    && previous.attachments == attachments
+                    && previous.confirm_uncertain == *confirm_uncertain
+            }) {
+                previous.clone()
+            } else {
+                let request_id = match super::shenlun_training::new_shenlun_attempt_id() {
+                    Ok(id) => id,
+                    Err(message) => {
+                        error.set(Some(message));
+                        return;
+                    }
+                };
+                ShenlunJobRequest {
+                    request_id,
+                    kind,
+                    attachments,
+                    confirm_uncertain: *confirm_uncertain,
+                }
+            };
+            pending_request.set(Some(request.clone()));
             task_busy.set(true);
             error.set(None);
             let jobs = jobs.clone();
             let error = error.clone();
             let task_busy = task_busy.clone();
             let poll = poll.clone();
+            let pending_request = pending_request.clone();
             let endpoint = format!("/api/v1/question-bank/shenlun/attempts/{}/jobs", attempt.id);
             let csrf = csrf.clone();
             spawn_local(async move {
-                let request = ShenlunJobRequest {
-                    request_id,
-                    kind,
-                    attachments,
-                    confirm_uncertain: *confirm_uncertain,
-                };
                 let response: Result<ShenlunJob, String> =
                     post_json_response(&endpoint, &csrf, &request, "启动申论 AI").await;
                 match response {
                     Ok(job) => {
+                        pending_request.set(None);
                         let mut next = (*jobs).clone();
                         next.retain(|item| item.id != job.id);
                         next.insert(0, job);
