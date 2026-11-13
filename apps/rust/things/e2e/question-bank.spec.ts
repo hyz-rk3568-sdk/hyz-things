@@ -843,7 +843,17 @@ test('saved AI analysis opens by default and remains scoped to its question', as
 });
 
 test('deleting saved AI analysis sends a same-origin JSON request', async ({page}) => {
+  let deletedOnServer = false;
   await page.route('**/api/v1/question-bank/practice/questions/*/ai', async route => {
+    if (route.request().method() === 'DELETE') {
+      // Preserve the real DELETE endpoint/CSRF checks, but make subsequent
+      // mocked GETs reflect the server's committed state instead of reviving
+      // an answer that was already deleted.
+      const response = await route.fetch();
+      if (response.ok()) deletedOnServer = true;
+      await route.fulfill({response});
+      return;
+    }
     if (route.request().method() !== 'GET') {
       await route.continue();
       return;
@@ -851,8 +861,8 @@ test('deleting saved AI analysis sends a same-origin JSON request', async ({page
     const parts = new URL(route.request().url()).pathname.split('/');
     const question_id = parts[parts.indexOf('questions') + 1];
     await route.fulfill({json: {
-      question_id, status: 'complete', error: null,
-      messages: [{role:'assistant', content:'待删除的 AI 解析', created_at:1}],
+      question_id, status: deletedOnServer ? 'idle' : 'complete', error: null,
+      messages: deletedOnServer ? [] : [{role:'assistant', content:'待删除的 AI 解析', created_at:1}],
     }});
   });
   await loginAsAdmin(page);
@@ -2132,6 +2142,11 @@ test('phone splitter preserves the AI input focus layout and draft',async({page}
 test('dragging the split keeps both pane scroll positions',async({page})=>{
   await page.setViewportSize({width:1133,height:744});
   await openFixtureReview(page);
+  // Explicitly select the original review before measuring scroll. An AI
+  // history response may otherwise auto-switch tabs mid-drag and replace
+  // the question scroll element, invalidating the identity under test.
+  await page.getByTestId('question-bank-original-tab').click();
+  await expect(page.getByTestId('question-bank-original-tab')).toHaveAttribute('aria-pressed','true');
   const left=page.getByTestId('question-bank-practice-material-scroll');
   const right=page.getByTestId('question-bank-practice-question-scroll');
   await page.evaluate(()=>{
