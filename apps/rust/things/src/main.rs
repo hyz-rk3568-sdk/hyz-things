@@ -3,7 +3,7 @@ use hyz_things::{
         inbound::http::{
             app_with_admin_camera_control_and_flashcards_and_analysis_with_allowed_origins,
             bind_fixed_lan_with_retry, bind_ipv6_listener, with_favorite_flashcards,
-            with_question_bank, with_question_bank_ai, with_training_time, PortalTls, TlsListener,
+            with_question_bank, with_question_bank_ai, with_shenlun_ai, with_training_time, PortalTls, TlsListener,
             DEFAULT_BIND_ATTEMPTS, DEFAULT_HTTP_PORT,
         },
         outbound::{
@@ -20,6 +20,7 @@ use hyz_things::{
             question_bank_ai::QuestionBankAiService,
             question_bank_source::FilesystemQuestionBankSource,
             question_bank_sqlite::SqliteQuestionBankRepository,
+            shenlun_ai::ShenlunAiService,
             registry::RegistryAdapter,
             router::RouterControlClient,
             tailscale::{fetch_tailscale_status, PortalListenerApp, TailscaleListenerManager},
@@ -217,7 +218,7 @@ async fn run_daemon() -> Result<(), Box<dyn Error>> {
     std::fs::create_dir_all(PORTAL_READY_DIRECTORY)?;
     let _ = std::fs::remove_file(PORTAL_READY_MARKER);
 
-    let (question_bank, question_bank_ai) = match SqliteQuestionBankRepository::connect(
+    let (question_bank, question_bank_ai, shenlun_ai) = match SqliteQuestionBankRepository::connect(
         "/userdata/hyz-things/question-bank.db",
     )
     .await
@@ -236,17 +237,23 @@ async fn run_daemon() -> Result<(), Box<dyn Error>> {
                 .as_ref()
                 .map(|config| format!("{}/tmp/hyz-ai-uploads", config.cwd()));
             let ai = Arc::new(
-                QuestionBankAiService::new(bank.clone(), pool, codex)
+                QuestionBankAiService::new(bank.clone(), pool.clone(), codex.clone())
                     .with_attachment_relay(relay, upload_root),
             );
             if let Err(error) = ai.recover_interrupted().await {
                 tracing::warn!(?error, "question bank AI recovery failed");
             }
-            (Some(bank), Some(ai))
+            let shenlun_ai = Arc::new(ShenlunAiService::new(
+                bank.clone(), pool, codex, Some(ai.clone()),
+            ));
+            if let Err(error) = shenlun_ai.recover_interrupted().await {
+                tracing::warn!(?error, "shenlun AI recovery failed");
+            }
+            (Some(bank), Some(ai), Some(shenlun_ai))
         }
         Err(_) => {
             tracing::warn!("question bank index unavailable");
-            (None, None)
+            (None, None, None)
         }
     };
     let tailscale = TailscaleListenerManager::new();
@@ -261,6 +268,7 @@ async fn run_daemon() -> Result<(), Box<dyn Error>> {
         tls: tls_acceptor.clone(),
         question_bank: question_bank.clone(),
         question_bank_ai: question_bank_ai.clone(),
+        shenlun_ai: shenlun_ai.clone(),
         flashcards: flashcards.clone(),
         flashcard_source: flashcard_source.clone(),
         data_analysis: data_analysis.clone(),
@@ -368,6 +376,7 @@ async fn run_daemon() -> Result<(), Box<dyn Error>> {
     let app = with_question_bank(app, question_bank);
     let app = with_favorite_flashcards(app, favorite_flashcards);
     let app = with_question_bank_ai(app, question_bank_ai);
+    let app = with_shenlun_ai(app, shenlun_ai);
     let app = with_training_time(app, training_time);
     let ipv6_task = ipv6_listener.map(|listener| {
         let app = app.clone();
