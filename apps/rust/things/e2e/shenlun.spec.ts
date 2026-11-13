@@ -84,7 +84,7 @@ test('shenlun training opens materials, saves an independent draft and restores 
   await expect.poll(() => versionedSaves).toBeGreaterThan(0);
   await expect(page.getByText('草稿已保存')).toBeVisible();
   await page.getByTestId('shenlun-submit').click();
-  await expect(page.getByText('已保存正式作答。AI 评分功能尚未接入。')).toBeVisible();
+  await expect(page.getByText('已保存正式作答，可开始 AI 批改。')).toBeVisible();
   expect(submissions).toBe(1);
   await page.reload();
   await page.getByTestId('training-mode-shenlun').click();

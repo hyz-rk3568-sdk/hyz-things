@@ -160,6 +160,7 @@ pub(super) fn shenlun_ai_panel(props: &ShenlunAiPanelProps) -> Html {
         let image_busy=image_busy.clone();
         let error=error.clone();
         let csrf=props.csrf.clone();
+        let question_id=props.attempt.question_id.clone();
         Callback::from(move |event: Event| {
             let input: web_sys::HtmlInputElement=event.target_unchecked_into();
             let picked: Vec<web_sys::File>=input.files()
@@ -181,10 +182,11 @@ pub(super) fn shenlun_ai_panel(props: &ShenlunAiPanelProps) -> Html {
             let image_busy=image_busy.clone();
             let error=error.clone();
             let csrf=csrf.clone();
+            let question_id=question_id.clone();
             spawn_local(async move {
                 let mut list=(*images).clone();
                 for file in picked {
-                    match upload_question_ai_image("/api/v1/question-bank/ai/attachments",&csrf,file.clone()).await {
+                    match upload_question_ai_image(&format!("/api/v1/question-bank/practice/questions/{}/ai/attachments",question_id),&csrf,file.clone()).await {
                         Ok(id)=>{
                             let preview=wasm_bindgen_futures::JsFuture::from(file.array_buffer()).await
                                 .ok()

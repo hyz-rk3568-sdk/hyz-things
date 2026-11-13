@@ -22,7 +22,7 @@ fn topic_label(question: &QuestionView) -> &str {
     }
 }
 
-fn new_shenlun_attempt_id() -> Result<String, String> {
+pub(super) fn new_shenlun_attempt_id() -> Result<String, String> {
     let mut bytes = [0u8; 16];
     web_sys::window()
         .ok_or("浏览器不可用")?
@@ -449,7 +449,7 @@ pub(super) fn shenlun_training(props: &ShenlunTrainingProps) -> Html {
                                             {"确认提交"}
                                         </button>
                                     } else {
-                                        <span class="text-xs opacity-70">{"已保存正式作答。AI 评分功能尚未接入。"}</span>
+                                        <span class="text-xs opacity-70">{"已保存正式作答，可开始 AI 批改。"}</span>
                                     }
                                 </div>
                             } else {
@@ -481,7 +481,22 @@ pub(super) fn shenlun_training(props: &ShenlunTrainingProps) -> Html {
                                     </div>
                                 </div>
                             }
-                            <p class="text-xs opacity-60">{"手写图片校对与 AI 批改仍待接入；不要将已交卷当作已评分。"} </p>
+                            <ShenlunAiPanel attempt={record.clone()} csrf={props.csrf.clone()}
+                                on_confirm={Callback::from({
+                                    let attempt=attempt.clone();
+                                    let draft=draft.clone();
+                                    let history=attempt_history.clone();
+                                    move |next: ShenlunAttempt| {
+                                        draft.set(next.text.clone());
+                                        let mut all=(*history).clone();
+                                        if let Some(item)=all.iter_mut().find(|item|item.id==next.id) {
+                                            *item=next.clone();
+                                        }
+                                        history.set(all);
+                                        attempt.set(Some(next));
+                                    }
+                                })}/>
+                            <p class="text-xs opacity-60">{"已交卷不等于已评分；来源答案需本稿完成批改后解锁。"}</p>
                         </div>
                     }
                 </div>
