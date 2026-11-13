@@ -81,6 +81,8 @@ test('申论原卷复用地区年份目录和统一答题卡，不出现独立�
   await page.getByTestId('shenlun-open-paper').click();
   await expect(page.getByTestId('shenlun-materials')).toContainText('推进基层治理');
   await expect(page.getByTestId('shenlun-question')).toContainText('请概括基层治理');
+  // Reviewing a paper must not create a hidden grading attempt.
+  expect(attempts.size).toBe(0);
   await expect(page.getByTestId('question-bank-practice-navigation')).toBeVisible();
   await expect(page.getByTestId('shenlun-question-nav')).toHaveCount(0);
   await expect(page.getByTestId('shenlun-draft-comparison')).toHaveCount(0);
@@ -149,6 +151,7 @@ test('批改沿用原稿快照和评分服务；三点菜单查看并删除当�
     throw new Error('Unexpected 申论 request: ' + method + ' ' + pathname);
   });
   await openShenlun(page);
+  await page.getByTestId('shenlun-mode-grade').click();
   const answer = page.getByTestId('shenlun-answer-input');
   await answer.fill('应明确责任分工，建立协同机制。');
   await page.getByTestId('shenlun-grade-start').click();
