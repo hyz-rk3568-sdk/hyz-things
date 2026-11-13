@@ -918,7 +918,7 @@ impl QuestionBankAiService {
         let request_id = request_uuid(request_id)?;
         let hash = request_hash(&intent)?;
         let locator = self.bank.question_ai_locator(question_id).await?;
-        let max_input = if locator.subject == "shenlun" {50_032} else {MAX_FOLLOW_UP};
+        let max_input = if locator.subject == "shenlun" {50_256} else {MAX_FOLLOW_UP};
         let key = key(&locator);
         let mut active = self.active.lock().await;
         if let Some(existing) = self.request_for_key(&key, &request_id).await? {
