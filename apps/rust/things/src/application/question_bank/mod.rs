@@ -3,10 +3,12 @@ pub mod document;
 mod favorite_flashcards;
 pub mod images;
 pub mod practice;
+pub mod shenlun;
+pub mod shenlun_grading;
 
 use crate::domain::question_bank::{
     BankSyncStatus, BankSyncSummary, PaperSummary, PaperView, PracticeCatalog, PracticeMode,
-    PracticeSession, StudyPlan,
+    PracticeSession, ShenlunAttempt, StudyPlan,
 };
 use async_trait::async_trait;
 use document::{valid_id, Document};
@@ -266,6 +268,32 @@ pub trait QuestionBankRepositoryPort: Send + Sync {
         _end_ms: i64,
     ) -> Result<Vec<DailyAnsweredBreakdownRow>, BankError> {
         Ok(Vec::new())
+    }
+    async fn shenlun_create_attempt(
+        &self,
+        _attempt: ShenlunAttempt,
+    ) -> Result<ShenlunAttempt, BankError> {
+        Err(BankError::Unavailable)
+    }
+    async fn shenlun_get_attempt(&self, _id: &str) -> Result<ShenlunAttempt, BankError> {
+        Err(BankError::Unavailable)
+    }
+    async fn shenlun_list_attempts(
+        &self,
+        _question_id: &str,
+    ) -> Result<Vec<ShenlunAttempt>, BankError> {
+        Err(BankError::Unavailable)
+    }
+    async fn shenlun_save_draft(
+        &self,
+        _id: &str,
+        _expected_revision: i64,
+        _text: &str,
+    ) -> Result<ShenlunAttempt, BankError> {
+        Err(BankError::Unavailable)
+    }
+    async fn shenlun_submit_attempt(&self, _id: &str) -> Result<ShenlunAttempt, BankError> {
+        Err(BankError::Unavailable)
     }
     async fn data_revision(&self) -> Result<i64, BankError> {
         Err(BankError::Unavailable)

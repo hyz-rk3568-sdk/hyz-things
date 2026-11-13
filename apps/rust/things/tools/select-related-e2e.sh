@@ -28,5 +28,6 @@ else
     e2e/training-subjects.spec.ts \
     e2e/training-time.spec.ts \
     e2e/training-width.spec.ts \
+    e2e/shenlun.spec.ts \
     e2e/favorite-flashcard.spec.ts
 fi

@@ -640,7 +640,7 @@ impl QuestionBankAiService {
         Ok(id)
     }
 
-    async fn resolve_attachments(
+    pub(crate) async fn resolve_attachments(
         &self,
         attachment_ids: &[String],
     ) -> Result<Vec<String>, AiReviewError> {

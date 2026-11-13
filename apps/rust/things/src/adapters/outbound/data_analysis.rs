@@ -104,6 +104,22 @@ impl CodexConfig {
         .map_err(|_| "连接 Codex App Server 超时".to_owned())?
     }
 
+    /// 申论使用独立的临时 Codex 线程，保留与现有任务相同的全部权限。
+    /// 仍必须在应用侧校验输入、身份和所有持久化的模型输出。
+    pub(crate) async fn connect_shenlun(&self) -> Result<CodexSession, String> {
+        #[cfg(test)]
+        if let Some(address) = self.test_server {
+            return CodexSession::connect_shenlun_test_server(address, &self.token, &self.cwd)
+                .await;
+        }
+        tokio::time::timeout(
+            Duration::from_secs(12),
+            CodexSession::connect_shenlun(&self.token, &self.cwd),
+        )
+        .await
+        .map_err(|_| "连接受限申论 Codex 超时".to_owned())?
+    }
+
     pub(crate) async fn connect(&self) -> Result<CodexSession, String> {
         #[cfg(test)]
         if let Some(address) = self.test_server {

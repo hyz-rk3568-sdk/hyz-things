@@ -100,6 +100,85 @@ pub struct PaperView {
     pub materials: Vec<MaterialView>,
 }
 
+/// One private asynchronous transcription, grading, or answer-generation request.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ShenlunJobRequest {
+    pub request_id: String,
+    pub kind: String,
+    #[serde(default)]
+    pub attachments: Vec<String>,
+    #[serde(default)]
+    pub confirm_uncertain: bool,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct ShenlunJob {
+    pub id: String,
+    pub attempt_id: String,
+    pub kind: String,
+    pub status: String,
+    pub error: Option<String>,
+    pub result: Option<serde_json::Value>,
+    pub source_hash: String,
+    pub attempt_revision: i64,
+    pub skill_version: String,
+    pub model: String,
+    pub created_at_ms: i64,
+    pub updated_at_ms: i64,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ConfirmShenlunTranscription {
+    pub job_id: String,
+    pub expected_revision: i64,
+    pub text: String,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ShenlunSourceAnswer {
+    pub text: String,
+    pub provenance: String,
+    pub source_hash: String,
+}
+
+/// Subjective 申论 work is independent of the A–Z objective answer contract.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct CreateShenlunAttempt {
+    /// Client-generated UUID: retries of the same creation are idempotent.
+    pub request_id: String,
+    pub paper_id: String,
+    pub question_id: String,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct SaveShenlunDraft {
+    pub expected_revision: i64,
+    pub text: String,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ShenlunAttempt {
+    pub id: String,
+    pub paper_id: String,
+    pub question_id: String,
+    pub source_hash: String,
+    pub text: String,
+    pub source_kind: String,
+    pub status: String,
+    pub revision: i64,
+    pub created_at_ms: i64,
+    pub updated_at_ms: i64,
+    pub submitted_at_ms: Option<i64>,
+    #[serde(default)]
+    pub reference_viewed_at_ms: Option<i64>,
+    #[serde(default)]
+    pub after_reference: bool,
+}
+
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct BankSyncSummary {
     pub papers: usize,

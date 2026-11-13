@@ -62,6 +62,8 @@ mod generation_events;
 pub use favorite_flashcards::with_favorite_flashcards;
 mod question_bank;
 pub use question_bank::{with_question_bank, with_question_bank_ai};
+mod shenlun;
+pub use shenlun::with_shenlun_ai;
 mod logic_judgment;
 mod quantitative_relations;
 mod tls;
@@ -741,6 +743,59 @@ fn app_with_assets(
         .route(
             "/api/v1/question-bank/papers/{id}",
             on(MethodFilter::GET, question_bank::paper),
+        )
+        .route(
+            "/api/v1/question-bank/shenlun/papers",
+            on(MethodFilter::GET, question_bank::shenlun_papers),
+        )
+        .route(
+            "/api/v1/question-bank/shenlun/papers/{id}",
+            on(MethodFilter::GET, question_bank::shenlun_paper),
+        )
+        .route(
+            "/api/v1/question-bank/shenlun/attempts",
+            on(MethodFilter::GET, question_bank::shenlun_attempts)
+                .on(MethodFilter::POST, question_bank::shenlun_attempt_create)
+                .layer(DefaultBodyLimit::max(8 * 1024)),
+        )
+        .route(
+            "/api/v1/question-bank/shenlun/attempts/{id}",
+            on(MethodFilter::GET, question_bank::shenlun_attempt_read),
+        )
+        .route(
+            "/api/v1/question-bank/shenlun/attempts/{id}/draft",
+            on(MethodFilter::POST, question_bank::shenlun_attempt_save)
+                .layer(DefaultBodyLimit::max(200 * 1024)),
+        )
+        .route(
+            "/api/v1/question-bank/shenlun/attempts/{id}/submit",
+            on(MethodFilter::POST, question_bank::shenlun_attempt_submit),
+        )
+        .route(
+            "/api/v1/question-bank/shenlun/attempts/{id}/jobs",
+            on(MethodFilter::GET, shenlun::jobs)
+                .on(MethodFilter::POST, shenlun::start)
+                .layer(DefaultBodyLimit::max(16 * 1024)),
+        )
+        .route(
+            "/api/v1/question-bank/shenlun/attempts/{id}/transcription/confirm",
+            on(MethodFilter::POST, shenlun::confirm).layer(DefaultBodyLimit::max(200 * 1024)),
+        )
+        .route(
+            "/api/v1/question-bank/shenlun/attempts/{id}/source-answer",
+            on(MethodFilter::GET, shenlun::reference),
+        )
+        .route(
+            "/api/v1/question-bank/shenlun/jobs/{id}",
+            on(MethodFilter::GET, shenlun::status),
+        )
+        .route(
+            "/api/v1/question-bank/shenlun/jobs/{id}/stop",
+            on(MethodFilter::POST, shenlun::stop),
+        )
+        .route(
+            "/api/v1/question-bank/shenlun/jobs/{id}/events",
+            on(MethodFilter::GET, shenlun::events),
         )
         .route(
             "/api/v1/question-bank/papers/{id}/modules",
@@ -3013,6 +3068,7 @@ fn is_post_path(path: &str) -> bool {
             | "/api/v1/control/study/sync"
             | "/api/v1/control/question-bank/sync"
             | "/api/v1/question-bank/practice/sessions"
+            | "/api/v1/question-bank/shenlun/attempts"
             | "/api/v1/study/data-analysis/prepare"
             | "/api/v1/study/data-analysis/user-prompt"
             | "/api/v1/study/logic-judgment/prepare"
@@ -3023,7 +3079,26 @@ fn is_post_path(path: &str) -> bool {
         || is_logic_judgment_run_post_path(path)
         || is_quantitative_relations_run_post_path(path)
         || is_question_bank_practice_post_path(path)
+        || is_shenlun_attempt_post_path(path)
 }
+fn is_shenlun_attempt_post_path(path: &str) -> bool {
+    let parts: Vec<&str> = path.split('/').collect();
+    if parts.len() == 8
+        && parts[..6] == ["", "api", "v1", "question-bank", "shenlun", "jobs"]
+        && uuid::Uuid::parse_str(parts[6]).is_ok_and(|id| id.to_string() == parts[6])
+    {
+        return parts[7] == "stop";
+    }
+    if parts.len() < 8
+        || parts[..6] != ["", "api", "v1", "question-bank", "shenlun", "attempts"]
+        || !uuid::Uuid::parse_str(parts[6]).is_ok_and(|id| id.to_string() == parts[6])
+    {
+        return false;
+    }
+    parts.len() == 8 && matches!(parts[7], "draft" | "submit" | "jobs")
+        || parts.len() == 9 && parts[7] == "transcription" && parts[8] == "confirm"
+}
+
 fn is_question_bank_practice_post_path(path: &str) -> bool {
     let parts: Vec<&str> = path.split('/').collect();
     // /api/v1/question-bank/practice/sessions/{id}/{action}
@@ -3284,6 +3359,19 @@ mod tests {
     #[test]
     fn question_bank_practice_mutations_have_exact_post_allowlist() {
         let id = "019a3d8e-1b32-7a60-9c83-f34217a6e210";
+        assert!(is_post_path("/api/v1/question-bank/shenlun/attempts"));
+        assert!(is_post_path(
+            "/api/v1/question-bank/shenlun/attempts/11111111-1111-4111-8111-111111111111/draft"
+        ));
+        assert!(is_post_path(
+            "/api/v1/question-bank/shenlun/attempts/11111111-1111-4111-8111-111111111111/submit"
+        ));
+        assert!(!is_post_path(
+            "/api/v1/question-bank/shenlun/attempts/not-an-id/draft"
+        ));
+        assert!(!is_post_path(
+            "/api/v1/question-bank/shenlun/attempts/11111111-1111-4111-8111-111111111111/unsafe"
+        ));
         assert!(is_post_path("/api/v1/question-bank/practice/sessions"));
         assert!(is_post_path(&format!(
             "/api/v1/question-bank/practice/sessions/{id}/submit"

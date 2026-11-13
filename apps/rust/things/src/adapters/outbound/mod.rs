@@ -22,3 +22,4 @@ pub mod training_time;
 pub mod question_bank_ai;
 pub mod question_bank_source;
 pub mod question_bank_sqlite;
+pub mod shenlun_ai;

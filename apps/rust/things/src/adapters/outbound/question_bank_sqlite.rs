@@ -9,7 +9,7 @@ use crate::domain::question_bank::{
     MaterialView, ModulePracticeFilters, PaperSummary, PracticeBrowseItem, PracticeCatalog,
     PracticeCategory, PracticeMode, PracticeModule, PracticeSession,
 };
-use crate::domain::question_bank::{StudyPlan, StudyPlanItem};
+use crate::domain::question_bank::{ShenlunAttempt, StudyPlan, StudyPlanItem};
 use async_trait::async_trait;
 use futures_util::TryStreamExt;
 use sqlx::{
@@ -108,8 +108,172 @@ impl SqliteQuestionBankRepository {
         Ok(Self { pool })
     }
 }
+fn shenlun_from_row(row: &sqlx::sqlite::SqliteRow) -> Result<ShenlunAttempt, BankError> {
+    Ok(ShenlunAttempt {
+        id: row.try_get("id").map_err(|_| BankError::Storage)?,
+        paper_id: row.try_get("paper_id").map_err(|_| BankError::Storage)?,
+        question_id: row.try_get("question_id").map_err(|_| BankError::Storage)?,
+        source_hash: row.try_get("source_hash").map_err(|_| BankError::Storage)?,
+        text: row.try_get("answer_text").map_err(|_| BankError::Storage)?,
+        source_kind: row.try_get("source_kind").map_err(|_| BankError::Storage)?,
+        status: row.try_get("status").map_err(|_| BankError::Storage)?,
+        revision: row.try_get("revision").map_err(|_| BankError::Storage)?,
+        created_at_ms: row
+            .try_get("created_at_ms")
+            .map_err(|_| BankError::Storage)?,
+        updated_at_ms: row
+            .try_get("updated_at_ms")
+            .map_err(|_| BankError::Storage)?,
+        submitted_at_ms: row
+            .try_get("submitted_at_ms")
+            .map_err(|_| BankError::Storage)?,
+        reference_viewed_at_ms: row
+            .try_get("reference_viewed_at_ms")
+            .map_err(|_| BankError::Storage)?,
+        after_reference: row
+            .try_get::<i64, _>("after_reference")
+            .map_err(|_| BankError::Storage)?
+            != 0,
+    })
+}
+
+fn shenlun_now_ms() -> i64 {
+    use std::time::{SystemTime, UNIX_EPOCH};
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|duration| duration.as_millis().min(i64::MAX as u128) as i64)
+        .unwrap_or_default()
+}
+
 #[async_trait]
 impl QuestionBankRepositoryPort for SqliteQuestionBankRepository {
+    async fn shenlun_create_attempt(
+        &self,
+        attempt: ShenlunAttempt,
+    ) -> Result<ShenlunAttempt, BankError> {
+        let inserted = sqlx::query(
+            "INSERT OR IGNORE INTO shenlun_attempts(id,paper_id,question_id,source_hash,answer_text,source_kind,status,revision,created_at_ms,updated_at_ms,submitted_at_ms,after_reference) VALUES(?,?,?,?,?,?,?,?,?,?,?,CASE WHEN EXISTS(SELECT 1 FROM shenlun_attempts previous WHERE previous.question_id=? AND previous.reference_viewed_at_ms IS NOT NULL) THEN 1 ELSE 0 END)"
+        )
+        .bind(&attempt.id)
+        .bind(&attempt.paper_id)
+        .bind(&attempt.question_id)
+        .bind(&attempt.source_hash)
+        .bind(&attempt.text)
+        .bind(&attempt.source_kind)
+        .bind(&attempt.status)
+        .bind(attempt.revision)
+        .bind(attempt.created_at_ms)
+        .bind(attempt.updated_at_ms)
+        .bind(attempt.submitted_at_ms)
+        .bind(&attempt.question_id)
+        .execute(&self.pool)
+        .await
+        .map_err(|_| BankError::Storage)?;
+        let stored = self.shenlun_get_attempt(&attempt.id).await?;
+        if inserted.rows_affected() == 0
+            && (stored.paper_id != attempt.paper_id
+                || stored.question_id != attempt.question_id
+                || stored.source_hash != attempt.source_hash)
+        {
+            return Err(BankError::Conflict);
+        }
+        Ok(stored)
+    }
+
+    async fn shenlun_get_attempt(&self, id: &str) -> Result<ShenlunAttempt, BankError> {
+        let row = sqlx::query("SELECT * FROM shenlun_attempts WHERE id=?")
+            .bind(id)
+            .fetch_optional(&self.pool)
+            .await
+            .map_err(|_| BankError::Storage)?
+            .ok_or(BankError::NotFound)?;
+        shenlun_from_row(&row)
+    }
+
+    async fn shenlun_list_attempts(
+        &self,
+        question_id: &str,
+    ) -> Result<Vec<ShenlunAttempt>, BankError> {
+        let rows = sqlx::query(
+            "SELECT * FROM shenlun_attempts WHERE question_id=? ORDER BY created_at_ms DESC, id DESC",
+        )
+        .bind(question_id)
+        .fetch_all(&self.pool)
+        .await
+        .map_err(|_| BankError::Storage)?;
+        rows.iter().map(shenlun_from_row).collect()
+    }
+
+    async fn shenlun_save_draft(
+        &self,
+        id: &str,
+        expected_revision: i64,
+        text: &str,
+    ) -> Result<ShenlunAttempt, BankError> {
+        let result = sqlx::query(
+            "UPDATE shenlun_attempts SET answer_text=?,revision=revision+1,updated_at_ms=? WHERE id=? AND status='draft' AND revision=?",
+        )
+        .bind(text)
+        .bind(shenlun_now_ms())
+        .bind(id)
+        .bind(expected_revision)
+        .execute(&self.pool)
+        .await
+        .map_err(|_| BankError::Storage)?;
+        if result.rows_affected() == 0 {
+            return match self.shenlun_get_attempt(id).await {
+                Ok(_) => Err(BankError::Conflict),
+                Err(error) => Err(error),
+            };
+        }
+        self.shenlun_get_attempt(id).await
+    }
+
+    async fn shenlun_submit_attempt(&self, id: &str) -> Result<ShenlunAttempt, BankError> {
+        let mut tx = self.pool.begin().await.map_err(|_| BankError::Storage)?;
+        let row = sqlx::query("SELECT * FROM shenlun_attempts WHERE id=?")
+            .bind(id)
+            .fetch_optional(&mut *tx)
+            .await
+            .map_err(|_| BankError::Storage)?
+            .ok_or(BankError::NotFound)?;
+        let current = shenlun_from_row(&row)?;
+        if current.status == "submitted" {
+            tx.commit().await.map_err(|_| BankError::Storage)?;
+            return Ok(current);
+        }
+        if current.text.trim().is_empty() || current.status != "draft" {
+            return Err(BankError::Invalid);
+        }
+        let now = shenlun_now_ms();
+        let changed = sqlx::query(
+            "UPDATE shenlun_attempts SET status='submitted',submitted_at_ms=?,updated_at_ms=? WHERE id=? AND status='draft' AND revision=?",
+        )
+        .bind(now)
+        .bind(now)
+        .bind(id)
+        .bind(current.revision)
+        .execute(&mut *tx)
+        .await
+        .map_err(|_| BankError::Storage)?;
+        if changed.rows_affected() != 1 {
+            return Err(BankError::Conflict);
+        }
+        sqlx::query(
+            "INSERT INTO shenlun_attempt_revisions(attempt_id,revision,answer_text,source_kind,submitted_at_ms) VALUES(?,?,?,?,?)",
+        )
+        .bind(id)
+        .bind(current.revision)
+        .bind(&current.text)
+        .bind(&current.source_kind)
+        .bind(now)
+        .execute(&mut *tx)
+        .await
+        .map_err(|_| BankError::Storage)?;
+        tx.commit().await.map_err(|_| BankError::Storage)?;
+        self.shenlun_get_attempt(id).await
+    }
+
     async fn data_revision(&self) -> Result<i64, BankError> {
         sqlx::query_scalar("SELECT revision FROM data_revision WHERE id = 1")
             .fetch_one(&self.pool)
@@ -122,7 +286,7 @@ impl QuestionBankRepositoryPort for SqliteQuestionBankRepository {
         start_ms: i64,
         end_ms: i64,
     ) -> Result<Vec<(String, i64)>, BankError> {
-        sqlx::query_as(
+        let mut objective: Vec<(String, i64)> = sqlx::query_as(
             "SELECT date(a.submitted_at / 1000.0, 'unixepoch', '+8 hours') AS day, COUNT(*)
              FROM practice_attempts a
              JOIN practice_sessions s ON s.id=a.session_id
@@ -137,7 +301,30 @@ impl QuestionBankRepositoryPort for SqliteQuestionBankRepository {
         .bind(end_ms)
         .fetch_all(&self.pool)
         .await
-        .map_err(|_| BankError::Storage)
+        .map_err(|_| BankError::Storage)?;
+        // Count each submitted subjective question ONCE, on the date of its
+        // first nonempty submission. OCR attempts, regrading and second drafts
+        // never inflate the existing study day KPI.
+        let subjective: Vec<(String, i64)> = sqlx::query_as(
+            "SELECT date(submitted_at_ms/1000.0,'unixepoch','+8 hours') AS day, COUNT(*) FROM
+             (SELECT MIN(submitted_at_ms) submitted_at_ms FROM shenlun_attempts
+              WHERE status='submitted' AND length(trim(answer_text)) > 0 GROUP BY question_id)
+             WHERE submitted_at_ms>=? AND submitted_at_ms<? GROUP BY day",
+        )
+        .bind(start_ms)
+        .bind(end_ms)
+        .fetch_all(&self.pool)
+        .await
+        .map_err(|_| BankError::Storage)?;
+        for (day, count) in subjective {
+            if let Some(row) = objective.iter_mut().find(|row| row.0 == day) {
+                row.1 += count;
+            } else {
+                objective.push((day, count));
+            }
+        }
+        objective.sort_by(|left, right| left.0.cmp(&right.0));
+        Ok(objective)
     }
 
     async fn daily_answered_breakdown(
@@ -188,7 +375,7 @@ impl QuestionBankRepositoryPort for SqliteQuestionBankRepository {
         .fetch_all(&self.pool)
         .await
         .map_err(|_| BankError::Storage)?;
-        Ok(rows
+        let mut breakdown: Vec<DailyAnsweredBreakdownRow> = rows
             .into_iter()
             .map(
                 |(
@@ -211,7 +398,38 @@ impl QuestionBankRepositoryPort for SqliteQuestionBankRepository {
                     answered,
                 },
             )
-            .collect())
+            .collect();
+        let subjective: Vec<(String, Option<String>, i64)> = sqlx::query_as(
+            "SELECT date(first.first_at/1000.0,'unixepoch','+8 hours') AS day,
+                    json_extract(p.metadata,'$.summary.title') AS paper_title, COUNT(*)
+             FROM (
+                 SELECT question_id,MIN(submitted_at_ms) AS first_at
+                 FROM shenlun_attempts WHERE status='submitted'
+                   AND length(trim(answer_text)) > 0 GROUP BY question_id
+             ) first
+             JOIN questions q ON q.id=first.question_id
+             JOIN papers p ON p.id=q.paper_id
+             WHERE first.first_at>=? AND first.first_at<?
+             GROUP BY day,paper_title",
+        )
+        .bind(start_ms)
+        .bind(end_ms)
+        .fetch_all(&self.pool)
+        .await
+        .map_err(|_| BankError::Storage)?;
+        breakdown.extend(subjective.into_iter().map(|(day, paper_title, answered)| {
+            DailyAnsweredBreakdownRow {
+                day,
+                is_module: false,
+                kind: "shenlun".into(),
+                collection_title: None,
+                module: None,
+                category: Some("申论".into()),
+                paper_title,
+                answered,
+            }
+        }));
+        Ok(breakdown)
     }
 
     async fn paper_summaries(&self) -> Result<Vec<PaperSummary>, BankError> {
@@ -1327,6 +1545,89 @@ mod migration_tests {
     }
 
     #[tokio::test]
+    async fn subjective_attempts_are_isolated_versioned_and_idempotently_submitted() {
+        let pool = memory_pool().await;
+        initialize_schema(&pool).await.unwrap();
+        sqlx::query(
+            "INSERT INTO papers(id,metadata,active,kind,subject) VALUES('paper-1','{}',1,'exam','shenlun')",
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
+        sqlx::query(
+            "INSERT INTO questions(id,paper_id,number,source_hash,answer_type) VALUES('question-1','paper-1',1,'hash','subjective')",
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
+        let repository = SqliteQuestionBankRepository { pool: pool.clone() };
+        let attempt = ShenlunAttempt {
+            id: "11111111-1111-4111-8111-111111111111".into(),
+            paper_id: "paper-1".into(),
+            question_id: "question-1".into(),
+            source_hash: "hash".into(),
+            text: String::new(),
+            source_kind: "typed".into(),
+            status: "draft".into(),
+            revision: 0,
+            created_at_ms: 100,
+            updated_at_ms: 100,
+            submitted_at_ms: None,
+            reference_viewed_at_ms: None,
+            after_reference: false,
+        };
+        let first = repository
+            .shenlun_create_attempt(attempt.clone())
+            .await
+            .unwrap();
+        assert_eq!(first, attempt);
+        let duplicate = repository.shenlun_create_attempt(attempt).await.unwrap();
+        assert_eq!(duplicate, first);
+        let saved = repository
+            .shenlun_save_draft(&first.id, first.revision, "初稿内容。")
+            .await
+            .unwrap();
+        assert_eq!(saved.text, "初稿内容。");
+        assert_eq!(saved.revision, 1);
+        assert_eq!(
+            repository
+                .shenlun_save_draft(&first.id, 0, "过时草稿")
+                .await,
+            Err(BankError::Conflict)
+        );
+        let submitted = repository.shenlun_submit_attempt(&first.id).await.unwrap();
+        assert_eq!(submitted.status, "submitted");
+        assert!(submitted.submitted_at_ms.is_some());
+        assert_eq!(
+            repository.shenlun_submit_attempt(&first.id).await.unwrap(),
+            submitted
+        );
+        assert_eq!(
+            repository
+                .shenlun_save_draft(&first.id, 1, "篡改已提交稿")
+                .await,
+            Err(BankError::Conflict)
+        );
+        let (snapshot, snapshots): (String, i64) = sqlx::query_as(
+            "SELECT answer_text, (SELECT count(*) FROM shenlun_attempt_revisions WHERE attempt_id=?) FROM shenlun_attempt_revisions WHERE attempt_id=?",
+        )
+        .bind(&first.id)
+        .bind(&first.id)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(snapshot, "初稿内容。");
+        assert_eq!(snapshots, 1);
+
+        // Reopening migrations must never erase subjective drafts or submissions.
+        initialize_schema(&pool).await.unwrap();
+        assert_eq!(
+            repository.shenlun_get_attempt(&first.id).await.unwrap(),
+            submitted
+        );
+    }
+
+    #[tokio::test]
     async fn resync_repairs_missing_materials_even_when_the_source_hash_is_unchanged() {
         let repository = SqliteQuestionBankRepository::connect("sqlite::memory:")
             .await
@@ -1473,6 +1774,10 @@ B
             "favorites",
             "question_ai_reviews",
             "question_ai_messages",
+            "shenlun_attempts",
+            "shenlun_attempt_revisions",
+            "shenlun_jobs",
+            "shenlun_rubrics",
         ] {
             let exists: i64 = sqlx::query_scalar(
                 "SELECT count(*) FROM sqlite_master WHERE type='table' AND name=?",

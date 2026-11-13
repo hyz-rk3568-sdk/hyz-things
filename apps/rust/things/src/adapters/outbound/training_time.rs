@@ -15,13 +15,14 @@ use std::{
 use tokio::sync::Mutex;
 
 const GRACE_MS: i64 = 45_000;
-const MODULES: [&str; 6] = [
+const MODULES: [&str; 7] = [
     "calculation",
     "flashcards",
     "comprehensive",
     "logic",
     "quantitative",
     "question_bank",
+    "shenlun",
 ];
 
 fn now_ms() -> i64 {
