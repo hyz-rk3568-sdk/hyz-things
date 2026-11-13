@@ -739,6 +739,44 @@ pub(super) async fn paper(
         Err(error) => bank_error(error),
     }
 }
+/// The dedicated read-only shenlun endpoints do not expose reference answers.
+pub(super) async fn shenlun_papers(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    service: Service,
+) -> Response {
+    if let Err(response) = authorize_sensitive_read(&state, &headers).await {
+        return response;
+    }
+    let app = match available(service) {
+        Ok(app) => app,
+        Err(error) => return bank_error(error),
+    };
+    match app.shenlun_papers().await {
+        Ok(papers) => Json(papers).into_response(),
+        Err(error) => bank_error(error),
+    }
+}
+
+pub(super) async fn shenlun_paper(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    service: Service,
+    Path(id): Path<String>,
+) -> Response {
+    if let Err(response) = authorize_sensitive_read(&state, &headers).await {
+        return response;
+    }
+    let app = match available(service) {
+        Ok(app) => app,
+        Err(error) => return bank_error(error),
+    };
+    match app.shenlun_paper(&id).await {
+        Ok(paper) => Json(paper).into_response(),
+        Err(error) => bank_error(error),
+    }
+}
+
 pub(super) async fn sync(
     State(state): State<AppState>,
     headers: HeaderMap,
