@@ -173,25 +173,19 @@ impl ShenlunAiService {
 
     pub async fn reference_answer(
         &self,
-        attempt_id: &str,
+        question_id: &str,
     ) -> Result<ShenlunSourceAnswer, ShenlunAiError> {
-        let attempt = self.bank.shenlun_attempt(attempt_id).await?;
-        if attempt.reference_viewed_at_ms.is_none() {
-            self.review_has_grade(&attempt.question_id).await?;
+        let locator=self.bank.question_ai_locator(question_id).await?;
+        if locator.subject!="shenlun" {
+            return Err(ShenlunAiError::NotFound);
         }
-        let source = self
-            .bank
-            .shenlun_source_context(&attempt.paper_id, &attempt.question_id)
-            .await?;
-        if source.source_hash != attempt.source_hash {
-            return Err(ShenlunAiError::Stale);
-        }
-        sqlx::query("UPDATE shenlun_attempts SET reference_viewed_at_ms=COALESCE(reference_viewed_at_ms,?) WHERE id=?")
-            .bind(timestamp()).bind(attempt_id).execute(&self.pool).await.map_err(|_| ShenlunAiError::Storage)?;
+        // There is one AI review conversation, not a separate scoring attempt.
+        self.review_has_grade(question_id).await?;
+        let source=self.bank.shenlun_source_context(&locator.paper_id,question_id).await?;
         Ok(ShenlunSourceAnswer {
-            text: source.reference_answer,
-            provenance: "题库来源参考答案（非官方保证）".into(),
-            source_hash: source.source_hash,
+            text:source.reference_answer,
+            provenance:"题库来源参考答案（非官方保证）".into(),
+            source_hash:source.source_hash,
         })
     }
 
