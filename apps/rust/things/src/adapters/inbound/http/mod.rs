@@ -892,7 +892,7 @@ fn app_with_assets(
             on(MethodFilter::GET, question_bank::ai_read)
                 .on(MethodFilter::POST, question_bank::ai_start)
                 .on(MethodFilter::DELETE, question_bank::ai_delete)
-                .layer(DefaultBodyLimit::max(8 * 1024)),
+                .layer(DefaultBodyLimit::max(200 * 1024)),
         )
         .route(
             "/api/v1/question-bank/practice/questions/{id}/ai/events",
@@ -909,7 +909,7 @@ fn app_with_assets(
         .route(
             "/api/v1/question-bank/practice/questions/{id}/ai/messages",
             on(MethodFilter::POST, question_bank::ai_follow_up)
-                .layer(DefaultBodyLimit::max(8 * 1024)),
+                .layer(DefaultBodyLimit::max(200 * 1024)),
         )
         .route(
             "/api/v1/question-bank/practice/questions/{id}/ai/requests/{request_id}",
@@ -917,7 +917,7 @@ fn app_with_assets(
         )
         .route(
             "/api/v1/question-bank/practice/questions/{id}/ai/requests/{request_id}/retry",
-            on(MethodFilter::POST, question_bank::ai_retry).layer(DefaultBodyLimit::max(8 * 1024)),
+            on(MethodFilter::POST, question_bank::ai_retry).layer(DefaultBodyLimit::max(200 * 1024)),
         )
         .route(
             "/api/v1/question-bank/practice/questions/{id}/ai/stop",
