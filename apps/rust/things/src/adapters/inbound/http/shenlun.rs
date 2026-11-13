@@ -53,11 +53,7 @@ fn ai_error(error: ShenlunAiError) -> Response {
             "shenlun_ai_not_ready",
             "尚未完成本题批改，或当前处理任务繁忙",
         ),
-        ShenlunAiError::Remote(message) => (
-            StatusCode::BAD_GATEWAY,
-            "shenlun_ocr_failed",
-            message,
-        ),
+        ShenlunAiError::Remote(message) => (StatusCode::BAD_GATEWAY, "shenlun_ocr_failed", message),
     };
     error_json(status, code, message)
 }
