@@ -1,10 +1,12 @@
 //! 申论 AI：评分与追问复用 Question Bank；OCR 是一次性 Codex Markdown 转写。
 use super::{data_analysis::CodexConfig, question_bank_ai::QuestionBankAiService};
 use crate::{
-    application::question_bank::QuestionBankApplication,
+    application::question_bank::{practice::{AiReviewEventSink, AiReviewProgress}, QuestionBankApplication},
     domain::question_bank::ShenlunSourceAnswer,
 };
 use std::sync::Arc;
+use serde::Serialize;
+use tokio::sync::Mutex;
 use tokio::sync::{watch, Semaphore};
 use uuid::Uuid;
 
@@ -27,6 +29,12 @@ impl From<crate::application::question_bank::BankError> for ShenlunAiError {
             Bank::Unavailable | Bank::Storage => Self::Unavailable,
         }
     }
+}
+
+#[derive(Serialize)]
+pub struct OcrResult {
+    pub markdown: String,
+    pub events: Vec<AiReviewProgress>,
 }
 
 pub struct ShenlunAiService {
@@ -100,7 +108,7 @@ impl ShenlunAiService {
         &self,
         question_id: &str,
         attachment_ids: &[String],
-    ) -> Result<String, ShenlunAiError> {
+    ) -> Result<OcrResult, ShenlunAiError> {
         if attachment_ids.is_empty()
             || attachment_ids.len() > 3
             || attachment_ids.iter().any(|id| {
@@ -140,9 +148,25 @@ impl ShenlunAiService {
              只返回 Markdown 正文，不用 JSON，也不要用代码块包裹全文。",
             attachments.len()
         );
-        codex
-            .turn_review(&prompt, &attachments, watch::channel(false).0)
+        // Same Codex progress event contract used by QuestionAiReview,
+        // but the bounded log is returned only to this request, never saved.
+        let collected = Arc::new(Mutex::new(Vec::<AiReviewProgress>::new()));
+        let progress = Arc::clone(&collected);
+        let sink: AiReviewEventSink = Arc::new(move |event| {
+            let progress = Arc::clone(&progress);
+            Box::pin(async move {
+                let mut events = progress.lock().await;
+                if events.len() < 256 {
+                    events.push(event);
+                }
+                Ok(())
+            })
+        });
+        let markdown = codex
+            .turn_review_stream(&prompt, &attachments, watch::channel(false).0, sink)
             .await
-            .map_err(ShenlunAiError::Remote)
+            .map_err(ShenlunAiError::Remote)?;
+        let events = collected.lock().await.clone();
+        Ok(OcrResult { markdown, events })
     }
 }
