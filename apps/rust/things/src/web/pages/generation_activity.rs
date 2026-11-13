@@ -106,7 +106,11 @@ pub(super) fn generation_activity(props: &GenerationActivityProps) -> Html {
     let mut phases = Vec::<String>::new();
     if let Some(snapshot) = snapshot.as_ref() {
         for event in &snapshot.events {
-            let item_id = event.payload.get("item_id").and_then(|v| v.as_str()).unwrap_or("");
+            let item_id = event
+                .payload
+                .get("item_id")
+                .and_then(|v| v.as_str())
+                .unwrap_or("");
             match event.kind.as_str() {
                 "phase_changed" => {
                     if let Some(text) = event.payload.get("message").and_then(|v| v.as_str()) {
@@ -115,29 +119,61 @@ pub(super) fn generation_activity(props: &GenerationActivityProps) -> Html {
                 }
                 "tool_started" => tools.push(ToolActivity {
                     id: item_id.to_owned(),
-                    tool: event.payload.get("tool").and_then(|v| v.as_str()).unwrap_or("工具").into(),
-                    command: event.payload.pointer("/details/command").and_then(|v| v.as_str()).unwrap_or("").into(),
-                    source: event.payload.pointer("/details/source").and_then(|v| v.as_str()).unwrap_or("").into(),
+                    tool: event
+                        .payload
+                        .get("tool")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("工具")
+                        .into(),
+                    command: event
+                        .payload
+                        .pointer("/details/command")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("")
+                        .into(),
+                    source: event
+                        .payload
+                        .pointer("/details/source")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("")
+                        .into(),
                     ..Default::default()
                 }),
                 "command_output_delta" | "tool_output_delta" | "tool_progress" => {
                     if let Some(item) = tools.iter_mut().rev().find(|tool| tool.id == item_id) {
-                        let text = event.payload.get(if event.kind == "tool_progress" {"message"} else {"text"})
-                            .and_then(|v| v.as_str()).unwrap_or("");
+                        let text = event
+                            .payload
+                            .get(if event.kind == "tool_progress" {
+                                "message"
+                            } else {
+                                "text"
+                            })
+                            .and_then(|v| v.as_str())
+                            .unwrap_or("");
                         item.output.push_str(text);
-                        if event.kind == "tool_progress" { item.output.push('\n'); }
+                        if event.kind == "tool_progress" {
+                            item.output.push('\n');
+                        }
                     }
                 }
                 "tool_finished" => {
                     if let Some(item) = tools.iter_mut().rev().find(|tool| tool.id == item_id) {
-                        item.status = event.payload.get("status").and_then(|v| v.as_str()).unwrap_or("completed").into();
+                        item.status = event
+                            .payload
+                            .get("status")
+                            .and_then(|v| v.as_str())
+                            .unwrap_or("completed")
+                            .into();
                     }
                 }
                 _ => (),
             }
         }
     }
-    let state = snapshot.as_ref().map(|s| s.status.as_str()).unwrap_or("running");
+    let state = snapshot
+        .as_ref()
+        .map(|s| s.status.as_str())
+        .unwrap_or("running");
     let description = match state {
         "ready" => "本轮生成完成",
         "failed" => "本轮生成失败",
