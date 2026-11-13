@@ -1512,7 +1512,10 @@ mod migration_tests {
             updated_at_ms: 100,
             submitted_at_ms: None,
         };
-        let first = repository.shenlun_create_attempt(attempt.clone()).await.unwrap();
+        let first = repository
+            .shenlun_create_attempt(attempt.clone())
+            .await
+            .unwrap();
         assert_eq!(first, attempt);
         let duplicate = repository.shenlun_create_attempt(attempt).await.unwrap();
         assert_eq!(duplicate, first);
@@ -1523,7 +1526,9 @@ mod migration_tests {
         assert_eq!(saved.text, "初稿内容。");
         assert_eq!(saved.revision, 1);
         assert_eq!(
-            repository.shenlun_save_draft(&first.id, 0, "过时草稿").await,
+            repository
+                .shenlun_save_draft(&first.id, 0, "过时草稿")
+                .await,
             Err(BankError::Conflict)
         );
         let submitted = repository.shenlun_submit_attempt(&first.id).await.unwrap();
@@ -1534,7 +1539,9 @@ mod migration_tests {
             submitted
         );
         assert_eq!(
-            repository.shenlun_save_draft(&first.id, 1, "篡改已提交稿").await,
+            repository
+                .shenlun_save_draft(&first.id, 1, "篡改已提交稿")
+                .await,
             Err(BankError::Conflict)
         );
         let (snapshot, snapshots): (String, i64) = sqlx::query_as(
@@ -1550,7 +1557,10 @@ mod migration_tests {
 
         // Reopening migrations must never erase subjective drafts or submissions.
         initialize_schema(&pool).await.unwrap();
-        assert_eq!(repository.shenlun_get_attempt(&first.id).await.unwrap(), submitted);
+        assert_eq!(
+            repository.shenlun_get_attempt(&first.id).await.unwrap(),
+            submitted
+        );
     }
 
     #[tokio::test]
