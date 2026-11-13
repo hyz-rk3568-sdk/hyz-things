@@ -1,7 +1,9 @@
 //! 申论训练：复用 Question Bank 真题复盘工作区，而非建立第二套考试 Session。
 use super::favorite_flashcard::{favorite_can_create, FavoriteFlashcardWorkspace, FavoritePreview};
-use super::question_bank_practice::{use_practice_favorite, QuestionAiReview, QuestionBankQuestionHeader};
 use super::material_scroll::{use_training_scroll_pair, MaterialScrollButton};
+use super::question_bank_practice::{
+    use_practice_favorite, QuestionAiReview, QuestionBankQuestionHeader,
+};
 use super::*;
 use hyz_things::domain::question_bank::{
     FavoriteState, PaperSummary, PaperView, QuestionView, SetFavorite,
@@ -37,42 +39,51 @@ pub(super) fn shenlun_training(props: &ShenlunTrainingProps) -> Html {
     let menu_open = use_state(|| false);
     let ai_delete_signal = use_state(|| 0_u32);
     let scroll = use_training_scroll_pair();
-    let question_key = (*paper).as_ref().and_then(|p|
-        p.questions.get(*selected).map(|question| (p.id.clone(), question.id.clone())));
-    let favorite=use_practice_favorite(question_key.as_ref().map(|(_,id)|id.clone()));
-    let favorite_busy=use_state(||false);
-    let flashcard_preview=use_state(||None::<(String,FavoritePreview)>);
-    let flashcard_error=use_state(||None::<String>);
-    let flashcard_open=use_state(||false);
-    let flashcard_revision=use_state(||0_u32);
+    let question_key = (*paper).as_ref().and_then(|p| {
+        p.questions
+            .get(*selected)
+            .map(|question| (p.id.clone(), question.id.clone()))
+    });
+    let favorite = use_practice_favorite(question_key.as_ref().map(|(_, id)| id.clone()));
+    let favorite_busy = use_state(|| false);
+    let flashcard_preview = use_state(|| None::<(String, FavoritePreview)>);
+    let flashcard_error = use_state(|| None::<String>);
+    let flashcard_open = use_state(|| false);
+    let flashcard_revision = use_state(|| 0_u32);
     {
-        let flashcard_preview=flashcard_preview.clone();
-        let flashcard_error=flashcard_error.clone();
-        let flashcard_open=flashcard_open.clone();
-        use_effect_with((question_key.clone(),*flashcard_revision),move |(key,_)|{
-            let alive=Rc::new(Cell::new(true));
-            let guard=alive.clone();
-            flashcard_preview.set(None);
-            flashcard_error.set(None);
-            flashcard_open.set(false);
-            if let Some((_,qid))=key.clone(){
-                let flashcard_preview=flashcard_preview.clone();
-                let flashcard_error=flashcard_error.clone();
-                spawn_local(async move {
-                    let result=fetch_json::<FavoritePreview>(
-                        &format!("/api/v1/question-bank/practice/questions/{qid}/flashcard-preview"),
-                        "申论 Flashcard 预览"
-                    ).await;
-                    if guard.get(){
-                        match result {
-                            Ok(preview)=>flashcard_preview.set(Some((qid,preview))),
-                            Err(message)=>flashcard_error.set(Some(message)),
+        let flashcard_preview = flashcard_preview.clone();
+        let flashcard_error = flashcard_error.clone();
+        let flashcard_open = flashcard_open.clone();
+        use_effect_with(
+            (question_key.clone(), *flashcard_revision),
+            move |(key, _)| {
+                let alive = Rc::new(Cell::new(true));
+                let guard = alive.clone();
+                flashcard_preview.set(None);
+                flashcard_error.set(None);
+                flashcard_open.set(false);
+                if let Some((_, qid)) = key.clone() {
+                    let flashcard_preview = flashcard_preview.clone();
+                    let flashcard_error = flashcard_error.clone();
+                    spawn_local(async move {
+                        let result = fetch_json::<FavoritePreview>(
+                            &format!(
+                                "/api/v1/question-bank/practice/questions/{qid}/flashcard-preview"
+                            ),
+                            "申论 Flashcard 预览",
+                        )
+                        .await;
+                        if guard.get() {
+                            match result {
+                                Ok(preview) => flashcard_preview.set(Some((qid, preview))),
+                                Err(message) => flashcard_error.set(Some(message)),
+                            }
                         }
-                    }
-                });
-            }
-            move ||alive.set(false)
-        });
+                    });
+                }
+                move || alive.set(false)
+            },
+        );
     }
 
     {
@@ -86,9 +97,13 @@ pub(super) fn shenlun_training(props: &ShenlunTrainingProps) -> Html {
             error.set(None);
             spawn_local(async move {
                 let result = fetch_json::<Vec<PaperSummary>>(
-                    "/api/v1/question-bank/shenlun/papers", "申论原卷"
-                ).await;
-                if !guard.get() { return; }
+                    "/api/v1/question-bank/shenlun/papers",
+                    "申论原卷",
+                )
+                .await;
+                if !guard.get() {
+                    return;
+                }
                 match result {
                     Ok(value) => papers.set(Some(value)),
                     Err(message) => error.set(Some(message)),
@@ -107,7 +122,9 @@ pub(super) fn shenlun_training(props: &ShenlunTrainingProps) -> Html {
         let error = error.clone();
         let immersive = props.on_immersive_change.clone();
         Callback::from(move |id: String| {
-            if *busy { return; }
+            if *busy {
+                return;
+            }
             busy.set(true);
             error.set(None);
             let busy = busy.clone();
@@ -118,7 +135,12 @@ pub(super) fn shenlun_training(props: &ShenlunTrainingProps) -> Html {
             let error = error.clone();
             let immersive = immersive.clone();
             spawn_local(async move {
-                match fetch_json::<PaperView>(&format!("/api/v1/question-bank/shenlun/papers/{id}"), "申论原卷").await {
+                match fetch_json::<PaperView>(
+                    &format!("/api/v1/question-bank/shenlun/papers/{id}"),
+                    "申论原卷",
+                )
+                .await
+                {
                     Ok(value) => {
                         selected.set(0);
                         mode.set("ai".into());
@@ -184,51 +206,59 @@ pub(super) fn shenlun_training(props: &ShenlunTrainingProps) -> Html {
                 </div>
             </section>
         };
-        let favorite_value=(*favorite.value).as_ref()
-            .filter(|state|state.question_id==question_id);
-        let card_preview=(*flashcard_preview).as_ref().and_then(|(id,preview)|
-            (id==&question_id).then_some(preview));
-        let starred=favorite_value.is_some_and(|state|state.favorite);
-        let favorite_ready=favorite_value.is_some();
-        let on_favorite={
-            let csrf=props.csrf.clone();
-            let qid=question_id.clone();
-            let favorite_value=favorite.value.clone();
-            let favorite_source=favorite.source.clone();
-            let favorite_generation=favorite.generation.clone();
-            let generation=*favorite.generation.borrow();
-            let favorite_busy=favorite_busy.clone();
-            let error=error.clone();
-            Callback::from(move |_|{
-                if !favorite_ready || *favorite_busy {return;}
+        let favorite_value = (*favorite.value)
+            .as_ref()
+            .filter(|state| state.question_id == question_id);
+        let card_preview = (*flashcard_preview)
+            .as_ref()
+            .and_then(|(id, preview)| (id == &question_id).then_some(preview));
+        let starred = favorite_value.is_some_and(|state| state.favorite);
+        let favorite_ready = favorite_value.is_some();
+        let on_favorite = {
+            let csrf = props.csrf.clone();
+            let qid = question_id.clone();
+            let favorite_value = favorite.value.clone();
+            let favorite_source = favorite.source.clone();
+            let favorite_generation = favorite.generation.clone();
+            let generation = *favorite.generation.borrow();
+            let favorite_busy = favorite_busy.clone();
+            let error = error.clone();
+            Callback::from(move |_| {
+                if !favorite_ready || *favorite_busy {
+                    return;
+                }
                 favorite_busy.set(true);
-                let csrf=csrf.clone();
-                let qid=qid.clone();
-                let favorite_value=favorite_value.clone();
-                let favorite_source=favorite_source.clone();
-                let favorite_generation=favorite_generation.clone();
-                let favorite_busy=favorite_busy.clone();
-                let error=error.clone();
-                spawn_local(async move{
-                    let result:Result<FavoriteState,String>=post_json_response(
+                let csrf = csrf.clone();
+                let qid = qid.clone();
+                let favorite_value = favorite_value.clone();
+                let favorite_source = favorite_source.clone();
+                let favorite_generation = favorite_generation.clone();
+                let favorite_busy = favorite_busy.clone();
+                let error = error.clone();
+                spawn_local(async move {
+                    let result: Result<FavoriteState, String> = post_json_response(
                         &format!("/api/v1/question-bank/practice/favorites/{qid}"),
-                        &csrf,&SetFavorite{favorite:!starred},"收藏申论原题"
-                    ).await;
-                    match result{
-                        Ok(state) if state.question_id==qid=>{
-                            if favorite_source.borrow().as_ref()==Some(&qid)
-                                && *favorite_generation.borrow()==generation {
+                        &csrf,
+                        &SetFavorite { favorite: !starred },
+                        "收藏申论原题",
+                    )
+                    .await;
+                    match result {
+                        Ok(state) if state.question_id == qid => {
+                            if favorite_source.borrow().as_ref() == Some(&qid)
+                                && *favorite_generation.borrow() == generation
+                            {
                                 favorite_value.set(Some(state));
                             }
-                        },
-                        Ok(_)=>error.set(Some("收藏响应与当前题目不一致".into())),
-                        Err(message)=>error.set(Some(message)),
+                        }
+                        Ok(_) => error.set(Some("收藏响应与当前题目不一致".into())),
+                        Err(message) => error.set(Some(message)),
                     }
                     favorite_busy.set(false);
                 });
             })
         };
-        let leading=html!{
+        let leading = html! {
             <super::question_header_actions::QuestionHeaderActions
                 favorite={favorite_value.map(|state|state.favorite)}
                 favorite_busy={*favorite_busy || !favorite_ready}
@@ -345,7 +375,10 @@ pub(super) fn shenlun_training(props: &ShenlunTrainingProps) -> Html {
             </section>
         };
         let groups = vec![NavigationGroup {
-            label: "全部题目".into(), subtitle: None, start: 0, end: current.questions.len()
+            label: "全部题目".into(),
+            subtitle: None,
+            start: 0,
+            end: current.questions.len(),
         }];
         // No formal paper session: do not show a misleading paper-wide "answered" tally.
         // This shared answer sheet is the sole question switcher in review mode.
@@ -375,10 +408,18 @@ pub(super) fn shenlun_training(props: &ShenlunTrainingProps) -> Html {
             </div>
         }
     } else {
-        let mut grouped = std::collections::BTreeMap::<String,std::collections::BTreeMap<i32,Vec<&PaperSummary>>>::new();
-        if let Some(all)=(*papers).as_ref() {
-            for item in all.iter().filter(|item|item.role=="primary") {
-                grouped.entry(item.region.clone()).or_default().entry(item.year).or_default().push(item);
+        let mut grouped = std::collections::BTreeMap::<
+            String,
+            std::collections::BTreeMap<i32, Vec<&PaperSummary>>,
+        >::new();
+        if let Some(all) = (*papers).as_ref() {
+            for item in all.iter().filter(|item| item.role == "primary") {
+                grouped
+                    .entry(item.region.clone())
+                    .or_default()
+                    .entry(item.year)
+                    .or_default()
+                    .push(item);
             }
         }
         html! {
@@ -451,11 +492,19 @@ mod tests {
     #[test]
     fn topic_label_does_not_guess_from_question_number() {
         let item = QuestionView {
-            id: "test".into(), number: 5, stem: "请概括".into(),
-            options_markdown: String::new(), materials: vec![], module: None,
-            category: None, topics: vec![], answer_type: "subjective".into(),
-            question_type: Some("other".into()), grading_mode: "ai".into(), max_score: None,
+            id: "test".into(),
+            number: 5,
+            stem: "请概括".into(),
+            options_markdown: String::new(),
+            materials: vec![],
+            module: None,
+            category: None,
+            topics: vec![],
+            answer_type: "subjective".into(),
+            question_type: Some("other".into()),
+            grading_mode: "ai".into(),
+            max_score: None,
         };
-        assert_eq!(topic_label(&item),"其他");
+        assert_eq!(topic_label(&item), "其他");
     }
 }
