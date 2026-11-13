@@ -4,6 +4,7 @@ mod favorite_flashcards;
 pub mod images;
 pub mod practice;
 pub mod shenlun;
+pub mod shenlun_grading;
 
 use crate::domain::question_bank::{
     BankSyncStatus, BankSyncSummary, PaperSummary, PaperView, PracticeCatalog, PracticeMode,
