@@ -87,3 +87,10 @@
 - **非草稿模式三点按钮常驻最右，草稿模式按专项练习逻辑隐藏三点**；按钮常驻与删除项有条件出现是两项独立阻断验收条件。
 - **批改页与解析/追问页拥有不同 Codex thread**、OCR 共享 AI Composer 并固定底部、四模式菜单不串状态，均为阻断验收条件；任何一个未满足都不能宣布“已全部修复”。
 - 本计划已用于 PR #125 的代码实现；最终完成状态以相关 Rust 检查、WebKit 多视口截图验收、PR 合并和网络 ADB Things 部署的实际结果为准。
+
+## 4. 2026-11-14 最终验收记录
+
+- PR #125 已合并到 `main`，merge commit 为 `d046895a1ef7d8b7b0200f3e8329602a4a0d3782`，源码树为 `c562a9823ed968d5e531d5dc5243fc97462c0d76`。代码提交带有 `[skip ci]`。
+- 本地 `cargo fmt --check`、完整 Things native 测试、E2E feature 严格 Clippy、TypeScript 类型检查及 `make check-static` 通过。最后一轮相关 WebKit 回归 11/11、OCR 真实附件上传 1/1、默认/指定 spec fixture 选择验证 2/2 通过；申论布局覆盖 1366×900、1133×744、1024×768、768×1024 和 390×844。`make check-static` 中依赖设备 SDK 的检查因候选仓库未包含 `sdk/` 而跳过。
+- GitHub 自动生成的 PR #125 merge commit 未继承源提交的 `[skip ci]`，因此 `Portal CI` 的 push workflow 启动。为遵循跳过 CI 的请求，运行随后被取消；本地日志显示聚合 E2E 检查因 Playwright shards 被取消而失败，不能记录为 CI 通过。静态/格式/单元测试/Clippy 和快速检查在取消前成功。
+- 使用 Buildroot AArch64 linker 从上述合并源码构建的 Things ELF，其 SHA-256 为 `a477120622850da817d06fca7b7df2100b92a934d9fabc921846030ea5036869`。网络 ADB 热部署后 `/run/hyz-things/ready` 内容为 `8080`，设备 ELF 与主机 SHA-256 一致；HTTPS 门户、生成的 JavaScript 与 WebAssembly 均返回 200。Router readiness、ELF SHA-256 和进程 ID 与部署前一致。
