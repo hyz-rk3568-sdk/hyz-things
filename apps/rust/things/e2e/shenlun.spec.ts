@@ -199,7 +199,16 @@ test('OCR 只创建临时 Codex 转写并直接渲染 Markdown，不创建作答
       const req = route.request().postDataJSON();
       expect(req.attachments).toEqual([attachmentId]);
       ocrCount++;
-      return route.fulfill({ json: { markdown: '## 第 1 页\\n\\n手写的一句话，保留原文。' } });
+      return route.fulfill({ json: {
+        markdown: '## 第 1 页\\n\\n手写的一句话，保留原文。',
+        events: [
+          { kind: 'tool_started', payload: { item_id: 'ocr-tool-1', tool: 'shell',
+            details: { command: 'local-image-ocr' } } },
+          { kind: 'command_output_delta', payload: { item_id: 'ocr-tool-1', text: 'OCR 图像识别输出' } },
+          { kind: 'tool_finished', payload: { item_id: 'ocr-tool-1', tool: 'shell', status: 'completed',
+            details: {} } },
+        ],
+      } });
     }
     if (method !== 'GET') legacyWrites++;
     throw new Error('Unexpected temporary OCR request: ' + method + ' ' + pathname);
@@ -215,6 +224,9 @@ test('OCR 只创建临时 Codex 转写并直接渲染 Markdown，不创建作答
   await page.getByTestId('shenlun-transcribe-start').click();
   await expect(page.getByTestId('shenlun-ocr-markdown')).toContainText('手写的一句话，保留原文');
   await expect(page.getByTestId('shenlun-ocr-markdown').locator('h2')).toContainText('第 1 页');
+  await expect(page.getByTestId('shenlun-ocr-tool-activity')).toContainText('工具调用');
+  await expect(page.getByTestId('shenlun-ocr-tool')).toContainText('shell');
+  await expect(page.getByTestId('shenlun-ocr-output')).toContainText('OCR 图像识别输出');
   await expect(page.getByTestId('shenlun-transcription-confirm')).toHaveCount(0);
   await expect(page.getByTestId('shenlun-transcription-confirm-button')).toHaveCount(0);
   expect(ocrCount).toBe(1);
