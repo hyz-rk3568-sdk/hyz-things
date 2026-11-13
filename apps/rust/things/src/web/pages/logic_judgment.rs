@@ -831,6 +831,12 @@ pub(crate) fn logic_judgment_training(props: &LogicJudgmentProps) -> Html {
                             </div>
                         </div>
                     </details>
+                    if job.is_some() {
+                        <div class="rounded-box bg-base-200 p-3 text-sm" role="status" data-testid={format!("{prefix}-progress")}>{if progress.is_empty() {"正在恢复出题任务…".to_owned()} else {(*progress).clone()}}</div>
+                    }
+                    if let Some(activity_id) = (*activity_job).as_ref() {
+                        <GenerationActivity module={if props.quantitative {"quantitative-relations"} else {"logic-judgment"}} job_id={activity_id.clone()} test_prefix={prefix}/>
+                    }
                     <TrainingMetrics answered={answered} correct={correct} prefix={prefix} />
                     <details class="min-w-0 max-w-full overflow-hidden rounded-box border border-base-content/15 p-3" data-testid={format!("{prefix}-statistics")}>
                         <summary class="cursor-pointer font-semibold">{format!("全部卡片（{}）",statistics.len())}</summary>
@@ -870,12 +876,6 @@ pub(crate) fn logic_judgment_training(props: &LogicJudgmentProps) -> Html {
                                 </div>
                             </div>
                         </div>
-                    }
-                    if job.is_some() {
-                        <div class="rounded-box bg-base-200 p-3 text-sm" role="status" data-testid={format!("{prefix}-progress")}>{if progress.is_empty() {"正在恢复出题任务…".to_owned()} else {(*progress).clone()}}</div>
-                    }
-                    if let Some(activity_id) = (*activity_job).as_ref() {
-                        <GenerationActivity module={if props.quantitative {"quantitative-relations"} else {"logic-judgment"}} job_id={activity_id.clone()} test_prefix={prefix}/>
                     }
                     {alert}
                     if let Some(state)=status.as_ref() {
