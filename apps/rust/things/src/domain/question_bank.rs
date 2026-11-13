@@ -171,6 +171,10 @@ pub struct ShenlunAttempt {
     pub created_at_ms: i64,
     pub updated_at_ms: i64,
     pub submitted_at_ms: Option<i64>,
+    #[serde(default)]
+    pub reference_viewed_at_ms: Option<i64>,
+    #[serde(default)]
+    pub after_reference: bool,
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]

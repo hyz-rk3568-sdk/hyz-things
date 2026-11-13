@@ -127,6 +127,8 @@ fn shenlun_from_row(row: &sqlx::sqlite::SqliteRow) -> Result<ShenlunAttempt, Ban
         submitted_at_ms: row
             .try_get("submitted_at_ms")
             .map_err(|_| BankError::Storage)?,
+        reference_viewed_at_ms: row.try_get("reference_viewed_at_ms").map_err(|_| BankError::Storage)?,
+        after_reference: row.try_get::<i64, _>("after_reference").map_err(|_| BankError::Storage)? != 0,
     })
 }
 
@@ -145,7 +147,7 @@ impl QuestionBankRepositoryPort for SqliteQuestionBankRepository {
         attempt: ShenlunAttempt,
     ) -> Result<ShenlunAttempt, BankError> {
         let inserted = sqlx::query(
-            "INSERT OR IGNORE INTO shenlun_attempts(id,paper_id,question_id,source_hash,answer_text,source_kind,status,revision,created_at_ms,updated_at_ms,submitted_at_ms) VALUES(?,?,?,?,?,?,?,?,?,?,?)"
+            "INSERT OR IGNORE INTO shenlun_attempts(id,paper_id,question_id,source_hash,answer_text,source_kind,status,revision,created_at_ms,updated_at_ms,submitted_at_ms,after_reference) VALUES(?,?,?,?,?,?,?,?,?,?,?,CASE WHEN EXISTS(SELECT 1 FROM shenlun_attempts previous WHERE previous.question_id=? AND previous.reference_viewed_at_ms IS NOT NULL) THEN 1 ELSE 0 END)"
         )
         .bind(&attempt.id)
         .bind(&attempt.paper_id)
@@ -158,6 +160,7 @@ impl QuestionBankRepositoryPort for SqliteQuestionBankRepository {
         .bind(attempt.created_at_ms)
         .bind(attempt.updated_at_ms)
         .bind(attempt.submitted_at_ms)
+        .bind(&attempt.question_id)
         .execute(&self.pool)
         .await
         .map_err(|_| BankError::Storage)?;
@@ -1511,6 +1514,8 @@ mod migration_tests {
             created_at_ms: 100,
             updated_at_ms: 100,
             submitted_at_ms: None,
+            reference_viewed_at_ms: None,
+            after_reference: false,
         };
         let first = repository
             .shenlun_create_attempt(attempt.clone())

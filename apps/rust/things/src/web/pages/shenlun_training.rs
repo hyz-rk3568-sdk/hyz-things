@@ -426,6 +426,9 @@ pub(super) fn shenlun_training(props: &ShenlunTrainingProps) -> Html {
                                 <p class="text-sm opacity-70">{"正在恢复历史草稿…"}</p>
                             } else if let Some(record) = (*attempt).as_ref() {
                                 <div class="flex flex-wrap items-center justify-between gap-2">
+                                    if record.after_reference {
+                                        <span class="text-xs text-warning">{"参考后修改（非独立二稿）"}</span>
+                                    }
                                     <span class="text-xs opacity-70">
                                         {if record.status == "submitted" {"已交卷 · 原稿不可修改"}
                                          else if *saving {"自动保存中…"}

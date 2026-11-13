@@ -264,6 +264,10 @@ impl ShenlunAiService {
             Err(message) => ("failed",None,Some(message)),
             Ok(_) => ("stopped",None,Some("用户已停止".to_string())),
         };
+        if status == "complete" && matches!(job.kind.as_str(),"independent_answer"|"full_essay") {
+            let _=sqlx::query("UPDATE shenlun_attempts SET reference_viewed_at_ms=COALESCE(reference_viewed_at_ms,?) WHERE id=?")
+                .bind(timestamp()).bind(&job.attempt_id).execute(&self.pool).await;
+        }
         let _=sqlx::query("UPDATE shenlun_jobs SET status=?,result_json=?,error=?,updated_at_ms=? WHERE id=? AND status='running' AND source_hash=? AND attempt_revision=?")
             .bind(status).bind(result.map(|value|value.to_string())).bind(error).bind(timestamp())
             .bind(&job.id).bind(&job.source_hash).bind(job.attempt_revision)

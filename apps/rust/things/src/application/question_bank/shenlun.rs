@@ -109,6 +109,8 @@ impl QuestionBankApplication {
                 created_at_ms: now,
                 updated_at_ms: now,
                 submitted_at_ms: None,
+                reference_viewed_at_ms: None,
+                after_reference: false,
             })
             .await
     }
