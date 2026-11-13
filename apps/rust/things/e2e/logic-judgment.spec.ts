@@ -592,7 +592,6 @@ for (const [module, prefix, mode] of [
   ['logic-judgment','logic','training-mode-logic-judgment'],
   ['quantitative-relations','quant','training-mode-quantitative'],
 ] as const) {
-  {
     const paper = {
       id:'prepared-paper', status:'prepared', server_now_ms:Date.now(),
       started_at_ms:null, deadline_at_ms:null, duration_seconds:600,
@@ -632,6 +631,5 @@ for (const [module, prefix, mode] of [
     await expect(page.getByTestId(prefix+'-resume')).toBeVisible();
     await page.getByTestId(prefix+'-resume').click();
     await expect(panel).toHaveCount(0);
-  }
 }
-);
+});
