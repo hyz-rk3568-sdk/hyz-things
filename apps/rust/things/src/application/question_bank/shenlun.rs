@@ -159,7 +159,7 @@ fn check_attempt_id(id: &str) -> Result<(), BankError> {
 }
 
 fn valid_answer_text(text: &str) -> bool {
-    text.len() <= 200_000 && text.chars().count() <= 50_000 && !text.contains('\\0')
+    text.len() <= 200_000 && text.chars().count() <= 50_000 && !text.contains('\0')
 }
 
 fn current_millis() -> i64 {
@@ -178,7 +178,7 @@ mod tests {
     fn shenlun_scope_never_accepts_xingce_or_drills() {
         assert!(is_shenlun_scope("shenlun", "primary", "exam"));
         assert!(valid_answer_text("我的申论答案。"));
-        assert!(!valid_answer_text("未确认\\0片段"));
+        assert!(!valid_answer_text("未确认\0片段"));
         assert!(!valid_answer_text(&"中".repeat(50_001)));
         for (subject, role, kind) in [
             ("xingce", "primary", "exam"),
