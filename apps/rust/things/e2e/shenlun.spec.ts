@@ -117,7 +117,7 @@ test('批改复用 QuestionAiReview 的 Markdown、追问和删除，不创建�
         question_id: questionId, status: 'complete', error: null,
         messages: [
           { id: 1, role: 'user', content: startInstruction, created_at: 1 },
-          { id: 2, role: 'assistant', content: '# 申论批改\\n\\n## 练习参考分\\n\\nAI 练习参考分：12/20（非官方）\\n\\n## 修改建议\\n\\n应补充执行主体。', created_at: 2 },
+          { id: 2, role: 'assistant', content: '# 申论批改\n\n## 练习参考分\n\nAI 练习参考分：12/20（非官方）\n\n## 修改建议\n\n应补充执行主体。', created_at: 2 },
         ],
       };
       return route.fulfill({ status: 202, json: { ...state, request: {
