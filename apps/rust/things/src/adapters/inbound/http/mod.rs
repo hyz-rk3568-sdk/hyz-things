@@ -56,9 +56,9 @@ use crate::{
 };
 
 mod data_analysis;
-mod generation_events;
 mod favorite_flashcards;
 mod flashcards;
+mod generation_events;
 pub use favorite_flashcards::with_favorite_flashcards;
 mod question_bank;
 pub use question_bank::{with_question_bank, with_question_bank_ai};
