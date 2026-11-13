@@ -1775,7 +1775,7 @@ mod favorite_metadata_tests {
         let service = LogicJudgmentService::with_generator(pool, Some(Arc::new(AnswerContext)));
         let plan = service.plan(1).await.unwrap();
         assert_eq!(
-            service.generate(&plan, "").await.unwrap().len(),
+            service.generate("test-job", &plan, "").await.unwrap().len(),
             QUIZ_QUESTIONS
         );
     }
