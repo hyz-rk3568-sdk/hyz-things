@@ -280,9 +280,9 @@ pub(super) fn shenlun_training(props: &ShenlunTrainingProps) -> Html {
             html! {
                 <div class="relative">
                     <button type="button" class={icon_button} aria-label="更多 AI 操作"
-                        title="更多 AI 操作" data-testid="shenlun-more"
+                        title="更多 AI 操作" aria-expanded={menu_open.to_string()} data-testid="shenlun-more"
                         onclick={Callback::from({let menu_open=menu_open.clone();move |_|menu_open.set(!*menu_open)})}>
-                        {"⋮"}
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><circle cx="12" cy="5" r="1.5"/><circle cx="12" cy="12" r="1.5"/><circle cx="12" cy="19" r="1.5"/></svg>
                     </button>
                     if *menu_open {
                         <div class="absolute right-0 top-full z-50 min-w-40 rounded-box border border-base-content/10 bg-base-100 p-1 shadow-lg">
@@ -297,6 +297,8 @@ pub(super) fn shenlun_training(props: &ShenlunTrainingProps) -> Html {
                                             signal.set(signal.wrapping_add(1));
                                         }
                                     })}>{"删除 AI 对话"}</button>
+                            } else {
+                                <span class="block px-3 py-2 text-xs text-base-content/60">{"暂无可用操作"}</span>
                             }
                         </div>
                     }
@@ -320,17 +322,25 @@ pub(super) fn shenlun_training(props: &ShenlunTrainingProps) -> Html {
                         <>
                             <button type="button" class={classes!(icon_button,if mode_value=="grade" {"text-primary"} else {""})}
                                 aria-label="AI 批改" title="AI 批改" data-testid="shenlun-mode-grade"
-                                onclick={Callback::from({let mode=mode.clone();move |_|mode.set("grade".into())})}>{"批"}</button>
+                                onclick={Callback::from({let mode=mode.clone();move |_|mode.set("grade".into())})}>
+                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="4" y="3" width="16" height="18" rx="2"/><path d="M8 8h8M8 12h4m-4 4 2 2 4-4"/></svg>
+                            </button>
                             <button type="button" class={classes!(icon_button,if mode_value=="ocr" {"text-primary"} else {""})}
                                 aria-label="OCR 转写" title="OCR 转写" data-testid="shenlun-mode-ocr"
-                                onclick={Callback::from({let mode=mode.clone();move |_|mode.set("ocr".into())})}>{"识"}</button>
+                                onclick={Callback::from({let mode=mode.clone();move |_|mode.set("ocr".into())})}>
+                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 3H5a2 2 0 0 0-2 2v3M16 3h3a2 2 0 0 1 2 2v3M3 16v3a2 2 0 0 0 2 2h3m8 0h3a2 2 0 0 0 2-2v-3M7 12h10M9 9h6m-6 6h6"/></svg>
+                            </button>
                             <button type="button" class={classes!(icon_button,if mode_value=="ai" {"text-primary"} else {""})}
                                 aria-label="AI 解析与追问" title="AI 解析与追问" data-testid="shenlun-mode-ai"
-                                onclick={Callback::from({let mode=mode.clone();move |_|mode.set("ai".into())})}>{"✦"}</button>
+                                onclick={Callback::from({let mode=mode.clone();move |_|mode.set("ai".into())})}>
+                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m12 3 1.5 4.5L18 9l-4.5 1.5L12 15l-1.5-4.5L6 9l4.5-1.5zM19 14l.8 2.2L22 17l-2.2.8L19 20l-.8-2.2L16 17l2.2-.8z"/></svg>
+                            </button>
                             <button type="button" class={classes!(icon_button,if mode_value=="source" {"text-primary"} else {""})}
                                 aria-label="来源参考答案" title="来源参考答案" data-testid="shenlun-mode-source"
-                                onclick={Callback::from({let mode=mode.clone();move |_|mode.set("source".into())})}>{"答"}</button>
-                            {if matches!(mode_value.as_str(),"grade"|"ai") {menu} else {Html::default()}}
+                                onclick={Callback::from({let mode=mode.clone();move |_|mode.set("source".into())})}>
+                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 3h9l4 4v14H6zM14 3v5h5M9 12h7M9 16h7"/></svg>
+                            </button>
+                            {menu}
                         </>
                     }}/>
                 if *flashcard_open {
@@ -374,6 +384,15 @@ pub(super) fn shenlun_training(props: &ShenlunTrainingProps) -> Html {
                 }
             </section>
         };
+        let navigation_allowed = Callback::from({
+            let mode = mode.clone();
+            let menu_open = menu_open.clone();
+            move |_: ()| {
+                mode.set("ai".into());
+                menu_open.set(false);
+                true
+            }
+        });
         let groups = vec![NavigationGroup {
             label: "全部题目".into(),
             subtitle: None,
@@ -385,24 +404,28 @@ pub(super) fn shenlun_training(props: &ShenlunTrainingProps) -> Html {
         let answered = vec![false; current.questions.len()];
         html! {
             <div class="flex h-full min-h-0 flex-col gap-2" data-testid="shenlun-workspace">
-                <div class="flex shrink-0 items-center gap-3">
-                    <button type="button" class="btn btn-ghost btn-sm" onclick={close}>{"← 返回选题"}</button>
-                    <h2 class="min-w-0 truncate text-sm font-semibold">{current.title.clone()}</h2>
-                </div>
-                <div class="min-h-0 flex-1">
-                    <TrainingSplitWorkspace left={left} right={right}
-                        test_id="shenlun-split" resizable={true} split_at_md={true}/>
+                <TrainingHeader class="flex shrink-0 flex-col gap-1 border-b border-base-content/10 pb-2 sm:flex-row sm:flex-nowrap sm:items-center sm:justify-between sm:gap-2">
+                    <div class="flex min-w-0 flex-1 items-center gap-3">
+                        <button type="button" class="btn btn-ghost btn-sm" onclick={close}>{"← 返回选题"}</button>
+                        <div class="min-w-0 flex-1">
+                            <strong class="block truncate text-sm">{current.title.clone()}</strong>
+                            <span class="block truncate text-[11px] text-base-content/50">{"申论训练 · 原卷复盘"}</span>
+                        </div>
+                    </div>
+                    <div class="flex min-w-0 flex-wrap items-center gap-2 sm:flex-nowrap sm:justify-end">
+                        <StudyGoalBars />
+                        <CodexLimitBars />
+                    </div>
+                </TrainingHeader>
+                <div class="relative min-h-0 flex-1 overflow-hidden">
+                    <TrainingSwipeSurface current={selected.clone()} total={current.questions.len()}
+                        navigation_allowed={Some(navigation_allowed.clone())}>
+                        <TrainingSplitWorkspace left={left} right={right}
+                            test_id="shenlun-split" resizable={true} split_at_md={true}/>
+                    </TrainingSwipeSurface>
                 </div>
                 <CompactQuestionNavigation current={selected.clone()}
-                    navigation_allowed={Some(Callback::from({
-                        let mode=mode.clone();
-                        let menu_open=menu_open.clone();
-                        move |_:()| {
-                            mode.set("ai".into());
-                            menu_open.set(false);
-                            true
-                        }
-                    }))}
+                    navigation_allowed={Some(navigation_allowed)}
                     numbers={current.questions.iter().map(|q|q.number).collect::<Vec<_>>()}
                     answered={answered} grades={None::<Vec<Option<bool>>>} groups={groups}/>
             </div>

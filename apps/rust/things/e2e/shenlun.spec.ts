@@ -84,6 +84,13 @@ test('申论原卷复用地区年份目录和统一答题卡，不出现独立�
   // Reviewing a paper must not create a hidden grading attempt.
   expect(attempts.size).toBe(0);
   await expect(page.getByTestId('question-bank-practice-navigation')).toBeVisible();
+  await expect(page.getByTestId('shenlun-workspace').locator('[data-testid="shenlun-split"]')).toBeVisible();
+  await expect(page.getByTestId('shenlun-more')).toBeVisible();
+  await expect(page.getByTestId('shenlun-mode-ai').locator('svg')).toHaveCount(1);
+  await expect(page.getByTestId('shenlun-mode-source').locator('svg')).toHaveCount(1);
+  await page.getByTestId('shenlun-more').click();
+  await expect(page.getByText('暂无可用操作')).toBeVisible();
+  await page.getByTestId('shenlun-more').click();
   await expect(page.getByTestId('shenlun-question-nav')).toHaveCount(0);
   await expect(page.getByTestId('shenlun-draft-comparison')).toHaveCount(0);
   await page.getByTestId('training-answer-sheet-toggle').click();
@@ -155,6 +162,8 @@ test('批改复用 QuestionAiReview 的 Markdown、追问和删除，不创建�
     return route.fulfill({ status: 404, json: {} });
   });
   await openShenlun(page);
+  await page.getByTestId('shenlun-mode-source').click();
+  await expect(page.getByTestId('shenlun-source-answer')).toContainText('压实基层责任');
   await page.getByTestId('shenlun-mode-grade').click();
   await expect(page.getByTestId('question-bank-ai-review')).toBeVisible();
   await page.getByTestId('question-bank-ai-instruction').fill('应明确责任分工，建立协同机制。');

@@ -196,10 +196,15 @@ pub(super) struct ShenlunSourceAnswerPanelProps {
 pub(super) fn shenlun_source_answer_panel(props: &ShenlunSourceAnswerPanelProps) -> Html {
     let answer = use_state(|| None::<ShenlunSourceAnswer>);
     let error = use_state(|| None::<String>);
+    let loading = use_state(|| true);
     {
+        let loading = loading.clone();
         let answer = answer.clone();
         let error = error.clone();
         use_effect_with(props.question_id.clone(), move |question_id| {
+            loading.set(true);
+            answer.set(None);
+            error.set(None);
             let alive = Rc::new(Cell::new(true));
             let guard = alive.clone();
             let endpoint =
@@ -210,6 +215,9 @@ pub(super) fn shenlun_source_answer_panel(props: &ShenlunSourceAnswerPanelProps)
                     Ok(value) if guard.get() => answer.set(Some(value)),
                     Err(message) if guard.get() => error.set(Some(message)),
                     _ => (),
+                }
+                if guard.get() {
+                    loading.set(false);
                 }
             });
             move || alive.set(false)
@@ -223,8 +231,10 @@ pub(super) fn shenlun_source_answer_panel(props: &ShenlunSourceAnswerPanelProps)
                     <p class="text-xs opacity-60">{value.provenance.clone()}</p>
                     {render_question_bank_markdown(&value.text)}
                 </article>
-            } else {
-                <p class="text-sm text-base-content/60">{"本题完成 AI 批改后可查看来源参考答案。"}</p>
+            } else if *loading {
+                <p class="text-sm text-base-content/60" role="status">{"正在加载题库参考答案…"}</p>
+            } else if error.is_none() {
+                <p class="text-sm text-base-content/60">{"题库暂无可展示的参考答案。"}</p>
             }
             if let Some(message) = (*error).as_ref() {
                 <p role="alert" class="text-sm text-error">{message.clone()}</p>
