@@ -11,7 +11,6 @@ pub(super) struct ShenlunAiPanelProps {
     pub(super) attempt: ShenlunAttempt,
     pub(super) csrf: String,
     pub(super) on_confirm: Callback<ShenlunAttempt>,
-    pub(super) mode: String,
 }
 
 fn transcription_text(job: &ShenlunJob) -> String {
@@ -34,7 +33,6 @@ pub(super) fn shenlun_ai_panel(props: &ShenlunAiPanelProps) -> Html {
     let uploading=use_state(||false);
     let transcribed=use_state(String::new);
     let show_confirmation=use_state(||false);
-    let source_answer=use_state(||None::<ShenlunSourceAnswer>);
     {
         let jobs=jobs.clone();
         let error=error.clone();
@@ -167,40 +165,9 @@ pub(super) fn shenlun_ai_panel(props: &ShenlunAiPanelProps) -> Html {
             });
         })
     };
-    {
-        let id=props.attempt.id.clone();
-        let mode=props.mode.clone();
-        let answer=source_answer.clone();
-        let error=error.clone();
-        use_effect_with((id,mode),move |(id,mode)|{
-            let alive=Rc::new(Cell::new(true));let guard=alive.clone();
-            if mode=="source"{
-                let endpoint=format!("/api/v1/question-bank/shenlun/attempts/{id}/source-answer");
-                spawn_local(async move {
-                    match fetch_json::<ShenlunSourceAnswer>(&endpoint,"来源参考答案").await {
-                        Ok(value) if guard.get()=>answer.set(Some(value)),
-                        Err(message) if guard.get()=>error.set(Some(message)),
-                        _=>()
-                    }
-                });
-            }
-            move ||alive.set(false)
-        });
-    }
     let image_endpoint=format!("/api/v1/question-bank/practice/questions/{}/ai/attachments",props.attempt.question_id);
     html!{
         <section class="mt-3 space-y-3" data-testid="shenlun-ai-panel">
-            if props.mode=="source" {
-                <h3 class="font-semibold">{"题库来源参考答案"}</h3>
-                if let Some(value)=(*source_answer).as_ref(){
-                    <article class="study-markdown text-sm" data-testid="shenlun-source-answer">
-                        <p class="text-xs opacity-60">{value.provenance.clone()}</p>
-                        {render_question_bank_markdown(&value.text)}
-                    </article>
-                }else {
-                    <p class="text-sm opacity-60">{"完成本题的 AI 批改后，可以在此查看题库来源参考答案。"}</p>
-                }
-            }else if props.mode=="ocr" {
                 <h3 class="font-semibold">{"手写图片转写"}</h3>
                 <p class="text-sm text-base-content/60">{"先核对原图，确认转写文本后可复制到「AI 批改」中发送。转写本身不会评分。"}</p>
                 <AiImagePicker endpoint={image_endpoint} csrf={props.csrf.clone()}
@@ -240,6 +207,49 @@ pub(super) fn shenlun_ai_panel(props: &ShenlunAiPanelProps) -> Html {
                             data-testid="shenlun-ocr-confirmed-text">{props.attempt.text.clone()}</div>
                     </div>
                 }
+            if let Some(message)=(*error).as_ref(){
+                <p role="alert" class="text-sm text-error">{message.clone()}</p>
+            }
+        </section>
+    }
+}
+
+#[derive(Properties, PartialEq)]
+pub(super) struct ShenlunSourceAnswerPanelProps {
+    pub(super) question_id: String,
+}
+
+#[function_component(ShenlunSourceAnswerPanel)]
+pub(super) fn shenlun_source_answer_panel(props: &ShenlunSourceAnswerPanelProps) -> Html {
+    let answer=use_state(||None::<ShenlunSourceAnswer>);
+    let error=use_state(||None::<String>);
+    {
+        let answer=answer.clone();
+        let error=error.clone();
+        use_effect_with(props.question_id.clone(),move |question_id|{
+            let alive=Rc::new(Cell::new(true));
+            let guard=alive.clone();
+            let endpoint=format!("/api/v1/question-bank/shenlun/questions/{question_id}/source-answer");
+            spawn_local(async move {
+                match fetch_json::<ShenlunSourceAnswer>(&endpoint,"题库来源参考答案").await {
+                    Ok(value) if guard.get()=>answer.set(Some(value)),
+                    Err(message) if guard.get()=>error.set(Some(message)),
+                    _=>()
+                }
+            });
+            move ||alive.set(false)
+        });
+    }
+    html! {
+        <section class="mt-3 space-y-3" data-testid="shenlun-source-panel">
+            <h3 class="font-semibold">{"题库来源参考答案"}</h3>
+            if let Some(value)=(*answer).as_ref(){
+                <article class="study-markdown" data-testid="shenlun-source-answer">
+                    <p class="text-xs opacity-60">{value.provenance.clone()}</p>
+                    {render_question_bank_markdown(&value.text)}
+                </article>
+            } else {
+                <p class="text-sm text-base-content/60">{"本题完成 AI 批改后可查看来源参考答案。"}</p>
             }
             if let Some(message)=(*error).as_ref(){
                 <p role="alert" class="text-sm text-error">{message.clone()}</p>
