@@ -9,6 +9,7 @@ pub(super) struct ShenlunAiPanelProps {
     pub(super) attempt: ShenlunAttempt,
     pub(super) csrf: String,
     pub(super) on_confirm: Callback<ShenlunAttempt>,
+    pub(super) is_essay: bool,
 }
 
 #[derive(Clone, PartialEq)]
@@ -44,6 +45,42 @@ fn grade_score(job: &ShenlunJob) -> String {
         return "未评分练习诊断".into();
     };
     format!("练习参考分 {score}/{max}（非官方）")
+}
+
+/// Use only verified UTF-8 byte spans returned by the Rust scoring validator.
+fn highlighted_answer(text: &str, result: &serde_json::Value) -> Html {
+    let mut ranges = Vec::new();
+    if let Some(items) = result.get("items").and_then(serde_json::Value::as_array) {
+        for item in items {
+            let range = item.get("start").and_then(serde_json::Value::as_u64)
+                .and_then(|value| usize::try_from(value).ok())
+                .zip(item.get("end").and_then(serde_json::Value::as_u64)
+                    .and_then(|value| usize::try_from(value).ok()));
+            let quote = item.get("quote").and_then(serde_json::Value::as_str);
+            if let (Some((start,end)),Some(quote))=(range,quote) {
+                if start < end && text.get(start..end) == Some(quote) {
+                    ranges.push((start,end));
+                }
+            }
+        }
+    }
+    ranges.sort_unstable();
+    let mut rendered = Vec::new();
+    let mut cursor = 0_usize;
+    for (start,end) in ranges {
+        if start < cursor {continue;}
+        if let Some(prefix)=text.get(cursor..start) {
+            rendered.push(html!{<span>{prefix.to_owned()}</span>});
+        }
+        if let Some(marked)=text.get(start..end) {
+            rendered.push(html!{<mark class="bg-warning/25 rounded-sm" data-testid="shenlun-quote-highlight">{marked.to_owned()}</mark>});
+        }
+        cursor=end;
+    }
+    if let Some(tail)=text.get(cursor..) {
+        rendered.push(html!{<span>{tail.to_owned()}</span>});
+    }
+    html!{<div class="whitespace-pre-wrap rounded-lg border border-base-300 p-3 text-sm" data-testid="shenlun-highlighted-original">{for rendered}</div>}
 }
 
 #[function_component(ShenlunAiPanel)]
@@ -456,9 +493,11 @@ pub(super) fn shenlun_ai_panel(props: &ShenlunAiPanelProps) -> Html {
                         <button type="button" class="btn btn-outline btn-sm"
                             onclick={Callback::from({let start=start.clone();move |_|start.emit("rewrite".into())})}
                             disabled={*task_busy || is_running}>{"我的答案优化版"}</button>
-                        <button type="button" class="btn btn-outline btn-sm"
-                            onclick={Callback::from({let start=start.clone();move |_|start.emit("full_essay".into())})}
-                            disabled={*task_busy || is_running}>{"按需生成完整范文"}</button>
+                        if props.is_essay {
+                            <button type="button" class="btn btn-outline btn-sm"
+                                onclick={Callback::from({let start=start.clone();move |_|start.emit("full_essay".into())})}
+                                disabled={*task_busy || is_running}>{"按需生成完整范文"}</button>
+                        }
                     }
                 </div>
                 if *showing_answer {
@@ -491,6 +530,8 @@ pub(super) fn shenlun_ai_panel(props: &ShenlunAiPanelProps) -> Html {
                         <article class="rounded-lg border border-base-300 p-3" data-testid="shenlun-result">
                             if job.kind=="grade" {
                                 <p class="font-semibold">{grade_score(job)}</p>
+                                <h5 class="mt-2 text-sm font-semibold">{"原稿批注（实际命中片段）"}</h5>
+                                {highlighted_answer(&props.attempt.text,result)}
                                 <p class="my-2 text-sm">{result.get("summary").and_then(serde_json::Value::as_str).unwrap_or("")}</p>
                                 if let Some(items)=result.get("items").and_then(serde_json::Value::as_array) {
                                     {for items.iter().map(|item| html!{

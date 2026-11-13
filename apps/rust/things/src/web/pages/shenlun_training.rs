@@ -15,8 +15,8 @@ fn topic_label(question: &QuestionView) -> &str {
     match question.question_type.as_deref() {
         Some("summary" | "generalization" | "归纳概括") => "归纳概括",
         Some("analysis" | "综合分析") => "综合分析",
-        Some("countermeasure" | "提出对策") => "提出对策",
-        Some("document" | "official_document" | "公文写作") => "公文写作",
+        Some("measures" | "countermeasure" | "提出对策") => "提出对策",
+        Some("document_writing" | "document" | "official_document" | "公文写作") => "公文写作",
         Some("essay" | "composition" | "大作文") => "大作文",
         _ => "其他",
     }
@@ -486,6 +486,7 @@ pub(super) fn shenlun_training(props: &ShenlunTrainingProps) -> Html {
                             }
                             if let Some(record)=(*attempt).as_ref() {
                                 <ShenlunAiPanel attempt={record.clone()} csrf={props.csrf.clone()}
+                                    is_essay={question.question_type.as_deref() == Some("essay")}
                                 on_confirm={Callback::from({
                                     let attempt=attempt.clone();
                                     let draft=draft.clone();
