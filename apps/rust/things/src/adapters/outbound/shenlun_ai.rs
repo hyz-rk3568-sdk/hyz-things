@@ -76,7 +76,6 @@ fn record(row: &sqlx::sqlite::SqliteRow) -> Result<ShenlunJob, ShenlunAiError> {
             .try_get("attempt_id")
             .map_err(|_| ShenlunAiError::Storage)?,
         kind: row.try_get("kind").map_err(|_| ShenlunAiError::Storage)?,
-        prompt: row.try_get("prompt_text").map_err(|_| ShenlunAiError::Storage)?,
         status: row.try_get("status").map_err(|_| ShenlunAiError::Storage)?,
         error: row.try_get("error").map_err(|_| ShenlunAiError::Storage)?,
         result,
@@ -101,13 +100,12 @@ fn record(row: &sqlx::sqlite::SqliteRow) -> Result<ShenlunJob, ShenlunAiError> {
 fn valid_kind(kind: &str) -> bool {
     matches!(
         kind,
-        "transcribe" | "grade" | "chat" | "independent_answer" | "rewrite" | "full_essay"
+        "transcribe" | "grade" | "independent_answer" | "rewrite" | "full_essay"
     )
 }
 const RUBRIC_SCHEMA: &str = r#"{"type":"object","additionalProperties":false,"required":["items","notes"],"properties":{"items":{"type":"array","items":{"type":"object","additionalProperties":false,"required":["id","criterion","material_id","evidence","weight"],"properties":{"id":{"type":"string"},"criterion":{"type":"string"},"material_id":{"type":"string"},"evidence":{"type":"string"},"weight":{"type":"number"}}}},"notes":{"type":"string"}}}"#;
 const GRADE_SCHEMA: &str = r#"{"type":"object","additionalProperties":false,"required":["evaluations","summary"],"properties":{"evaluations":{"type":"array","items":{"type":"object","additionalProperties":false,"required":["id","coverage","quote","start","end","reason","suggestion"],"properties":{"id":{"type":"string"},"coverage":{"type":"string","enum":["full","partial","missing","unsupported"]},"quote":{"type":"string"},"start":{"type":["integer","null"]},"end":{"type":["integer","null"]},"reason":{"type":"string"},"suggestion":{"type":"string"}}}},"summary":{"type":"string"}}}"#;
 const TRANSCRIBE_SCHEMA: &str = r#"{"type":"object","additionalProperties":false,"required":["pages"],"properties":{"pages":{"type":"array","items":{"type":"object","additionalProperties":false,"required":["page","text","uncertain"],"properties":{"page":{"type":"integer"},"text":{"type":"string"},"uncertain":{"type":"array","items":{"type":"object","additionalProperties":false,"required":["text","reason"],"properties":{"text":{"type":"string"},"reason":{"type":"string"}}}}}}}}}"#;
-const CHAT_SCHEMA: &str = r#"{"type":"object","additionalProperties":false,"required":["text"],"properties":{"text":{"type":"string"}}}"#;
 const ANSWER_SCHEMA: &str = r#"{"type":"object","additionalProperties":false,"required":["text","edits"],"properties":{"text":{"type":"string"},"edits":{"type":"array","items":{"type":"object","additionalProperties":false,"required":["before","after","reason"],"properties":{"before":{"type":"string"},"after":{"type":"string"},"reason":{"type":"string"}}}}}}"#;
 
 pub struct ShenlunAiService {
@@ -248,12 +246,8 @@ impl ShenlunAiService {
             || !valid_kind(&request.kind)
             || request.attachments.len() > 3
             || request.attachments.iter().any(|id| !canonical_uuid(id))
-            || (!matches!(request.kind.as_str(), "transcribe" | "chat") && !request.attachments.is_empty())
+            || (request.kind != "transcribe" && !request.attachments.is_empty())
             || (request.kind == "transcribe" && request.attachments.is_empty())
-            || request.prompt.chars().count() > 2000
-            || request.prompt.contains('\0')
-            || (request.kind != "chat" && !request.prompt.is_empty())
-            || (request.kind == "chat" && request.prompt.trim().is_empty() && request.attachments.is_empty())
             || request
                 .attachments
                 .iter()
@@ -297,7 +291,7 @@ impl ShenlunAiService {
             return Err(ShenlunAiError::NotReady);
         }
         if (request.kind == "transcribe" && attempt.status != "draft")
-            || (!matches!(request.kind.as_str(), "transcribe" | "chat") && attempt.status != "submitted")
+            || (request.kind != "transcribe" && attempt.status != "submitted")
         {
             return Err(ShenlunAiError::Conflict);
         }
@@ -317,7 +311,7 @@ impl ShenlunAiService {
         ) {
             self.completed_grade(&attempt).await?;
         }
-        let paths = if matches!(request.kind.as_str(), "transcribe" | "chat") {
+        let paths = if request.kind == "transcribe" {
             self.attachments
                 .as_ref()
                 .ok_or(ShenlunAiError::Unavailable)?
@@ -350,7 +344,6 @@ impl ShenlunAiService {
             id: request.request_id.clone(),
             attempt_id: attempt.id.clone(),
             kind: request.kind.clone(),
-            prompt: request.prompt.clone(),
             status: "running".into(),
             error: None,
             result: None,
@@ -361,11 +354,11 @@ impl ShenlunAiService {
             created_at_ms: now,
             updated_at_ms: now,
         };
-        let inserted=sqlx::query("INSERT OR IGNORE INTO shenlun_jobs(id,request_id,attempt_id,kind,status,source_hash,attempt_revision,skill_version,model,result_json,error,created_at_ms,updated_at_ms,request_fingerprint,prompt_text) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)")
+        let inserted=sqlx::query("INSERT OR IGNORE INTO shenlun_jobs(id,request_id,attempt_id,kind,status,source_hash,attempt_revision,skill_version,model,result_json,error,created_at_ms,updated_at_ms,request_fingerprint) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)")
             .bind(&job.id).bind(&request.request_id).bind(&job.attempt_id).bind(&job.kind)
             .bind(&job.status).bind(&job.source_hash).bind(job.attempt_revision)
             .bind(&job.skill_version).bind(&job.model).bind(Option::<String>::None)
-            .bind(Option::<String>::None).bind(now).bind(now).bind(&input_fingerprint).bind(&job.prompt)
+            .bind(Option::<String>::None).bind(now).bind(now).bind(&input_fingerprint)
             .execute(&self.pool).await.map_err(|_| ShenlunAiError::Storage)?;
         if inserted.rows_affected() == 0 {
             let old = sqlx::query("SELECT * FROM shenlun_jobs WHERE request_id=?")
@@ -549,23 +542,6 @@ impl ShenlunAiService {
                     serde_json::to_string(&attempt.text).map_err(|_|"答卷编码失败")?);
                 (prompt,GRADE_SCHEMA,None)
             }
-            "chat" => {
-                // Follow-up history is scoped to this attempt, which is bound to
-                // the question's UUID and source fingerprint.
-                let previous = sqlx::query("SELECT prompt_text,result_json FROM shenlun_jobs WHERE attempt_id=? AND kind='chat' AND status='complete' AND source_hash=? AND id<>? ORDER BY created_at_ms DESC LIMIT 12")
-                    .bind(&attempt.id).bind(&attempt.source_hash).bind(&job.id)
-                    .fetch_all(&self.pool).await.map_err(|_|"无法读取申论追问历史")?;
-                let history: Vec<Value> = previous.iter().rev().filter_map(|row| {
-                    let prompt: String = row.try_get("prompt_text").ok()?;
-                    let response: String = row.try_get("result_json").ok()?;
-                    let result: Value = serde_json::from_str(&response).ok()?;
-                    Some(json!({"user":prompt,"assistant":result.get("text")?}))
-                }).collect();
-                (format!("{guard}\n意图=chat，回答申论当前题目的解析与追问。不可冒充正式评分，也不得改写已保存的批改报告。\n题目上下文: {}\n历史对话: {}\n用户消息: {}",
-                    question,serde_json::to_string(&history).map_err(|_|"历史编码失败")?,
-                    serde_json::to_string(&job.prompt).map_err(|_|"追问编码失败")?),
-                    CHAT_SCHEMA,None)
-            }
             "independent_answer" | "full_essay" => (
                 format!("{guard}\n意图={}。只能用原题和材料独立生成参考答案（AI 生成，非官方）；不得引用或猜测学生原稿，不得虚构事实。完整作文只有明确请求时才生成。\n题目上下文: {}",job.kind,question),
                 ANSWER_SCHEMA,None
@@ -590,13 +566,6 @@ impl ShenlunAiService {
         let parsed: Value = serde_json::from_str(&raw).map_err(|_| "模型输出不是 JSON")?;
         match job.kind.as_str() {
             "transcribe" => validate_transcription(&parsed, images.len()),
-            "chat" => {
-                let answer = parsed.get("text").and_then(Value::as_str).ok_or("申论追问响应缺少正文")?;
-                if answer.trim().is_empty() || answer.chars().count() > 30000 {
-                    return Err("申论追问结果长度无效".into());
-                }
-                Ok(json!({"text":answer}))
-            },
             "grade" => {
                 let rubric = self.cached_rubric(source).await?.ok_or("评分点未保存")?;
                 let result = validated_grade(&parsed, &rubric, &attempt.text, source.max_score)?;
