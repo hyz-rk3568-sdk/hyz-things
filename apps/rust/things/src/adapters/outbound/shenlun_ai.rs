@@ -61,30 +61,6 @@ impl ShenlunAiService {
         }
     }
 
-    async fn review_has_grade(&self, question_id: &str) -> Result<(), ShenlunAiError> {
-        let review = self
-            .attachments
-            .as_ref()
-            .ok_or(ShenlunAiError::NotReady)?
-            .state(question_id)
-            .await
-            .map_err(|_| ShenlunAiError::NotReady)?;
-        let mut requested = false;
-        for message in review.messages {
-            if message.role == "user"
-                && (message.content.starts_with("【申论批改】")
-                    || message.content.starts_with("【申论批改请求或追问】"))
-            {
-                requested = true;
-            }
-            if requested && message.role == "assistant" && message.content.contains("# 申论批改")
-            {
-                return Ok(());
-            }
-        }
-        Err(ShenlunAiError::NotReady)
-    }
-
     pub async fn reference_answer(
         &self,
         question_id: &str,
@@ -93,7 +69,6 @@ impl ShenlunAiService {
         if locator.subject != "shenlun" {
             return Err(ShenlunAiError::NotFound);
         }
-        self.review_has_grade(question_id).await?;
         let source = self
             .bank
             .shenlun_source_context(&locator.paper_id, question_id)

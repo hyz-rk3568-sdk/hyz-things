@@ -63,6 +63,11 @@ test('申论原卷复用地区年份目录和统一答题卡，不出现独立�
       return route.fulfill({ json: catalog });
     if (pathname.endsWith('/shenlun/papers/' + paperId) && method === 'GET')
       return route.fulfill({ json: paperView });
+    if (pathname.endsWith('/shenlun/questions/' + questionId + '/source-answer') && method === 'GET')
+      return route.fulfill({ json: {
+        text: '来源参考答案：压实基层责任。', provenance: '题库来源（非官方）',
+        source_hash: 'source-shenlun-v1',
+      } });
     if (pathname.endsWith('/shenlun/attempts') && method === 'GET')
       return route.fulfill({ json: attempts.get(searchParams.get('question_id') ?? '') ?? [] });
     if (pathname.endsWith('/shenlun/attempts') && method === 'POST') {
@@ -84,6 +89,15 @@ test('申论原卷复用地区年份目录和统一答题卡，不出现独立�
   // Reviewing a paper must not create a hidden grading attempt.
   expect(attempts.size).toBe(0);
   await expect(page.getByTestId('question-bank-practice-navigation')).toBeVisible();
+  await expect(page.getByTestId('shenlun-workspace').locator('[data-testid="shenlun-split"]')).toBeVisible();
+  await expect(page.getByTestId('shenlun-more')).toBeVisible();
+  await expect(page.getByTestId('shenlun-mode-ai').locator('svg')).toHaveCount(1);
+  await expect(page.getByTestId('shenlun-mode-source').locator('svg')).toHaveCount(1);
+  // The default AI tab offers delete; verify the empty menu on the source tab.
+  await page.getByTestId('shenlun-mode-source').click();
+  await page.getByTestId('shenlun-more').click();
+  await expect(page.getByText('暂无可用操作')).toBeVisible();
+  await page.getByTestId('shenlun-more').click();
   await expect(page.getByTestId('shenlun-question-nav')).toHaveCount(0);
   await expect(page.getByTestId('shenlun-draft-comparison')).toHaveCount(0);
   await page.getByTestId('training-answer-sheet-toggle').click();
@@ -155,6 +169,8 @@ test('批改复用 QuestionAiReview 的 Markdown、追问和删除，不创建�
     return route.fulfill({ status: 404, json: {} });
   });
   await openShenlun(page);
+  await page.getByTestId('shenlun-mode-source').click();
+  await expect(page.getByTestId('shenlun-source-answer')).toContainText('压实基层责任');
   await page.getByTestId('shenlun-mode-grade').click();
   await expect(page.getByTestId('question-bank-ai-review')).toBeVisible();
   await page.getByTestId('question-bank-ai-instruction').fill('应明确责任分工，建立协同机制。');
@@ -216,6 +232,10 @@ test('OCR 只创建临时 Codex 转写并直接渲染 Markdown，不创建作答
   await openShenlun(page);
   await page.getByTestId('shenlun-mode-ocr').click();
   await expect(page.getByTestId('shenlun-ai-panel')).toBeVisible();
+  await expect(page.getByTestId('shenlun-ocr-composer')).toBeVisible();
+  await expect(page.getByTestId('shenlun-ocr-input')).toHaveJSProperty('readOnly', true);
+  await expect(page.getByTestId('shenlun-ocr-input')).toHaveAttribute('maxlength', '0');
+  await expect(page.getByTestId('shenlun-transcribe-start')).toBeDisabled();
   await page.getByTestId('shenlun-ocr-images').locator('input[type="file"]').setInputFiles({
     name: 'answer.png', mimeType: 'image/png',
     buffer: Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9W3Z7b0AAAAASUVORK5CYII=', 'base64'),

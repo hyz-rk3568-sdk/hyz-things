@@ -101,6 +101,7 @@ pub(super) fn shenlun_ai_panel(props: &ShenlunAiPanelProps) -> Html {
     let result = use_state(|| None::<OcrResponse>);
     let images = use_state(Vec::<PendingImage>::new);
     let uploading = use_state(|| false);
+    let ocr_input_ref = use_node_ref();
     let start_ocr = {
         let images = images.clone();
         let busy = busy.clone();
@@ -153,15 +154,29 @@ pub(super) fn shenlun_ai_panel(props: &ShenlunAiPanelProps) -> Html {
             <p class="text-sm text-base-content/60">
                 {"临时 Codex 识别：直接返回 Markdown 原文，不创建批改记录、不要求确认，也不会自动评分。"}
             </p>
-            <AiImagePicker endpoint={image_endpoint} csrf={props.csrf.clone()}
-                attachments={images.clone()} uploading={uploading.clone()}
-                disabled={*busy || *uploading} testid="shenlun-ocr-images">
-                <span class="text-sm">{"上传手写图片"}</span>
-            </AiImagePicker>
-            <button type="button" class="btn btn-primary btn-sm" data-testid="shenlun-transcribe-start"
-                disabled={*busy || *uploading || images.is_empty()} onclick={start_ocr}>
-                {if *busy {"正在识别…"} else {"转写为 Markdown"}}
-            </button>
+            {ai_composer(AiComposer {
+                id: "shenlun-ocr-input",
+                input_ref: ocr_input_ref,
+                compose_testid: "shenlun-ocr-composer",
+                input_testid: "shenlun-ocr-input",
+                button_testid: "shenlun-transcribe-start",
+                value: "",
+                max_length: 0,
+                read_only: true,
+                placeholder: "仅上传手写图片，不支持文字输入…",
+                button_label: if *busy {"正在识别…"} else {"转写为 Markdown"},
+                is_stop: false,
+                disabled: *busy || *uploading || images.is_empty(),
+                endpoint: image_endpoint,
+                csrf: props.csrf.clone(),
+                attachments: images.clone(),
+                uploading: uploading.clone(),
+                picker_disabled: *busy || *uploading,
+                picker_testid: "shenlun-ocr-images",
+                oninput: Callback::noop(),
+                onkeydown: Callback::noop(),
+                onclick: start_ocr,
+            })}
             if let Some(response) = (*result).as_ref() {
                 if !tools.is_empty() {
                     <section class="py-1" data-testid="shenlun-ocr-tool-activity">
@@ -196,10 +211,15 @@ pub(super) struct ShenlunSourceAnswerPanelProps {
 pub(super) fn shenlun_source_answer_panel(props: &ShenlunSourceAnswerPanelProps) -> Html {
     let answer = use_state(|| None::<ShenlunSourceAnswer>);
     let error = use_state(|| None::<String>);
+    let loading = use_state(|| true);
     {
+        let loading = loading.clone();
         let answer = answer.clone();
         let error = error.clone();
         use_effect_with(props.question_id.clone(), move |question_id| {
+            loading.set(true);
+            answer.set(None);
+            error.set(None);
             let alive = Rc::new(Cell::new(true));
             let guard = alive.clone();
             let endpoint =
@@ -210,6 +230,9 @@ pub(super) fn shenlun_source_answer_panel(props: &ShenlunSourceAnswerPanelProps)
                     Ok(value) if guard.get() => answer.set(Some(value)),
                     Err(message) if guard.get() => error.set(Some(message)),
                     _ => (),
+                }
+                if guard.get() {
+                    loading.set(false);
                 }
             });
             move || alive.set(false)
@@ -223,8 +246,10 @@ pub(super) fn shenlun_source_answer_panel(props: &ShenlunSourceAnswerPanelProps)
                     <p class="text-xs opacity-60">{value.provenance.clone()}</p>
                     {render_question_bank_markdown(&value.text)}
                 </article>
-            } else {
-                <p class="text-sm text-base-content/60">{"本题完成 AI 批改后可查看来源参考答案。"}</p>
+            } else if *loading {
+                <p class="text-sm text-base-content/60" role="status">{"正在加载题库参考答案…"}</p>
+            } else if error.is_none() {
+                <p class="text-sm text-base-content/60">{"题库暂无可展示的参考答案。"}</p>
             }
             if let Some(message) = (*error).as_ref() {
                 <p role="alert" class="text-sm text-error">{message.clone()}</p>
