@@ -918,6 +918,7 @@ impl QuestionBankAiService {
         let request_id = request_uuid(request_id)?;
         let hash = request_hash(&intent)?;
         let locator = self.bank.question_ai_locator(question_id).await?;
+        let max_input = if locator.subject == "shenlun" {50_032} else {MAX_FOLLOW_UP};
         let key = key(&locator);
         let mut active = self.active.lock().await;
         if let Some(existing) = self.request_for_key(&key, &request_id).await? {
@@ -933,7 +934,7 @@ impl QuestionBankAiService {
             RequestIntent::Initial {
                 instruction: Some(value),
                 ..
-            } if value.chars().count() > MAX_FOLLOW_UP
+            } if value.chars().count() > max_input
                 || value.chars().any(|c| c.is_control() && c != '\n') =>
             {
                 return Err(AiReviewError::Invalid);
@@ -943,7 +944,7 @@ impl QuestionBankAiService {
                 attachments,
             } if (message.is_empty() && attachments.is_empty())
                 || message != message.trim()
-                || message.chars().count() > MAX_FOLLOW_UP
+                || message.chars().count() > max_input
                 || message.chars().any(|c| c.is_control() && c != '\n') =>
             {
                 return Err(AiReviewError::Invalid);
