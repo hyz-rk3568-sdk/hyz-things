@@ -9,7 +9,7 @@ use crate::domain::question_bank::{
     MaterialView, ModulePracticeFilters, PaperSummary, PracticeBrowseItem, PracticeCatalog,
     PracticeCategory, PracticeMode, PracticeModule, PracticeSession,
 };
-use crate::domain::question_bank::{StudyPlan, StudyPlanItem};
+use crate::domain::question_bank::{ShenlunAttempt, StudyPlan, StudyPlanItem};
 use async_trait::async_trait;
 use futures_util::TryStreamExt;
 use sqlx::{
@@ -108,8 +108,158 @@ impl SqliteQuestionBankRepository {
         Ok(Self { pool })
     }
 }
+fn shenlun_from_row(row: &sqlx::sqlite::SqliteRow) -> Result<ShenlunAttempt, BankError> {
+    Ok(ShenlunAttempt {
+        id: row.try_get("id").map_err(|_| BankError::Storage)?,
+        paper_id: row.try_get("paper_id").map_err(|_| BankError::Storage)?,
+        question_id: row.try_get("question_id").map_err(|_| BankError::Storage)?,
+        source_hash: row.try_get("source_hash").map_err(|_| BankError::Storage)?,
+        text: row.try_get("answer_text").map_err(|_| BankError::Storage)?,
+        source_kind: row.try_get("source_kind").map_err(|_| BankError::Storage)?,
+        status: row.try_get("status").map_err(|_| BankError::Storage)?,
+        revision: row.try_get("revision").map_err(|_| BankError::Storage)?,
+        created_at_ms: row.try_get("created_at_ms").map_err(|_| BankError::Storage)?,
+        updated_at_ms: row.try_get("updated_at_ms").map_err(|_| BankError::Storage)?,
+        submitted_at_ms: row.try_get("submitted_at_ms").map_err(|_| BankError::Storage)?,
+    })
+}
+
+fn shenlun_now_ms() -> i64 {
+    use std::time::{SystemTime, UNIX_EPOCH};
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|duration| duration.as_millis().min(i64::MAX as u128) as i64)
+        .unwrap_or_default()
+}
+
 #[async_trait]
 impl QuestionBankRepositoryPort for SqliteQuestionBankRepository {
+    async fn shenlun_create_attempt(
+        &self,
+        attempt: ShenlunAttempt,
+    ) -> Result<ShenlunAttempt, BankError> {
+        let inserted = sqlx::query(
+            "INSERT OR IGNORE INTO shenlun_attempts(id,paper_id,question_id,source_hash,answer_text,source_kind,status,revision,created_at_ms,updated_at_ms,submitted_at_ms) VALUES(?,?,?,?,?,?,?,?,?,?,?)"
+        )
+        .bind(&attempt.id)
+        .bind(&attempt.paper_id)
+        .bind(&attempt.question_id)
+        .bind(&attempt.source_hash)
+        .bind(&attempt.text)
+        .bind(&attempt.source_kind)
+        .bind(&attempt.status)
+        .bind(attempt.revision)
+        .bind(attempt.created_at_ms)
+        .bind(attempt.updated_at_ms)
+        .bind(attempt.submitted_at_ms)
+        .execute(&self.pool)
+        .await
+        .map_err(|_| BankError::Storage)?;
+        let stored = self.shenlun_get_attempt(&attempt.id).await?;
+        if inserted.rows_affected() == 0
+            && (stored.paper_id != attempt.paper_id
+                || stored.question_id != attempt.question_id
+                || stored.source_hash != attempt.source_hash)
+        {
+            return Err(BankError::Conflict);
+        }
+        Ok(stored)
+    }
+
+    async fn shenlun_get_attempt(&self, id: &str) -> Result<ShenlunAttempt, BankError> {
+        let row = sqlx::query("SELECT * FROM shenlun_attempts WHERE id=?")
+            .bind(id)
+            .fetch_optional(&self.pool)
+            .await
+            .map_err(|_| BankError::Storage)?
+            .ok_or(BankError::NotFound)?;
+        shenlun_from_row(&row)
+    }
+
+    async fn shenlun_list_attempts(
+        &self,
+        question_id: &str,
+    ) -> Result<Vec<ShenlunAttempt>, BankError> {
+        let rows = sqlx::query(
+            "SELECT * FROM shenlun_attempts WHERE question_id=? ORDER BY created_at_ms DESC, id DESC",
+        )
+        .bind(question_id)
+        .fetch_all(&self.pool)
+        .await
+        .map_err(|_| BankError::Storage)?;
+        rows.iter().map(shenlun_from_row).collect()
+    }
+
+    async fn shenlun_save_draft(
+        &self,
+        id: &str,
+        expected_revision: i64,
+        text: &str,
+    ) -> Result<ShenlunAttempt, BankError> {
+        let result = sqlx::query(
+            "UPDATE shenlun_attempts SET answer_text=?,revision=revision+1,updated_at_ms=? WHERE id=? AND status='draft' AND revision=?",
+        )
+        .bind(text)
+        .bind(shenlun_now_ms())
+        .bind(id)
+        .bind(expected_revision)
+        .execute(&self.pool)
+        .await
+        .map_err(|_| BankError::Storage)?;
+        if result.rows_affected() == 0 {
+            return match self.shenlun_get_attempt(id).await {
+                Ok(_) => Err(BankError::Conflict),
+                Err(error) => Err(error),
+            };
+        }
+        self.shenlun_get_attempt(id).await
+    }
+
+    async fn shenlun_submit_attempt(&self, id: &str) -> Result<ShenlunAttempt, BankError> {
+        let mut tx = self.pool.begin().await.map_err(|_| BankError::Storage)?;
+        let row = sqlx::query("SELECT * FROM shenlun_attempts WHERE id=?")
+            .bind(id)
+            .fetch_optional(&mut *tx)
+            .await
+            .map_err(|_| BankError::Storage)?
+            .ok_or(BankError::NotFound)?;
+        let current = shenlun_from_row(&row)?;
+        if current.status == "submitted" {
+            tx.commit().await.map_err(|_| BankError::Storage)?;
+            return Ok(current);
+        }
+        if current.text.trim().is_empty() || current.status != "draft" {
+            return Err(BankError::Invalid);
+        }
+        let now = shenlun_now_ms();
+        let changed = sqlx::query(
+            "UPDATE shenlun_attempts SET status='submitted',submitted_at_ms=?,updated_at_ms=? WHERE id=? AND status='draft' AND revision=?",
+        )
+        .bind(now)
+        .bind(now)
+        .bind(id)
+        .bind(current.revision)
+        .execute(&mut *tx)
+        .await
+        .map_err(|_| BankError::Storage)?;
+        if changed.rows_affected() != 1 {
+            return Err(BankError::Conflict);
+        }
+        sqlx::query(
+            "INSERT INTO shenlun_attempt_revisions(attempt_id,revision,answer_text,source_kind,submitted_at_ms) VALUES(?,?,?,?,?)",
+        )
+        .bind(id)
+        .bind(current.revision)
+        .bind(&current.text)
+        .bind(&current.source_kind)
+        .bind(now)
+        .execute(&mut *tx)
+        .await
+        .map_err(|_| BankError::Storage)?;
+        tx.commit().await.map_err(|_| BankError::Storage)?;
+        self.shenlun_get_attempt(id).await
+    }
+
     async fn data_revision(&self) -> Result<i64, BankError> {
         sqlx::query_scalar("SELECT revision FROM data_revision WHERE id = 1")
             .fetch_one(&self.pool)
