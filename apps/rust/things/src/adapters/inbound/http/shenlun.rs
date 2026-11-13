@@ -17,11 +17,6 @@ pub(super) struct OcrRequest {
     attachments: Vec<String>,
 }
 
-#[derive(serde::Serialize)]
-struct OcrResponse {
-    markdown: String,
-}
-
 #[expect(
     clippy::result_large_err,
     reason = "Axum responses are returned directly by the handler"
@@ -86,7 +81,7 @@ pub(super) async fn ocr(
         Err(error) => return error,
     };
     match service.ocr(&id, &input.attachments).await {
-        Ok(markdown) => Json(OcrResponse { markdown }).into_response(),
+        Ok(result) => Json(result).into_response(),
         Err(error) => ai_error(error),
     }
 }
