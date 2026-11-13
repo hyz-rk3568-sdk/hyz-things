@@ -147,6 +147,29 @@ pub(super) async fn stop(
         Err(error) => ai_error(error),
     }
 }
+pub(super) async fn delete_record(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    service: Service,
+    Path(id): Path<String>,
+    payload: Result<Json<EmptyJsonRequest>, JsonRejection>,
+) -> Response {
+    if let Err(response) = authorize_sensitive_control_admin(&state, &headers).await {
+        return response;
+    }
+    if let Err(error) = decode_control_json(payload) {
+        return error.response();
+    }
+    let service = match require_service(service) {
+        Ok(service) => service,
+        Err(error) => return error,
+    };
+    match service.delete_record(&id).await {
+        Ok(()) => StatusCode::NO_CONTENT.into_response(),
+        Err(error) => ai_error(error),
+    }
+}
+
 pub(super) async fn confirm(
     State(state): State<AppState>,
     headers: HeaderMap,
