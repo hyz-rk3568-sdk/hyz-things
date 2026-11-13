@@ -1,8 +1,9 @@
 //! 申论训练：复用 Question Bank 真题复盘工作区，而非建立第二套考试 Session。
+use super::favorite_flashcard::{favorite_can_create, FavoriteFlashcardWorkspace, FavoritePreview};
 use super::material_scroll::{use_training_scroll_pair, MaterialScrollButton};
 use super::*;
 use hyz_things::domain::question_bank::{
-    CreateShenlunAttempt, PaperSummary, PaperView, QuestionView, ShenlunAttempt,
+    CreateShenlunAttempt, FavoriteState, PaperSummary, PaperView, QuestionView, SetFavorite, ShenlunAttempt,
 };
 
 #[derive(Properties, PartialEq)]
@@ -62,6 +63,41 @@ pub(super) fn shenlun_training(props: &ShenlunTrainingProps) -> Html {
     let scroll = use_training_scroll_pair();
     let question_key = (*paper).as_ref().and_then(|p|
         p.questions.get(*selected).map(|question| (p.id.clone(), question.id.clone())));
+    let favorite=use_practice_favorite(question_key.as_ref().map(|(_,id)|id.clone()));
+    let favorite_busy=use_state(||false);
+    let flashcard_preview=use_state(||None::<(String,FavoritePreview)>);
+    let flashcard_error=use_state(||None::<String>);
+    let flashcard_open=use_state(||false);
+    let flashcard_revision=use_state(||0_u32);
+    {
+        let flashcard_preview=flashcard_preview.clone();
+        let flashcard_error=flashcard_error.clone();
+        let flashcard_open=flashcard_open.clone();
+        use_effect_with((question_key.clone(),*flashcard_revision),move |(key,_)|{
+            let alive=Rc::new(Cell::new(true));
+            let guard=alive.clone();
+            flashcard_preview.set(None);
+            flashcard_error.set(None);
+            flashcard_open.set(false);
+            if let Some((_,qid))=key.clone(){
+                let flashcard_preview=flashcard_preview.clone();
+                let flashcard_error=flashcard_error.clone();
+                spawn_local(async move {
+                    let result=fetch_json::<FavoritePreview>(
+                        &format!("/api/v1/question-bank/practice/questions/{qid}/flashcard-preview"),
+                        "申论 Flashcard 预览"
+                    ).await;
+                    if guard.get(){
+                        match result {
+                            Ok(preview)=>flashcard_preview.set(Some((qid,preview))),
+                            Err(message)=>flashcard_error.set(Some(message)),
+                        }
+                    }
+                });
+            }
+            move ||alive.set(false)
+        });
+    }
 
     {
         let papers = papers.clone();
@@ -280,6 +316,56 @@ pub(super) fn shenlun_training(props: &ShenlunTrainingProps) -> Html {
                 </div>
             </section>
         };
+        let favorite_value=(*favorite.value).as_ref()
+            .filter(|state|state.question_id==question_id);
+        let card_preview=(*flashcard_preview).as_ref().and_then(|(id,preview)|
+            (id==&question_id).then_some(preview));
+        let starred=favorite_value.is_some_and(|state|state.favorite);
+        let favorite_ready=favorite_value.is_some();
+        let on_favorite={
+            let csrf=props.csrf.clone();
+            let qid=question_id.clone();
+            let favorite_value=favorite.value.clone();
+            let favorite_busy=favorite_busy.clone();
+            let error=error.clone();
+            Callback::from(move |_|{
+                if !favorite_ready || *favorite_busy {return;}
+                favorite_busy.set(true);
+                let csrf=csrf.clone();
+                let qid=qid.clone();
+                let favorite_value=favorite_value.clone();
+                let favorite_busy=favorite_busy.clone();
+                let error=error.clone();
+                spawn_local(async move{
+                    let result:Result<FavoriteState,String>=post_json_response(
+                        &format!("/api/v1/question-bank/practice/favorites/{qid}"),
+                        &csrf,&SetFavorite{favorite:!starred},"收藏申论原题"
+                    ).await;
+                    match result{
+                        Ok(state) if state.question_id==qid=>favorite_value.set(Some(state)),
+                        Ok(_)=>error.set(Some("收藏响应与当前题目不一致".into())),
+                        Err(message)=>error.set(Some(message)),
+                    }
+                    favorite_busy.set(false);
+                });
+            })
+        };
+        let leading=html!{
+            <super::question_header_actions::QuestionHeaderActions
+                favorite={favorite_value.map(|state|state.favorite)}
+                favorite_busy={*favorite_busy || !favorite_ready}
+                favorite_label={if !favorite_ready {"正在加载收藏状态"} else if starred {"取消收藏"} else {"收藏题目"}}
+                favorite_test_id="shenlun-favorite"
+                on_favorite={on_favorite}
+                flashcard_count={card_preview.map(|preview|preview.existing.len())}
+                flashcard_can_create={card_preview.is_some_and(favorite_can_create)}
+                flashcard_create_test_id="shenlun-create-flashcard"
+                flashcard_manage_test_id="shenlun-manage-flashcard"
+                on_flashcard={Callback::from({
+                    let flashcard_open=flashcard_open.clone();
+                    move |_|flashcard_open.set(true)
+                })}/>
+        };
         let menu = {
             let mode = mode.clone();
             let menu_open = menu_open.clone();
@@ -340,6 +426,7 @@ pub(super) fn shenlun_training(props: &ShenlunTrainingProps) -> Html {
                         <span class="ml-2 text-xs text-base-content/55">{question.map(topic_label).unwrap_or("申论")}</span>
                     </div>
                     <div class="ml-auto flex shrink-0 items-center gap-0">
+                        {leading}
                         <button type="button" class={classes!(icon_button,if mode_value=="grade" {"text-primary"} else {""})}
                             aria-label="AI 批改" title="AI 批改" data-testid="shenlun-mode-grade"
                             onclick={Callback::from({let mode=mode.clone();move |_|mode.set("grade".into())})}>{"批"}</button>
@@ -355,7 +442,23 @@ pub(super) fn shenlun_training(props: &ShenlunTrainingProps) -> Html {
                         {menu}
                     </div>
                 </div>
-                if mode_value=="ai" {
+                if *flashcard_open {
+                    if let Some(preview)=card_preview {
+                        <div class="min-h-0 flex-1 overflow-y-auto p-3" data-testid="shenlun-flashcard-workspace">
+                            <FavoriteFlashcardWorkspace key={question_id.clone()}
+                                question_id={question_id.clone()} preview={preview.clone()}
+                                csrf={props.csrf.clone()}
+                                on_close={Callback::from({
+                                    let flashcard_open=flashcard_open.clone();
+                                    move |_|flashcard_open.set(false)
+                                })}
+                                on_changed={Callback::from({
+                                    let flashcard_revision=flashcard_revision.clone();
+                                    move |_|flashcard_revision.set(flashcard_revision.wrapping_add(1))
+                                })}/>
+                        </div>
+                    }
+                } else if mode_value=="ai" {
                     <QuestionAiReview key={question_id.clone()} csrf={props.csrf.clone()}
                         question_id={question_id.clone()} question_content={question_body.clone()}
                         question_scroll={scroll.second.clone()} on_question_scroll={scroll.on_scroll.clone()}
