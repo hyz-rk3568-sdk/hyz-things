@@ -7,6 +7,20 @@ fn is_shenlun_scope(subject: &str, role: &str, kind: &str) -> bool {
     subject == "shenlun" && role == "primary" && kind == "exam"
 }
 
+/// Server-only source snapshot. Never serialize this type into pre-grading HTTP responses.
+#[derive(Clone, Debug)]
+pub struct ShenlunSourceContext {
+    pub paper_id: String,
+    pub question_id: String,
+    pub paper_title: String,
+    pub source_hash: String,
+    pub stem: String,
+    pub question_type: Option<String>,
+    pub max_score: Option<f64>,
+    pub materials: Vec<crate::domain::question_bank::MaterialView>,
+    pub reference_answer: String,
+}
+
 impl QuestionBankApplication {
     async fn shenlun_question_hash(
         &self,
@@ -18,6 +32,40 @@ impl QuestionBankApplication {
             return Err(BankError::NotFound);
         }
         Ok(self.repository.paper_content(paper_id).await?.hash)
+    }
+
+    /// Re-check the subject and stored source hash at the application boundary.
+    /// Reference answers only leave this function to the protected native grading service.
+    pub async fn shenlun_source_context(
+        &self,
+        paper_id: &str,
+        question_id: &str,
+    ) -> Result<ShenlunSourceContext, BankError> {
+        let paper = self.shenlun_paper(paper_id).await?;
+        if !paper.questions.iter().any(|question| question.id == question_id) {
+            return Err(BankError::NotFound);
+        }
+        let source = self.repository.paper_content(paper_id).await?;
+        let question = source
+            .questions
+            .into_iter()
+            .find(|question| question.id == question_id && question.answer_type == "subjective")
+            .ok_or(BankError::NotFound)?;
+        let materials = source.materials.into_iter()
+            .filter(|material| question.materials.contains(&material.name)
+                || question.materials.contains(&material.id))
+            .collect();
+        Ok(ShenlunSourceContext {
+            paper_id: paper.id,
+            question_id: question.id,
+            paper_title: paper.title,
+            source_hash: source.hash,
+            stem: question.stem,
+            question_type: question.question_type,
+            max_score: question.max_score,
+            materials,
+            reference_answer: question.reference_answer,
+        })
     }
 
     /// Create with a client UUID, retrying the same request never duplicates an attempt.
