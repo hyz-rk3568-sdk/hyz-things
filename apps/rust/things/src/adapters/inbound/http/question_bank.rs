@@ -2,7 +2,7 @@ use super::*;
 use crate::adapters::outbound::question_bank_ai::{AiReviewError, QuestionBankAiService};
 use crate::application::question_bank::{BankError, QuestionBankApplication};
 use crate::domain::question_bank::{
-    CreatePracticeRequest, ModulePracticeFilters, PracticeMode, SavePracticeAnswer, SetFavorite,
+    CreatePracticeRequest, CreateShenlunAttempt, ModulePracticeFilters, PracticeMode, SavePracticeAnswer, SaveShenlunDraft, SetFavorite,
     SetPracticePaused, StudyPlan,
 };
 use axum::Extension;
@@ -773,6 +773,124 @@ pub(super) async fn shenlun_paper(
     };
     match app.shenlun_paper(&id).await {
         Ok(paper) => Json(paper).into_response(),
+        Err(error) => bank_error(error),
+    }
+}
+
+#[derive(serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(super) struct ShenlunAttemptsQuery {
+    paper_id: String,
+    question_id: String,
+}
+
+pub(super) async fn shenlun_attempts(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    service: Service,
+    axum::extract::Query(query): axum::extract::Query<ShenlunAttemptsQuery>,
+) -> Response {
+    if let Err(response) = authorize_sensitive_read(&state, &headers).await {
+        return response;
+    }
+    let app = match available(service) {
+        Ok(app) => app,
+        Err(error) => return bank_error(error),
+    };
+    match app.shenlun_attempts(&query.paper_id, &query.question_id).await {
+        Ok(attempts) => Json(attempts).into_response(),
+        Err(error) => bank_error(error),
+    }
+}
+
+pub(super) async fn shenlun_attempt_create(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    service: Service,
+    payload: Result<Json<CreateShenlunAttempt>, JsonRejection>,
+) -> Response {
+    if let Err(response) = authorize_sensitive_control_admin(&state, &headers).await {
+        return response;
+    }
+    let request = match decode_control_json(payload) {
+        Ok(value) => value,
+        Err(error) => return error.response(),
+    };
+    let app = match available(service) {
+        Ok(app) => app,
+        Err(error) => return bank_error(error),
+    };
+    match app.create_shenlun_attempt(request).await {
+        Ok(attempt) => (StatusCode::CREATED, Json(attempt)).into_response(),
+        Err(error) => bank_error(error),
+    }
+}
+
+pub(super) async fn shenlun_attempt_read(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    service: Service,
+    Path(id): Path<String>,
+) -> Response {
+    if let Err(response) = authorize_sensitive_read(&state, &headers).await {
+        return response;
+    }
+    let app = match available(service) {
+        Ok(app) => app,
+        Err(error) => return bank_error(error),
+    };
+    match app.shenlun_attempt(&id).await {
+        Ok(attempt) => Json(attempt).into_response(),
+        Err(error) => bank_error(error),
+    }
+}
+
+pub(super) async fn shenlun_attempt_save(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    service: Service,
+    Path(id): Path<String>,
+    payload: Result<Json<SaveShenlunDraft>, JsonRejection>,
+) -> Response {
+    if let Err(response) = authorize_sensitive_control_admin(&state, &headers).await {
+        return response;
+    }
+    let request = match decode_control_json(payload) {
+        Ok(value) => value,
+        Err(error) => return error.response(),
+    };
+    let app = match available(service) {
+        Ok(app) => app,
+        Err(error) => return bank_error(error),
+    };
+    match app
+        .save_shenlun_draft(&id, request.expected_revision, &request.text)
+        .await
+    {
+        Ok(attempt) => Json(attempt).into_response(),
+        Err(error) => bank_error(error),
+    }
+}
+
+pub(super) async fn shenlun_attempt_submit(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    service: Service,
+    Path(id): Path<String>,
+    payload: Result<Json<EmptyJsonRequest>, JsonRejection>,
+) -> Response {
+    if let Err(response) = authorize_sensitive_control_admin(&state, &headers).await {
+        return response;
+    }
+    if let Err(error) = decode_control_json(payload) {
+        return error.response();
+    }
+    let app = match available(service) {
+        Ok(app) => app,
+        Err(error) => return bank_error(error),
+    };
+    match app.submit_shenlun_attempt(&id).await {
+        Ok(attempt) => Json(attempt).into_response(),
         Err(error) => bank_error(error),
     }
 }
