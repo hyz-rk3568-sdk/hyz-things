@@ -1334,10 +1334,11 @@ pub(crate) fn question_ai_review(props: &QuestionAiReviewProps) -> Html {
             }
             let draft = (*follow_up).clone();
             let message = if grade_mode {
-                format!("【申论批改请求或追问】\n如果以下内容是一份新答案，请按当前题目给出完整批改；如果是针对之前报告的问题，请直接解答，不把问题误认为答卷。\n{}", draft.trim())
+                format!("【申论批改请求或追问】\n如果以下内容是一份新答案，请按当前题目给出完整批改；如果是针对之前报告的问题，请直接解答，不把问题误认为答卷。用户确认此前的手写转写无误时，可以继续完成评分。\n{}", draft.trim())
             } else {
                 draft.trim().to_owned()
             };
+            let message = message.trim().to_owned();
             if (message.is_empty() && follow_images.is_empty()) || message.chars().count() > (if grade_mode {50_256} else {2000}) {
                 return;
             }
