@@ -1,6 +1,6 @@
 //! 申论训练：复用 Question Bank 真题复盘工作区，而非建立第二套考试 Session。
 use super::favorite_flashcard::{favorite_can_create, FavoriteFlashcardWorkspace, FavoritePreview};
-use super::question_bank_practice::{use_practice_favorite, QuestionAiReview, QuestionBankQuestionHeader};
+use super::question_bank_practice::{ai_draft_key, ai_draft_write, use_practice_favorite, QuestionAiReview, QuestionBankQuestionHeader};
 use super::material_scroll::{use_training_scroll_pair, MaterialScrollButton};
 use super::*;
 use hyz_things::domain::question_bank::{
@@ -234,6 +234,12 @@ pub(super) fn shenlun_training(props: &ShenlunTrainingProps) -> Html {
         Callback::from(move |next: ShenlunAttempt| {
             if active_question.borrow().as_ref() != Some(&(next.paper_id.clone(), next.question_id.clone())) {
                 return;
+            }
+            // Transfer the human-confirmed OCR text into the existing AI composer,
+            // not into a separate grading history or session.
+            if !next.text.trim().is_empty() {
+                ai_draft_write(&ai_draft_key(&next.question_id, "start"), &next.text);
+                ai_draft_write(&ai_draft_key(&next.question_id, "follow-up"), &next.text);
             }
             let mut history = (*attempts).clone();
             if let Some(row) = history.iter_mut().find(|row| row.id == next.id) {
