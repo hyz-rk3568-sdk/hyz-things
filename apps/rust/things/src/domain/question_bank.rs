@@ -100,6 +100,39 @@ pub struct PaperView {
     pub materials: Vec<MaterialView>,
 }
 
+
+/// Subjective 申论 work is independent of the A–Z objective answer contract.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct CreateShenlunAttempt {
+    /// Client-generated UUID: retries of the same creation are idempotent.
+    pub request_id: String,
+    pub paper_id: String,
+    pub question_id: String,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct SaveShenlunDraft {
+    pub expected_revision: i64,
+    pub text: String,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ShenlunAttempt {
+    pub id: String,
+    pub paper_id: String,
+    pub question_id: String,
+    pub source_hash: String,
+    pub text: String,
+    pub source_kind: String,
+    pub status: String,
+    pub revision: i64,
+    pub created_at_ms: i64,
+    pub updated_at_ms: i64,
+    pub submitted_at_ms: Option<i64>,
+}
+
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct BankSyncSummary {
     pub papers: usize,
