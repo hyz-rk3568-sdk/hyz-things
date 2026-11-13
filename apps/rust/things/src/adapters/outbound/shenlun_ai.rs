@@ -160,7 +160,7 @@ impl ShenlunAiService {
         for message in review.messages {
             if message.role == "user" &&
                 (message.content.starts_with("【申论批改】") ||
-                 message.content.starts_with("【申论批改交流】")) {
+                 message.content.starts_with("【申论批改请求或追问】")) {
                 requested = true;
             }
             if requested && message.role == "assistant" &&
