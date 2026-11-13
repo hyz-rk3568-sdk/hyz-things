@@ -178,7 +178,11 @@ impl ShenlunAiService {
         if attempt.status != "submitted" {
             return Err(ShenlunAiError::NotReady);
         }
-        self.completed_grade(&attempt).await?;
+        // Once legitimately revealed, removing an AI grade must not revoke the
+        // already-recorded source-answer exposure. New attempts are still gated.
+        if attempt.reference_viewed_at_ms.is_none() {
+            self.completed_grade(&attempt).await?;
+        }
         let source = self
             .bank
             .shenlun_source_context(&attempt.paper_id, &attempt.question_id)
