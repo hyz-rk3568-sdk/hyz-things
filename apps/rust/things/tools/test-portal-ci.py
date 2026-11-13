@@ -113,6 +113,26 @@ if [[ "${0##*/}" == make || "${1:-}" == fmt ]]; then exit 1; fi
             self.assertIn(f"e2e/{spec}", selection)
         self.assertNotIn("HYZ_THINGS_E2E_BROWSER=", e2e)
 
+    def test_generation_pr_focus_keeps_critical_regressions_in_scope(self):
+        config = (ROOT / "apps/rust/things/playwright.config.ts").read_text()
+        matched = re.search(
+            r"if \(event\.pull_request\?\.title\?\.includes\('\[focus-generation-e2e\]'\)\) \{"
+            r"([\s\S]*?)\n    \}", config
+        )
+        self.assertIsNotNone(matched, "generation PR focus must be explicit")
+        scope = matched.group(1)
+        for title in (
+            "logic and quantitative preparation display transient Codex activity",
+            "data analysis shows parallel job activity",
+            "AI delete busy conflict remains",
+            "deleting saved AI analysis sends",
+            "dragging the split keeps both pane scroll positions",
+            "split ratio is restored after reloading",
+        ):
+            with self.subTest(title=title):
+                self.assertIn(title, scope)
+        self.assertIn("if (!process.env.CI || !eventPath", config)
+
     def test_adaptive_e2e_shards_use_one_runner_up_to_sixty_and_two_after(self):
         planner = self.jobs["e2e-plan"]
         e2e = self.jobs["e2e"]
