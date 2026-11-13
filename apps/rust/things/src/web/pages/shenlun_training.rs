@@ -438,9 +438,7 @@ pub(super) fn shenlun_training(props: &ShenlunTrainingProps) -> Html {
                             <p class="mt-3 text-sm text-base-content/60">{"正在加载本题 AI 批改…"}</p>
                         } else if let Some(record)=(*attempt).as_ref() {
                             <ShenlunAiPanel key={record.id.clone()} attempt={record.clone()}
-                                csrf={props.csrf.clone()} attempts={(*attempts).clone()}
-                                mode={mode_value.clone()}
-                                regrade_signal={0} delete_signal={0}
+                                csrf={props.csrf.clone()} mode={mode_value.clone()}
                                 on_confirm={on_confirm.clone()}/>
                         }
                         if let Some(message)=(*error).as_ref() {
