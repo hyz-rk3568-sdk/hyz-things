@@ -486,6 +486,7 @@ pub(super) fn shenlun_training(props: &ShenlunTrainingProps) -> Html {
                             }
                             if let Some(record)=(*attempt).as_ref() {
                                 <ShenlunAiPanel attempt={record.clone()} csrf={props.csrf.clone()}
+                                    attempts={(*attempt_history).clone()}
                                     is_essay={question.question_type.as_deref() == Some("essay")}
                                 on_confirm={Callback::from({
                                     let attempt=attempt.clone();
