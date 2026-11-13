@@ -76,5 +76,4 @@ pub trait QuantitativeGenerationPort: Send + Sync {
     ) -> Result<Vec<crate::domain::quantitative_relations::GeneratedQuestion>, String> {
         self.generate(request, cancellation).await
     }
-
 }
