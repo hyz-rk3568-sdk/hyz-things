@@ -1,7 +1,7 @@
 # 专项训练 · 申论 AI 复盘实施 Plan
 
-日期：2026-11-13  
-PR：[#122](https://github.com/hyz-rk3568-sdk/hyz-things/pull/122)（Draft）  
+日期：2026-11-13
+PR：[#122](https://github.com/hyz-rk3568-sdk/hyz-things/pull/122)（Draft）
 范围：本 PR 内完成全部改动、专项测试与验收；未使用的原型不做数据迁移、评分格式兼容或旧版 UI 兼容。
 
 ## 1. 业务目标与边界
