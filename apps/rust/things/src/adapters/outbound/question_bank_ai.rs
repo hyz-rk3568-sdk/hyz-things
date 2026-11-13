@@ -1516,6 +1516,9 @@ mod tests {
         assert!(prompt.contains("hyz-shenlun/SKILL.md"));
         assert!(prompt.contains("帮我分析采分点"));
         assert!(!prompt.contains("读取 .agents/skills/行测做题/SKILL.md"));
+        // Thread management belongs to the app server, never the AI prompt.
+        assert!(!prompt.contains("Codex Thread"));
+        assert!(!prompt.contains("新建会话"));
     }
 
     #[test]
