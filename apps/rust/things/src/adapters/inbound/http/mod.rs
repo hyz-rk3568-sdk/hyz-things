@@ -782,7 +782,7 @@ fn app_with_assets(
             on(MethodFilter::POST, shenlun::confirm).layer(DefaultBodyLimit::max(200 * 1024)),
         )
         .route(
-            "/api/v1/question-bank/shenlun/attempts/{id}/source-answer",
+            "/api/v1/question-bank/shenlun/questions/{id}/source-answer",
             on(MethodFilter::GET, shenlun::reference),
         )
         .route(
