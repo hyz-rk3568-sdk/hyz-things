@@ -106,6 +106,7 @@ pub(super) fn shenlun_ai_panel(props: &ShenlunAiPanelProps) -> Html {
     let comparison_target = use_state(|| None::<ShenlunAttempt>);
     let comparison_jobs = use_state(Vec::<ShenlunJob>::new);
     let comparison_error = use_state(|| None::<String>);
+    let confirm_uncertain = use_state(|| false);
     let attempt_id = props.attempt.id.clone();
     {
         // Clear private results when switching questions/attempts.
@@ -243,11 +244,16 @@ pub(super) fn shenlun_ai_panel(props: &ShenlunAiPanelProps) -> Html {
         let images = images.clone();
         let csrf = props.csrf.clone();
         let jobs = jobs.clone();
+        let confirm_uncertain = confirm_uncertain.clone();
         let error = error.clone();
         let task_busy = task_busy.clone();
         let poll = poll.clone();
         Callback::from(move |kind: String| {
             if *task_busy || jobs.iter().any(|job| job.status == "running") {
+                return;
+            }
+            if jobs.iter().any(|job| job.status == "unknown") && !*confirm_uncertain {
+                error.set(Some("上一任务的远端状态不确定，请先勾选确认再新建请求。".into()));
                 return;
             }
             let request_id = match super::shenlun_training::new_shenlun_attempt_id() {
@@ -275,6 +281,7 @@ pub(super) fn shenlun_ai_panel(props: &ShenlunAiPanelProps) -> Html {
                     request_id,
                     kind,
                     attachments,
+                    confirm_uncertain: *confirm_uncertain,
                 };
                 let response: Result<ShenlunJob, String> =
                     post_json_response(&endpoint, &csrf, &request, "启动申论 AI").await;
@@ -471,6 +478,13 @@ pub(super) fn shenlun_ai_panel(props: &ShenlunAiPanelProps) -> Html {
                     Err(message) => error.set(Some(message)),
                 }
             });
+        })
+    };
+    let acknowledge_uncertain = {
+        let confirm_uncertain = confirm_uncertain.clone();
+        Callback::from(move |event: Event| {
+            let input: web_sys::HtmlInputElement = event.target_unchecked_into();
+            confirm_uncertain.set(input.checked());
         })
     };
     let choose_history = {
@@ -721,6 +735,13 @@ pub(super) fn shenlun_ai_panel(props: &ShenlunAiPanelProps) -> Html {
                 }
             }
             if let Some(message)=(*error).as_ref() {<p class="text-error text-xs" role="alert">{message}</p>}
+            if jobs.iter().any(|job|job.status=="unknown") {
+                <label class="flex items-start gap-2 text-sm text-warning">
+                    <input type="checkbox" class="checkbox checkbox-sm" checked={*confirm_uncertain}
+                        onchange={acknowledge_uncertain}/>
+                    <span>{"已知悉上一任务远端状态无法确认，重试可能重复消耗额度；确认后才允许新建请求。"}</span>
+                </label>
+            }
             if let Some(failed)=jobs.iter().find(|job|matches!(job.status.as_str(),"failed"|"unknown"|"stopped")) {
                 <p class="text-warning text-xs">{format!("{}：{}；可以重新发起新请求，旧稿保留。",
                     failed.kind,failed.error.as_deref().unwrap_or(&failed.status))}</p>
