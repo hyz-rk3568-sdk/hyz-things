@@ -55,12 +55,9 @@ pub(super) fn shenlun_training(props: &ShenlunTrainingProps) -> Html {
     let attempt = use_state(|| None::<ShenlunAttempt>);
     let attempts = use_state(Vec::<ShenlunAttempt>::new);
     let attempt_loading = use_state(|| false);
-    let attempt_busy = use_state(|| false);
     let mode = use_state(|| "ai".to_owned());
     let menu_open = use_state(|| false);
     let ai_delete_signal = use_state(|| 0_u32);
-    let grade_regrade_signal = use_state(|| 0_u32);
-    let grade_delete_signal = use_state(|| 0_u32);
     let scroll = use_training_scroll_pair();
     let question_key = (*paper).as_ref().and_then(|p|
         p.questions.get(*selected).map(|question| (p.id.clone(), question.id.clone())));
@@ -127,7 +124,7 @@ pub(super) fn shenlun_training(props: &ShenlunTrainingProps) -> Html {
     }
     // An attempt is only the native grade job's immutable input container.
     // Nothing here creates an objective practice session, countdown, or exam submission.
-    let needs_attempt = *mode != "ai";
+    let needs_attempt = *mode == "ocr" || *mode == "source";
     {
         let attempt = attempt.clone();
         let attempts = attempts.clone();
@@ -228,55 +225,6 @@ pub(super) fn shenlun_training(props: &ShenlunTrainingProps) -> Html {
             immersive.emit(false);
             mode.set("ai".into());
             paper.set(None);
-        })
-    };
-    let new_attempt = {
-        let key = question_key.clone();
-        let csrf = props.csrf.clone();
-        let busy = attempt_busy.clone();
-        let attempt = attempt.clone();
-        let attempts = attempts.clone();
-        let error = error.clone();
-        let mode = mode.clone();
-        let active_question = active_question.clone();
-        Callback::from(move |_| {
-            let Some((paper_id, question_id)) = key.clone() else { return; };
-            if *busy { return; }
-            let request_id = match new_shenlun_attempt_id() {
-                Ok(id) => id,
-                Err(message) => { error.set(Some(message)); return; }
-            };
-            busy.set(true);
-            let busy = busy.clone();
-            let attempt = attempt.clone();
-            let attempts = attempts.clone();
-            let error = error.clone();
-            let mode = mode.clone();
-            let csrf = csrf.clone();
-            let active_question = active_question.clone();
-            let source = (paper_id.clone(), question_id.clone());
-            spawn_local(async move {
-                let body = CreateShenlunAttempt { request_id, paper_id, question_id };
-                let result: Result<ShenlunAttempt, String> = post_json_response(
-                    "/api/v1/question-bank/shenlun/attempts", &csrf, &body, "新批改"
-                ).await;
-                // The user may have navigated away before the POST returned.
-                if active_question.borrow().as_ref() != Some(&source) {
-                    busy.set(false);
-                    return;
-                }
-                match result {
-                    Ok(created) => {
-                        let mut history = (*attempts).clone();
-                        history.insert(0, created.clone());
-                        attempts.set(history);
-                        attempt.set(Some(created));
-                        mode.set("grade".into());
-                    }
-                    Err(message) => error.set(Some(message)),
-                }
-                busy.set(false);
-            });
         })
     };
     let on_confirm = {
@@ -401,52 +349,29 @@ pub(super) fn shenlun_training(props: &ShenlunTrainingProps) -> Html {
                 })}/>
         };
         let menu = {
-            let mode = mode.clone();
             let menu_open = menu_open.clone();
-            let new_attempt = new_attempt.clone();
             let ai_delete_signal = ai_delete_signal.clone();
-            let grade_regrade_signal = grade_regrade_signal.clone();
-            let grade_delete_signal = grade_delete_signal.clone();
             html! {
                 <div class="relative">
-                    <button type="button" class={icon_button} aria-label="更多申论操作"
-                        title="更多申论操作" data-testid="shenlun-more"
+                    <button type="button" class={icon_button} aria-label="更多 AI 操作"
+                        title="更多 AI 操作" data-testid="shenlun-more"
                         onclick={Callback::from({let menu_open=menu_open.clone();move |_|menu_open.set(!*menu_open)})}>
                         {"⋮"}
                     </button>
                     if *menu_open {
                         <div class="absolute right-0 top-full z-50 min-w-40 rounded-box border border-base-content/10 bg-base-100 p-1 shadow-lg">
-                            if mode_value != "ai" {
-                                <button type="button" class="btn btn-ghost btn-sm w-full justify-start"
-                                    data-testid="shenlun-new-grade"
+                            if matches!(mode_value.as_str(), "grade"|"ai") {
+                                <button type="button" class="btn btn-ghost btn-sm w-full justify-start text-error"
+                                    data-testid="shenlun-delete-current"
                                     onclick={Callback::from({
-                                        let menu_open=menu_open.clone(); let new_attempt=new_attempt.clone();
-                                        move |_| {menu_open.set(false);new_attempt.emit(());}
-                                    })}>{"新批改"}</button>
-                                <button type="button" class="btn btn-ghost btn-sm w-full justify-start"
-                                    data-testid="shenlun-regrade"
-                                    onclick={Callback::from({
-                                        let menu_open=menu_open.clone(); let mode=mode.clone(); let signal=grade_regrade_signal.clone();
-                                        move |_| {menu_open.set(false);mode.set("grade".into());signal.set(signal.wrapping_add(1));}
-                                    })}>{"重新批改"}</button>
-                                <button type="button" class="btn btn-ghost btn-sm w-full justify-start"
-                                    data-testid="shenlun-history-open"
-                                    onclick={Callback::from({
-                                        let menu_open=menu_open.clone();let mode=mode.clone();
-                                        move |_| {menu_open.set(false);mode.set("history".into());}
-                                    })}>{"查看历史记录"}</button>
+                                        let menu_open=menu_open.clone();
+                                        let signal=ai_delete_signal.clone();
+                                        move |_| {
+                                            menu_open.set(false);
+                                            signal.set(signal.wrapping_add(1));
+                                        }
+                                    })}>{"删除 AI 对话"}</button>
                             }
-                            <button type="button" class="btn btn-ghost btn-sm w-full justify-start text-error"
-                                data-testid="shenlun-delete-current"
-                                onclick={Callback::from({
-                                    let menu_open=menu_open.clone();let mode=mode.clone();
-                                    let ai_delete_signal=ai_delete_signal.clone();let grade_delete_signal=grade_delete_signal.clone();
-                                    move |_| {
-                                        menu_open.set(false);
-                                        if *mode=="ai" {ai_delete_signal.set(ai_delete_signal.wrapping_add(1));}
-                                        else {mode.set("history".into());grade_delete_signal.set(grade_delete_signal.wrapping_add(1));}
-                                    }
-                                })}>{"删除当前 AI 记录"}</button>
                         </div>
                     }
                 </div>
@@ -498,9 +423,11 @@ pub(super) fn shenlun_training(props: &ShenlunTrainingProps) -> Html {
                                 })}/>
                         </div>
                     }
-                } else if mode_value=="ai" {
-                    <QuestionAiReview key={question_id.clone()} csrf={props.csrf.clone()}
-                        question_id={question_id.clone()} question_content={question_body.clone()}
+                } else if matches!(mode_value.as_str(), "grade"|"ai") {
+                    <QuestionAiReview key={format!("{}:{}",question_id,mode_value)}
+                        mode={if mode_value=="grade" {"grade"} else {"analysis"}}
+                        csrf={props.csrf.clone()} question_id={question_id.clone()}
+                        question_content={question_body.clone()}
                         question_scroll={scroll.second.clone()} on_question_scroll={scroll.on_scroll.clone()}
                         delete_signal={*ai_delete_signal}/>
                 } else {
@@ -513,7 +440,7 @@ pub(super) fn shenlun_training(props: &ShenlunTrainingProps) -> Html {
                             <ShenlunAiPanel key={record.id.clone()} attempt={record.clone()}
                                 csrf={props.csrf.clone()} attempts={(*attempts).clone()}
                                 mode={mode_value.clone()}
-                                regrade_signal={*grade_regrade_signal} delete_signal={*grade_delete_signal}
+                                regrade_signal={0} delete_signal={0}
                                 on_confirm={on_confirm.clone()}/>
                         }
                         if let Some(message)=(*error).as_ref() {
