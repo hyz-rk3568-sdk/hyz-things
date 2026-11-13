@@ -63,6 +63,11 @@ test('申论原卷复用地区年份目录和统一答题卡，不出现独立�
       return route.fulfill({ json: catalog });
     if (pathname.endsWith('/shenlun/papers/' + paperId) && method === 'GET')
       return route.fulfill({ json: paperView });
+    if (pathname.endsWith('/shenlun/questions/' + questionId + '/source-answer') && method === 'GET')
+      return route.fulfill({ json: {
+        text: '来源参考答案：压实基层责任。', provenance: '题库来源（非官方）',
+        source_hash: 'source-shenlun-v1',
+      } });
     if (pathname.endsWith('/shenlun/attempts') && method === 'GET')
       return route.fulfill({ json: attempts.get(searchParams.get('question_id') ?? '') ?? [] });
     if (pathname.endsWith('/shenlun/attempts') && method === 'POST') {
