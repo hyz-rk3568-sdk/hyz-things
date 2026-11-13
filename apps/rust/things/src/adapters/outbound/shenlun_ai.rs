@@ -1,11 +1,14 @@
 //! 申论 AI：评分与追问复用 Question Bank；OCR 是一次性 Codex Markdown 转写。
 use super::{data_analysis::CodexConfig, question_bank_ai::QuestionBankAiService};
 use crate::{
-    application::question_bank::{practice::{AiReviewEventSink, AiReviewProgress}, QuestionBankApplication},
+    application::question_bank::{
+        practice::{AiReviewEventSink, AiReviewProgress},
+        QuestionBankApplication,
+    },
     domain::question_bank::ShenlunSourceAnswer,
 };
-use std::sync::Arc;
 use serde::Serialize;
+use std::sync::Arc;
 use tokio::sync::Mutex;
 use tokio::sync::{watch, Semaphore};
 use uuid::Uuid;
@@ -111,9 +114,9 @@ impl ShenlunAiService {
     ) -> Result<OcrResult, ShenlunAiError> {
         if attachment_ids.is_empty()
             || attachment_ids.len() > 3
-            || attachment_ids.iter().any(|id| {
-                !Uuid::parse_str(id).is_ok_and(|uuid| uuid.to_string() == *id)
-            })
+            || attachment_ids
+                .iter()
+                .any(|id| !Uuid::parse_str(id).is_ok_and(|uuid| uuid.to_string() == *id))
         {
             return Err(ShenlunAiError::Invalid);
         }
