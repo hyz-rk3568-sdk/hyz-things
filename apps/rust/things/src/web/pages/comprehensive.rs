@@ -1308,6 +1308,9 @@ pub(crate) fn comprehensive_training(props: &ComprehensiveProps) -> Html {
     }
     html! {
         <TrainingSetupLayout test_id="analysis-setup" summary="20题 · 20分钟" detail={if ready_id.is_some() {"试卷已准备好，倒计时尚未开始"} else {"4份材料，每份5题"}}
+            activity={(*activity_job).as_ref().map(|id| html! {
+                <GenerationActivity module="data-analysis" job_id={id.clone()} test_prefix="analysis"/>
+            })}
             action={Some(if ready_id.is_some() {html!{<button type="button" class={TRAINING_PRIMARY_BUTTON} data-testid="analysis-enter" disabled={*busy} onclick={enter_ready}>{if *busy {"进入中…"} else {"进入训练 →"}}</button>}} else {html!{
                 <button type="button" class={TRAINING_PRIMARY_BUTTON} data-testid="analysis-start" disabled={*loading_status || *busy || *preparing || status.as_ref().as_ref().is_none_or(|s|!s.configured) || props.csrf.is_empty()} onclick={start}>
                     {if *busy || *preparing {"正在出题中…"} else {"准备试卷 →"}}</button>}})}>
@@ -1383,9 +1386,6 @@ pub(crate) fn comprehensive_training(props: &ComprehensiveProps) -> Html {
                             <p class="text-xs text-base-content/60">{"保存至 RK3568，可跨设备使用；正在生成的试卷继续采用启动时的版本。"}</p>
                         </div>
                     </details>
-                    if let Some(activity_id)=(*activity_job).as_ref() {
-                        <GenerationActivity module="data-analysis" job_id={activity_id.clone()} test_prefix="analysis"/>
-                    }
                     if let Some(p)=(*progress).clone(){
                         <div class="rounded-box bg-base-200 p-3 text-sm" data-testid="analysis-progress">
                             <div class="font-semibold">{format!("{} · 已生成 {}/20",p.state,p.verified)}</div>
