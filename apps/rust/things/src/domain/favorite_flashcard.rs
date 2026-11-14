@@ -121,6 +121,7 @@ fn module_root(module: &str) -> Option<&'static str> {
         "言语理解与表达" => Some("言语理解与表达"),
         "常识判断" => Some("常识判断"),
         "政治理论" => Some("政治理论"),
+        "申论" => Some("申论"),
         _ => None,
     }
 }
@@ -233,7 +234,13 @@ pub struct FavoriteEligibility {
 }
 
 pub fn eligibility(module: Option<&str>, category: Option<&str>) -> FavoriteEligibility {
-    let Some(module_name) = super::question_bank::primary_module(module) else {
+    let Some(module_name) = module.and_then(|name| {
+        if name.trim() == "申论" {
+            Some("申论")
+        } else {
+            super::question_bank::primary_module(Some(name))
+        }
+    }) else {
         return rejected("原题没有可识别的一级模块");
     };
     let category = category.unwrap_or("").trim();

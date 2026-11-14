@@ -51,6 +51,16 @@ nav.tabs > button.tab:not(.tab-active) {
 }
 
 @layer components {
+  .question-bank-ai-progress-summary {
+    min-width: 0;
+    max-width: 100%;
+    overflow: hidden;
+    overflow-wrap: anywhere;
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+  }
+
   .analysis-fullscreen {
     --analysis-gutter: 0.5rem;
     padding-top: calc(var(--app-safe-top) + var(--analysis-gutter));

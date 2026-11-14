@@ -11,13 +11,13 @@ pub(super) fn tool_execution_item(
     test_prefix: &str,
 ) -> Html {
     html! {
-        <section data-testid={format!("{test_prefix}-tool")}>
+        <section data-testid={format!("{test_prefix}-tool")} class="min-w-0 max-w-full">
             <p>{label.to_owned()}</p>
             if !command.is_empty() {
-                <pre class="mt-1 whitespace-pre-wrap break-all" data-testid={format!("{test_prefix}-command")}>{command.to_owned()}</pre>
+                <pre class="mt-1 min-w-0 max-w-full whitespace-pre-wrap break-all" data-testid={format!("{test_prefix}-command")}>{command.to_owned()}</pre>
             }
             if !output.is_empty() {
-                <pre class="mt-1 whitespace-pre-wrap break-all" data-testid={format!("{test_prefix}-output")}>{output.to_owned()}</pre>
+                <pre class="mt-1 min-w-0 max-w-full whitespace-pre-wrap break-all" data-testid={format!("{test_prefix}-output")}>{output.to_owned()}</pre>
             }
         </section>
     }
@@ -214,13 +214,15 @@ fn run_activity(props: &RunActivityProps) -> Html {
         _ => "执行记录",
     };
     html! {
-        <div data-testid="question-bank-ai-progress" class="py-1">
-            <button type="button" class="text-left text-xs text-base-content/60 hover:text-base-content" aria-expanded={opened.to_string()} onclick={toggle}>
-                {if *opened {"⌄ "} else {"› "}}{format!("第 {} 轮 · {status}", props.index + 1)}
-                {tools.last().map(|tool| format!(" · {}", if tool.2.is_empty() { &tool.1 } else { &tool.2 })).unwrap_or_default()}
+        <div data-testid="question-bank-ai-progress" class="min-w-0 max-w-full py-1">
+            <button type="button" class="flex w-full min-w-0 items-start gap-2 text-left text-xs text-base-content/60 hover:text-base-content" aria-expanded={opened.to_string()} onclick={toggle}>
+                <span class="shrink-0 whitespace-nowrap">{if *opened {"⌄ "} else {"› "}}{format!("第 {} 轮 · {status}", props.index + 1)}</span>
+                <span data-testid="question-bank-ai-progress-summary" class="question-bank-ai-progress-summary flex-1">
+                    {tools.last().map(|tool| if tool.2.is_empty() { tool.1.clone() } else { tool.2.clone() }).unwrap_or_default()}
+                </span>
             </button>
             if *opened {
-                <div class="mt-2 space-y-3 border-l border-base-content/15 pl-3">
+                <div class="mt-2 min-w-0 max-w-full space-y-3 border-l border-base-content/15 pl-3">
                     {for tools.iter().map(|(_, label, command, output)| {
                         tool_execution_item(label, command, output, "question-bank-ai")
                     })}

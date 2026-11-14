@@ -49,9 +49,119 @@ async function openShenlun(page: import('@playwright/test').Page) {
   await page.goto('/#/study/training');
   await page.getByTestId('training-mode-shenlun').click();
   await expect(page.getByTestId('shenlun-catalog')).toBeVisible();
-  await page.getByTestId('shenlun-open-paper').click();
+  await page.getByTestId('question-bank-paper-option').click();
+  await page.getByTestId('shenlun-start-review').click();
   await expect(page.getByTestId('shenlun-workspace')).toBeVisible();
 }
+
+async function scratchpadHasInk(page: import('@playwright/test').Page) {
+  return page.getByTestId('calculation-scratchpad-canvas').evaluate(element => {
+    const canvas = element as HTMLCanvasElement;
+    const pixels = canvas.getContext('2d')!.getImageData(0, 0, canvas.width, canvas.height).data;
+    for (let index = 3; index < pixels.length; index += 4) {
+      if (pixels[index] !== 0) return true;
+    }
+    return false;
+  });
+}
+
+async function scratchpadHasStoredInk(page: import('@playwright/test').Page, scope: string) {
+  return page.evaluate(scope => new Promise<boolean>(resolve => {
+    const request = indexedDB.open('hyz-study-ink');
+    request.onerror = () => resolve(false);
+    request.onsuccess = () => {
+      const database = request.result;
+      if (!database.objectStoreNames.contains('drafts')) {
+        database.close();
+        resolve(false);
+        return;
+      }
+      const transaction = database.transaction('drafts', 'readonly');
+      const read = transaction.objectStore('drafts').get(scope);
+      read.onerror = () => resolve(false);
+      read.onsuccess = () => {
+        const history = read.result?.history;
+        resolve(typeof history === 'string' && JSON.parse(history).length > 0);
+        database.close();
+      };
+    };
+  }), scope);
+}
+
+async function drawScratchStroke(page: import('@playwright/test').Page, paneTestId: string) {
+  const bounds = await page.getByTestId(paneTestId).boundingBox();
+  expect(bounds).not.toBeNull();
+  await page.mouse.move(bounds!.x + 24, bounds!.y + 24);
+  await page.mouse.down();
+  await page.mouse.move(bounds!.x + 68, bounds!.y + 46, { steps: 4 });
+  await page.mouse.up();
+  await expect.poll(() => scratchpadHasInk(page)).toBe(true);
+}
+
+test('申论复盘启用共享草稿区并支持在材料与题目上书写', async ({ page }) => {
+  await loginAsAdmin(page);
+  await page.route('**/api/v1/question-bank/shenlun/**', async route => {
+    const { pathname } = new URL(route.request().url());
+    if (pathname.endsWith('/shenlun/papers')) return route.fulfill({ json: catalog });
+    if (pathname.endsWith('/shenlun/papers/' + paperId)) return route.fulfill({ json: paperView });
+    if (pathname.endsWith('/shenlun/questions/' + questionId + '/source-answer'))
+      return route.fulfill({ json: { text: '参考答案。', provenance: '题库来源（非官方）', source_hash: 'source-v1' } });
+    throw new Error('Unexpected Shenlun request: ' + route.request().method() + ' ' + pathname);
+  });
+  await openShenlun(page);
+  await page.getByTestId('shenlun-mode-source').click();
+
+  const toggle = page.getByTestId('calculation-scratchpad-toggle');
+  await expect(toggle).toBeVisible();
+  await toggle.click();
+  const canvas = page.getByTestId('calculation-scratchpad-canvas');
+  await expect(canvas).toBeVisible();
+  const undo = page.getByTestId('calculation-scratchpad-undo');
+
+  await drawScratchStroke(page, 'shenlun-material-scroll');
+  await drawScratchStroke(page, 'shenlun-source-scroll');
+  await expect(undo).toBeEnabled();
+  await undo.click();
+  await expect.poll(() => scratchpadHasInk(page)).toBe(true);
+  await undo.click();
+  await expect.poll(() => scratchpadHasInk(page)).toBe(false);
+});
+
+test('申论草稿按题保存，切题后恢复对应笔迹', async ({ page }) => {
+  await loginAsAdmin(page);
+  await page.route('**/api/v1/question-bank/shenlun/**', async route => {
+    const { pathname } = new URL(route.request().url());
+    if (pathname.endsWith('/shenlun/papers')) return route.fulfill({ json: catalog });
+    if (pathname.endsWith('/shenlun/papers/' + paperId)) return route.fulfill({ json: paperView });
+    if (pathname.endsWith('/source-answer'))
+      return route.fulfill({ json: { text: '参考答案。', provenance: '题库来源（非官方）', source_hash: 'source-v1' } });
+    throw new Error('Unexpected Shenlun request: ' + route.request().method() + ' ' + pathname);
+  });
+  await openShenlun(page);
+  await page.getByTestId('shenlun-mode-source').click();
+  await page.getByTestId('calculation-scratchpad-toggle').click();
+  await drawScratchStroke(page, 'shenlun-source-scroll');
+  const scope = `shenlun-${paperId}-${questionId}`;
+  await expect.poll(() => scratchpadHasStoredInk(page, scope)).toBe(true);
+  await page.getByTestId('calculation-scratchpad-toggle').click();
+
+  const selectQuestion = async (index: number) => {
+    await page.getByTestId('training-answer-sheet-toggle').click();
+    await page.getByTestId('question-bank-practice-number').nth(index).click();
+  };
+  await selectQuestion(1);
+  await expect(page.getByTestId('shenlun-question')).toContainText('请提出优化基层服务');
+  await page.getByTestId('calculation-scratchpad-toggle').click();
+  await expect(page.getByTestId('calculation-scratchpad-canvas')).toBeVisible();
+  await expect.poll(() => scratchpadHasInk(page)).toBe(false);
+  await page.getByTestId('calculation-scratchpad-toggle').click();
+
+  await selectQuestion(0);
+  await expect(page.getByTestId('shenlun-question')).toContainText('请概括基层治理');
+  await page.getByTestId('calculation-scratchpad-toggle').click();
+  await expect(page.getByTestId('calculation-scratchpad-canvas')).toBeVisible();
+  await expect.poll(() => scratchpadHasInk(page)).toBe(true);
+});
 
 test('申论题目工具栏复用无文字图标并保留 Flashcard 创建入口', async ({ page }) => {
   await loginAsAdmin(page);
@@ -92,6 +202,7 @@ test('申论题目工具栏复用无文字图标并保留 Flashcard 创建入口
     throw new Error('Unexpected 申论 request: ' + route.request().method() + ' ' + pathname);
   });
   await openShenlun(page);
+  await expect(page.getByRole('group', { name: '收藏与 Flashcard 操作' })).toBeVisible();
 
   const iconButtons = [
     ['shenlun-favorite', '收藏题目'],
@@ -128,6 +239,74 @@ test('申论题目工具栏复用无文字图标并保留 Flashcard 创建入口
   await expect(page.getByTestId('favorite-flashcard-editor')).toBeVisible();
 });
 
+test('申论题通过真实 Flashcard 预览接口显示并创建卡片', async ({ page }) => {
+  await loginAsAdmin(page);
+  const previewResponsePromise = page.waitForResponse(response => {
+    const url = new URL(response.url());
+    return url.pathname === `/api/v1/question-bank/practice/questions/${questionId}/flashcard-preview`;
+  });
+  await openShenlun(page);
+  const previewResponse = await previewResponsePromise;
+  expect(previewResponse.status()).toBe(200);
+  const preview = await previewResponse.json();
+  expect(preview.eligible).toBe(true);
+  expect(preview.correct_answer).toEqual([]);
+  await expect(page.getByTestId('shenlun-create-flashcard')).toBeVisible();
+  await page.getByTestId('shenlun-create-flashcard').click();
+  await expect(page.getByTestId('favorite-flashcard-card')).toBeVisible();
+  await page.getByTestId('favorite-flashcard-back-input').fill('压实基层责任，完善公共服务。');
+  await page.getByLabel('确认写入所选目录').check();
+  const createResponsePromise = page.waitForResponse(response => {
+    const url = new URL(response.url());
+    return response.request().method() === 'POST'
+      && url.pathname === `/api/v1/question-bank/practice/questions/${questionId}/flashcard`;
+  });
+  await page.getByRole('button', { name: '创建并同步', exact: true }).click();
+  const createResponse = await createResponsePromise;
+  expect(createResponse.status()).toBe(200);
+  expect(await createResponse.json()).toMatchObject({ status: 'created_synced' });
+  const manage = page.getByTestId('shenlun-manage-flashcard');
+  await expect(manage).toHaveAttribute('aria-label', '管理当前题目的 1 张 Flashcard');
+  await manage.click();
+  const editor = page.getByTestId('favorite-flashcard-editor');
+  await expect(editor).toBeVisible();
+  await expect(page.getByTestId('favorite-flashcard-editor-back')).toHaveValue('压实基层责任，完善公共服务。');
+  await editor.getByTestId('favorite-flashcard-delete').click();
+  await editor.getByTestId('favorite-flashcard-confirm-delete').click();
+  await expect(editor).toHaveCount(0);
+  await expect(page.getByTestId('shenlun-create-flashcard')).toBeVisible();
+});
+
+test('申论选题复用 Question Bank 选择器、操作与切换记忆', async ({ page }) => {
+  await loginAsAdmin(page);
+  let paperListRequests = 0;
+  await page.route('**/api/v1/question-bank/shenlun/**', async route => {
+    const { pathname } = new URL(route.request().url());
+    if (pathname.endsWith('/shenlun/papers')) {
+      paperListRequests += 1;
+      return route.fulfill({ json: catalog });
+    }
+    if (pathname.endsWith('/shenlun/papers/' + paperId)) return route.fulfill({ json: paperView });
+    throw new Error('Unexpected Shenlun request: ' + route.request().method() + ' ' + pathname);
+  });
+  await page.goto('/#/study/training');
+  await page.getByTestId('training-mode-shenlun').click();
+  await expect(page.getByTestId('shenlun-catalog')).toBeVisible();
+  await expect(page.getByRole('button', { name: /刷新/ })).toHaveCount(0);
+  const paper = page.getByTestId('question-bank-paper-option');
+  await paper.click();
+  await expect(page.getByTestId('shenlun-catalog')).toBeVisible();
+  await expect(paper).toHaveAttribute('aria-pressed', 'true');
+  await page.getByTestId('training-mode-calculation').click();
+  await page.getByTestId('training-mode-shenlun').click();
+  await expect(page.getByTestId('question-bank-paper-option')).toHaveAttribute('aria-pressed', 'true');
+  expect(paperListRequests).toBe(1);
+  const start = page.getByTestId('shenlun-start-review');
+  await expect(start).toBeEnabled();
+  await start.click();
+  await expect(page.getByTestId('shenlun-workspace')).toBeVisible();
+});
+
 test('申论原卷复用地区年份目录和统一答题卡，不出现独立题号/交卷/二稿', async ({ page }) => {
   const attempts = new Map<string, Attempt[]>();
   await loginAsAdmin(page);
@@ -141,6 +320,11 @@ test('申论原卷复用地区年份目录和统一答题卡，不出现独立�
     if (pathname.endsWith('/shenlun/questions/' + questionId + '/source-answer') && method === 'GET')
       return route.fulfill({ json: {
         text: '来源参考答案：压实基层责任。', provenance: '题库来源（非官方）',
+        source_hash: 'source-shenlun-v1',
+      } });
+    if (pathname.endsWith('/shenlun/questions/' + nextQuestionId + '/source-answer') && method === 'GET')
+      return route.fulfill({ json: {
+        text: '来源参考答案：完善基层服务。', provenance: '题库来源（非官方）',
         source_hash: 'source-shenlun-v1',
       } });
     if (pathname.endsWith('/shenlun/attempts') && method === 'GET')
@@ -158,7 +342,8 @@ test('申论原卷复用地区年份目录和统一答题卡，不出现独立�
   await page.goto('/#/study/training');
   await page.getByTestId('training-mode-shenlun').click();
   await expect(page.getByTestId('shenlun-catalog')).toContainText('2025 年');
-  await page.getByTestId('shenlun-open-paper').click();
+  await page.getByTestId('question-bank-paper-option').click();
+  await page.getByTestId('shenlun-start-review').click();
   await expect(page.getByTestId('shenlun-materials')).toContainText('推进基层治理');
   await expect(page.getByTestId('shenlun-question')).toContainText('请概括基层治理');
   // Reviewing a paper must not create a hidden grading attempt.
@@ -178,7 +363,63 @@ test('申论原卷复用地区年份目录和统一答题卡，不出现独立�
   await page.getByTestId('training-answer-sheet-toggle').click();
   await page.getByTestId('question-bank-practice-number').nth(1).click();
   await expect(page.getByTestId('shenlun-question')).toContainText('请提出优化基层服务');
+  await expect(page.getByTestId('shenlun-mode-source')).toHaveAttribute('aria-pressed', 'true');
+  await expect(page.getByTestId('shenlun-source-answer')).toContainText('完善基层服务');
   await expect(page.getByTestId('training-answer-sheet-toggle')).toContainText('2/2');
+});
+
+test('申论选题布局在桌面与手机视口都保留可见的开始操作', async ({ page }) => {
+  await loginAsAdmin(page);
+  await page.route('**/api/v1/question-bank/shenlun/**', async route => {
+    const { pathname } = new URL(route.request().url());
+    if (pathname.endsWith('/shenlun/papers')) return route.fulfill({ json: catalog });
+    throw new Error('Unexpected Shenlun request: ' + route.request().method() + ' ' + pathname);
+  });
+  await page.setViewportSize({ width: 1366, height: 900 });
+  await page.goto('/#/study/training');
+  await page.getByTestId('training-mode-shenlun').click();
+  const action = page.getByTestId('shenlun-start-review');
+  await expect(action).toBeVisible();
+  for (const viewport of [{ width: 1366, height: 900 }, { width: 390, height: 844 }]) {
+    await page.setViewportSize(viewport);
+    const bounds = await action.boundingBox();
+    const layout = await page.getByTestId('training-mode-content').evaluate(element => ({
+      width: element.clientWidth,
+      scrollWidth: element.scrollWidth,
+    }));
+    expect(bounds).not.toBeNull();
+    expect(bounds!.x).toBeGreaterThanOrEqual(0);
+    expect(bounds!.x + bounds!.width).toBeLessThanOrEqual(viewport.width + 1);
+    expect(layout.scrollWidth).toBeLessThanOrEqual(layout.width);
+  }
+});
+
+test('申论切题后保留当前 OCR 与来源答案模式', async ({ page }) => {
+  await loginAsAdmin(page);
+  await page.route('**/api/v1/question-bank/shenlun/**', async route => {
+    const { pathname } = new URL(route.request().url());
+    if (pathname.endsWith('/shenlun/papers')) return route.fulfill({ json: catalog });
+    if (pathname.endsWith('/shenlun/papers/' + paperId)) return route.fulfill({ json: paperView });
+    if (pathname.endsWith('/shenlun/questions/' + questionId + '/source-answer'))
+      return route.fulfill({ json: { text: '参考答案', provenance: '题库来源（非官方）', source_hash: 'source-v1' } });
+    if (pathname.endsWith('/shenlun/questions/' + nextQuestionId + '/source-answer'))
+      return route.fulfill({ json: { text: '参考答案二', provenance: '题库来源（非官方）', source_hash: 'source-v1' } });
+    throw new Error('Unexpected Shenlun request: ' + route.request().method() + ' ' + pathname);
+  });
+  await openShenlun(page);
+  await page.getByTestId('shenlun-mode-ocr').click();
+  await expect(page.getByTestId('shenlun-mode-ocr')).toHaveAttribute('aria-pressed', 'true');
+  await page.getByTestId('training-answer-sheet-toggle').click();
+  await page.getByTestId('question-bank-practice-number').nth(1).click();
+  await expect(page.getByTestId('shenlun-question')).toContainText('请提出优化基层服务');
+  await expect(page.getByTestId('shenlun-mode-ocr')).toHaveAttribute('aria-pressed', 'true');
+  await expect(page.getByTestId('shenlun-ai-panel')).toBeVisible();
+  await page.getByTestId('shenlun-mode-source').click();
+  await page.getByTestId('training-answer-sheet-toggle').click();
+  await page.getByTestId('question-bank-practice-number').nth(0).click();
+  await expect(page.getByTestId('shenlun-question')).toContainText('请概括基层治理');
+  await expect(page.getByTestId('shenlun-mode-source')).toHaveAttribute('aria-pressed', 'true');
+  await expect(page.getByTestId('shenlun-source-answer')).toBeVisible();
 });
 
 test('申论解析和批改分别使用独立会话、草稿与删除状态', async ({ page }) => {

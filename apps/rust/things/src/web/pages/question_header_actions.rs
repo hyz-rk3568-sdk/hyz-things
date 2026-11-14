@@ -31,7 +31,7 @@ pub(super) fn question_header_actions(props: &QuestionHeaderActionsProps) -> Htm
         .flashcard_count
         .filter(|count| *count > 0 || props.flashcard_can_create);
     html! {
-        <div class="flex shrink-0 items-center gap-0">
+        <div class="flex shrink-0 items-center gap-0" role="group" aria-label="收藏与 Flashcard 操作">
             <button type="button" class={classes!(QUESTION_HEADER_ICON_BUTTON, "relative")}
                 data-testid={props.favorite_test_id.clone()} aria-label={props.favorite_label.clone()}
                 title={props.favorite_label.clone()} aria-busy={props.favorite_busy.to_string()}
