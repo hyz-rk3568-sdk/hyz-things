@@ -179,7 +179,8 @@ fn pane_selector(pane: InkPane) -> &'static str {
             "[data-testid='logic-question-scroll'], ",
             "[data-testid='quant-question-scroll'], ",
             "[data-testid='question-bank-practice-material-scroll'], ",
-            "[data-testid='collection-review-material-scroll']",
+            "[data-testid='collection-review-material-scroll'], ",
+            "[data-testid='shenlun-material-scroll']",
         ),
         InkPane::Question => concat!(
             "[data-testid='analysis-question'], ",
@@ -187,7 +188,9 @@ fn pane_selector(pane: InkPane) -> &'static str {
             "[data-testid='quant-answer-scroll'], ",
             "[data-testid='question-bank-practice-question-scroll'], ",
             "[data-testid='collection-review-question-scroll'], ",
-            "[data-testid='question-bank-ai-messages']",
+            "[data-testid='question-bank-ai-messages'], ",
+            "[data-testid='shenlun-source-scroll'], ",
+            "[data-testid='shenlun-ocr-question-context']",
         ),
     }
 }

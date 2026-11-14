@@ -205,7 +205,7 @@ pub(super) fn question_bank_shenlun(props: &QuestionBankShenlunProps) -> Html {
                 </div>
                 <div ref={material_scroll} onscroll={scroll.on_scroll.clone()}
                     class="min-h-0 flex-1 space-y-5 overflow-y-auto overscroll-contain px-4 pb-5 pt-3"
-                    data-swipe-ignore="true">
+                    data-testid="shenlun-material-scroll" data-swipe-ignore="true">
                     {for current.materials.iter().map(|material| html! {
                         <article key={material.id.clone()} class="space-y-2">
                             <h3 class="font-semibold">{material.name.clone()}</h3>
@@ -382,7 +382,7 @@ pub(super) fn question_bank_shenlun(props: &QuestionBankShenlunProps) -> Html {
                     </div>
                 } else {
                     <div class="min-h-0 flex-1 overflow-y-auto overscroll-contain p-4" ref={scroll.second.clone()}
-                        onscroll={scroll.on_scroll.clone()} data-swipe-ignore="true">
+                        onscroll={scroll.on_scroll.clone()} data-testid="shenlun-source-scroll" data-swipe-ignore="true">
                         {question_body.clone()}
                         if mode_value=="source" {
                             <super::shenlun_ai_panel::ShenlunSourceAnswerPanel key={question_id.clone()}
@@ -429,8 +429,12 @@ pub(super) fn question_bank_shenlun(props: &QuestionBankShenlunProps) -> Html {
                 <div class="relative min-h-0 flex-1 overflow-hidden">
                     <TrainingSwipeSurface current={selected.clone()} total={current.questions.len()}
                         navigation_allowed={Some(navigation_allowed.clone())}>
-                        <TrainingSplitWorkspace left={left} right={right}
-                            test_id="shenlun-split" resizable={true} split_at_md={true}/>
+                        <InkOverlay key={format!("shenlun-{paper_id}-{question_id}")}
+                            question_index={index} responsive={true} scroll_linked={true}
+                            persist_key={format!("shenlun-{paper_id}-{question_id}")}>
+                            <TrainingSplitWorkspace left={left} right={right}
+                                test_id="shenlun-split" resizable={true} split_at_md={true}/>
+                        </InkOverlay>
                     </TrainingSwipeSurface>
                 </div>
                 <CompactQuestionNavigation current={selected.clone()}

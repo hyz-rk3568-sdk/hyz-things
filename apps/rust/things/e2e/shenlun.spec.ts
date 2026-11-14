@@ -54,6 +54,115 @@ async function openShenlun(page: import('@playwright/test').Page) {
   await expect(page.getByTestId('shenlun-workspace')).toBeVisible();
 }
 
+async function scratchpadHasInk(page: import('@playwright/test').Page) {
+  return page.getByTestId('calculation-scratchpad-canvas').evaluate(element => {
+    const canvas = element as HTMLCanvasElement;
+    const pixels = canvas.getContext('2d')!.getImageData(0, 0, canvas.width, canvas.height).data;
+    for (let index = 3; index < pixels.length; index += 4) {
+      if (pixels[index] !== 0) return true;
+    }
+    return false;
+  });
+}
+
+async function scratchpadHasStoredInk(page: import('@playwright/test').Page, scope: string) {
+  return page.evaluate(scope => new Promise<boolean>(resolve => {
+    const request = indexedDB.open('hyz-study-ink');
+    request.onerror = () => resolve(false);
+    request.onsuccess = () => {
+      const database = request.result;
+      if (!database.objectStoreNames.contains('drafts')) {
+        database.close();
+        resolve(false);
+        return;
+      }
+      const transaction = database.transaction('drafts', 'readonly');
+      const read = transaction.objectStore('drafts').get(scope);
+      read.onerror = () => resolve(false);
+      read.onsuccess = () => {
+        const history = read.result?.history;
+        resolve(typeof history === 'string' && JSON.parse(history).length > 0);
+        database.close();
+      };
+    };
+  }), scope);
+}
+
+async function drawScratchStroke(page: import('@playwright/test').Page, paneTestId: string) {
+  const bounds = await page.getByTestId(paneTestId).boundingBox();
+  expect(bounds).not.toBeNull();
+  await page.mouse.move(bounds!.x + 24, bounds!.y + 24);
+  await page.mouse.down();
+  await page.mouse.move(bounds!.x + 68, bounds!.y + 46, { steps: 4 });
+  await page.mouse.up();
+  await expect.poll(() => scratchpadHasInk(page)).toBe(true);
+}
+
+test('申论复盘启用共享草稿区并支持在材料与题目上书写', async ({ page }) => {
+  await loginAsAdmin(page);
+  await page.route('**/api/v1/question-bank/shenlun/**', async route => {
+    const { pathname } = new URL(route.request().url());
+    if (pathname.endsWith('/shenlun/papers')) return route.fulfill({ json: catalog });
+    if (pathname.endsWith('/shenlun/papers/' + paperId)) return route.fulfill({ json: paperView });
+    if (pathname.endsWith('/shenlun/questions/' + questionId + '/source-answer'))
+      return route.fulfill({ json: { text: '参考答案。', provenance: '题库来源（非官方）', source_hash: 'source-v1' } });
+    throw new Error('Unexpected Shenlun request: ' + route.request().method() + ' ' + pathname);
+  });
+  await openShenlun(page);
+  await page.getByTestId('shenlun-mode-source').click();
+
+  const toggle = page.getByTestId('calculation-scratchpad-toggle');
+  await expect(toggle).toBeVisible();
+  await toggle.click();
+  const canvas = page.getByTestId('calculation-scratchpad-canvas');
+  await expect(canvas).toBeVisible();
+  const undo = page.getByTestId('calculation-scratchpad-undo');
+
+  await drawScratchStroke(page, 'shenlun-material-scroll');
+  await drawScratchStroke(page, 'shenlun-source-scroll');
+  await expect(undo).toBeEnabled();
+  await undo.click();
+  await expect.poll(() => scratchpadHasInk(page)).toBe(true);
+  await undo.click();
+  await expect.poll(() => scratchpadHasInk(page)).toBe(false);
+});
+
+test('申论草稿按题保存，切题后恢复对应笔迹', async ({ page }) => {
+  await loginAsAdmin(page);
+  await page.route('**/api/v1/question-bank/shenlun/**', async route => {
+    const { pathname } = new URL(route.request().url());
+    if (pathname.endsWith('/shenlun/papers')) return route.fulfill({ json: catalog });
+    if (pathname.endsWith('/shenlun/papers/' + paperId)) return route.fulfill({ json: paperView });
+    if (pathname.endsWith('/source-answer'))
+      return route.fulfill({ json: { text: '参考答案。', provenance: '题库来源（非官方）', source_hash: 'source-v1' } });
+    throw new Error('Unexpected Shenlun request: ' + route.request().method() + ' ' + pathname);
+  });
+  await openShenlun(page);
+  await page.getByTestId('shenlun-mode-source').click();
+  await page.getByTestId('calculation-scratchpad-toggle').click();
+  await drawScratchStroke(page, 'shenlun-source-scroll');
+  const scope = `shenlun-${paperId}-${questionId}`;
+  await expect.poll(() => scratchpadHasStoredInk(page, scope)).toBe(true);
+  await page.getByTestId('calculation-scratchpad-toggle').click();
+
+  const selectQuestion = async (index: number) => {
+    await page.getByTestId('training-answer-sheet-toggle').click();
+    await page.getByTestId('question-bank-practice-number').nth(index).click();
+  };
+  await selectQuestion(1);
+  await expect(page.getByTestId('shenlun-question')).toContainText('请提出优化基层服务');
+  await page.getByTestId('calculation-scratchpad-toggle').click();
+  await expect(page.getByTestId('calculation-scratchpad-canvas')).toBeVisible();
+  await expect.poll(() => scratchpadHasInk(page)).toBe(false);
+  await page.getByTestId('calculation-scratchpad-toggle').click();
+
+  await selectQuestion(0);
+  await expect(page.getByTestId('shenlun-question')).toContainText('请概括基层治理');
+  await page.getByTestId('calculation-scratchpad-toggle').click();
+  await expect(page.getByTestId('calculation-scratchpad-canvas')).toBeVisible();
+  await expect.poll(() => scratchpadHasInk(page)).toBe(true);
+});
+
 test('申论题目工具栏复用无文字图标并保留 Flashcard 创建入口', async ({ page }) => {
   await loginAsAdmin(page);
   let existing: any[] = [];
