@@ -265,6 +265,7 @@ pub(super) fn question_bank_shenlun(props: &QuestionBankShenlunProps) -> Html {
     let error = use_state(|| None::<String>);
     let mode = use_state(|| "ai".to_owned());
     let ai_delete_signal = use_state(|| 0_u32);
+    let ai_delete_availability = use_state(|| HashMap::<(String, String), bool>::new());
     let scroll = use_training_scroll_pair();
     let question_key = (*paper).as_ref().and_then(|p| {
         p.questions
@@ -451,6 +452,7 @@ pub(super) fn question_bank_shenlun(props: &QuestionBankShenlunProps) -> Html {
         let selected = selected.clone();
         let mode = mode.clone();
         let error = error.clone();
+        let availability = ai_delete_availability.clone();
         let immersive = props.on_immersive_change.clone();
         Callback::from(move |id: String| {
             if *busy {
@@ -463,7 +465,9 @@ pub(super) fn question_bank_shenlun(props: &QuestionBankShenlunProps) -> Html {
             let selected = selected.clone();
             let mode = mode.clone();
             let error = error.clone();
+            let availability = availability.clone();
             let immersive = immersive.clone();
+            availability.set(HashMap::new());
             spawn_local(async move {
                 match fetch_json::<PaperView>(
                     &format!("/api/v1/question-bank/shenlun/papers/{id}"),
@@ -486,6 +490,7 @@ pub(super) fn question_bank_shenlun(props: &QuestionBankShenlunProps) -> Html {
     let close = {
         let paper = paper.clone();
         let mode = mode.clone();
+        let availability = ai_delete_availability.clone();
         let immersive = props.on_immersive_change.clone();
         let attempts = ocr_attempts.clone();
         let store = ocr_attempt_store.clone();
@@ -493,6 +498,7 @@ pub(super) fn question_bank_shenlun(props: &QuestionBankShenlunProps) -> Html {
         let generation = ocr_session_generation.clone();
         Callback::from(move |_| {
             clear_ocr_session(&store, &attempts, &streams, &generation);
+            availability.set(HashMap::new());
             immersive.emit(false);
             mode.set("ai".into());
             paper.set(None);
@@ -622,7 +628,23 @@ pub(super) fn question_bank_shenlun(props: &QuestionBankShenlunProps) -> Html {
                     move |_|flashcard_open.set(true)
                 })}/>
         };
-        let can_delete = matches!(mode_value.as_str(), "grade" | "ai");
+        let delete_key = (question_id.clone(), mode_value.clone());
+        let can_delete = matches!(mode_value.as_str(), "grade" | "ai")
+            && ai_delete_availability
+                .get(&delete_key)
+                .copied()
+                .unwrap_or(false);
+        let on_delete_availability = {
+            let availability = ai_delete_availability.clone();
+            Callback::from(move |available| {
+                if availability.get(&delete_key).copied() == Some(available) {
+                    return;
+                }
+                let mut next = (*availability).clone();
+                next.insert(delete_key.clone(), available);
+                availability.set(next);
+            })
+        };
         let menu = html! {
             <super::question_bank_practice::QuestionAiMoreMenu
                 can_delete={can_delete}
@@ -653,7 +675,17 @@ pub(super) fn question_bank_shenlun(props: &QuestionBankShenlunProps) -> Html {
                         <>
                             <button type="button" class={classes!(icon_button, if mode_value=="grade" {"text-primary"} else {""})}
                                 aria-label="AI 批改" title="AI 批改" aria-pressed={(mode_value=="grade").to_string()} data-testid="shenlun-mode-grade"
-                                onclick={Callback::from({let mode=mode.clone();move |_|mode.set("grade".into())})}>
+                                onclick={Callback::from({
+                                    let mode=mode.clone();
+                                    let availability=ai_delete_availability.clone();
+                                    let key=(question_id.clone(),"grade".to_owned());
+                                    move |_| {
+                                        let mut next=(*availability).clone();
+                                        next.remove(&key);
+                                        availability.set(next);
+                                        mode.set("grade".into());
+                                    }
+                                })}>
                                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="4" y="3" width="16" height="18" rx="2"/><path d="M8 8h8M8 12h4m-4 4 2 2 4-4"/></svg>
                             </button>
                             <button type="button" class={classes!(icon_button, if mode_value=="ocr" {"text-primary"} else {""})}
@@ -669,7 +701,17 @@ pub(super) fn question_bank_shenlun(props: &QuestionBankShenlunProps) -> Html {
                                 original_label="来源参考答案"
                                 ai_label="AI 解析与追问"
                                 original={Callback::from({let mode=mode.clone();move |_|mode.set("source".into())})}
-                                ai={Callback::from({let mode=mode.clone();move |_|mode.set("ai".into())})}/>
+                                ai={Callback::from({
+                                    let mode=mode.clone();
+                                    let availability=ai_delete_availability.clone();
+                                    let key=(question_id.clone(),"ai".to_owned());
+                                    move |_| {
+                                        let mut next=(*availability).clone();
+                                        next.remove(&key);
+                                        availability.set(next);
+                                        mode.set("ai".into());
+                                    }
+                                })}/>
                         </>
                     }}
                     trailing={menu}/>
@@ -696,7 +738,7 @@ pub(super) fn question_bank_shenlun(props: &QuestionBankShenlunProps) -> Html {
                         csrf={props.csrf.clone()} question_id={question_id.clone()}
                         question_content={question_body.clone()}
                         question_scroll={scroll.second.clone()} on_question_scroll={scroll.on_scroll.clone()}
-                        delete_signal={*ai_delete_signal}/>
+                        delete_signal={*ai_delete_signal} on_delete_availability={on_delete_availability}/>
                 } else if mode_value=="ocr" {
                     <div class="flex min-h-0 flex-1 flex-col overflow-hidden" data-testid="shenlun-ocr-pane">
                         <div class="max-h-[35%] shrink-0 overflow-y-auto border-b border-base-content/10 p-4"
@@ -722,6 +764,13 @@ pub(super) fn question_bank_shenlun(props: &QuestionBankShenlunProps) -> Html {
                 }
             </section>
         };
+        let navigation_allowed = Callback::from({
+            let availability = ai_delete_availability.clone();
+            move |_: ()| {
+                availability.set(HashMap::new());
+                true
+            }
+        });
         let groups = vec![NavigationGroup {
             label: "全部题目".into(),
             subtitle: None,
@@ -747,7 +796,8 @@ pub(super) fn question_bank_shenlun(props: &QuestionBankShenlunProps) -> Html {
                     </div>
                 </TrainingHeader>
                 <div class="relative min-h-0 flex-1 overflow-hidden">
-                    <TrainingSwipeSurface current={selected.clone()} total={current.questions.len()}>
+                    <TrainingSwipeSurface current={selected.clone()} total={current.questions.len()}
+                        navigation_allowed={Some(navigation_allowed.clone())}>
                         <InkOverlay key={format!("shenlun-{paper_id}-{question_id}")}
                             question_index={index} responsive={true} scroll_linked={true}
                             persist_key={format!("shenlun-{paper_id}-{question_id}")}>
@@ -757,6 +807,7 @@ pub(super) fn question_bank_shenlun(props: &QuestionBankShenlunProps) -> Html {
                     </TrainingSwipeSurface>
                 </div>
                 <CompactQuestionNavigation current={selected.clone()}
+                    navigation_allowed={Some(navigation_allowed)}
                     numbers={current.questions.iter().map(|q|q.number).collect::<Vec<_>>()}
                     answered={answered} grades={None::<Vec<Option<bool>>>} groups={groups}/>
             </div>

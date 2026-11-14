@@ -2057,6 +2057,20 @@ test('review pane headers and all header buttons have equal sizes',async({page})
     expect(Math.abs(size!.width-sizes[0]!.width)).toBeLessThanOrEqual(1);
     expect(Math.abs(size!.height-sizes[0]!.height)).toBeLessThanOrEqual(1);
   }
+  const pen=pane.getByTestId('calculation-scratchpad-toggle');
+  const penBox=await pen.boundingBox();
+  const moreBox=await pane.getByRole('button',{name:'更多解析操作'}).boundingBox();
+  const paneBox=await pane.boundingBox();
+  expect(penBox!.x).toBeGreaterThanOrEqual(moreBox!.x+moreBox!.width);
+  expect(penBox!.x+penBox!.width).toBeGreaterThanOrEqual(paneBox!.x+paneBox!.width-16);
+  await pen.click();
+  const clear=pane.getByTestId('calculation-scratchpad-clear');
+  await expect(clear).toBeVisible();
+  const expandedPenBox=await pen.boundingBox();
+  const clearBox=await clear.boundingBox();
+  expect(expandedPenBox!.x).toBeGreaterThan(clearBox!.x);
+  await pen.click();
+  await expect(clear).toHaveCount(0);
 });
 
 test('review split resizes horizontally on iPad with a mouse drag',async({page})=>{

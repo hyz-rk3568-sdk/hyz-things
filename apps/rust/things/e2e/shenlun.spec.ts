@@ -249,11 +249,35 @@ test('申论题目工具栏复用无文字图标并保留 Flashcard 创建入口
     await expect(button.locator('svg')).toHaveCount(1);
     await expect(button).not.toContainText(label);
   }
-  const penBox = await page.getByTestId('calculation-scratchpad-toggle').boundingBox();
-  const favoriteBox = await page.getByTestId('shenlun-favorite').boundingBox();
+  const pen = page.getByTestId('calculation-scratchpad-toggle');
+  const moreBox = await page.getByTestId('shenlun-more').boundingBox();
+  const penBox = await pen.boundingBox();
+  const paneBox = await page.getByTestId('shenlun-question').boundingBox();
   expect(penBox).not.toBeNull();
-  expect(favoriteBox).not.toBeNull();
-  expect(penBox!.x + penBox!.width).toBeLessThanOrEqual(favoriteBox!.x);
+  expect(moreBox).not.toBeNull();
+  expect(paneBox).not.toBeNull();
+  expect(penBox!.x).toBeGreaterThanOrEqual(moreBox!.x + moreBox!.width);
+  expect(penBox!.x + penBox!.width).toBeGreaterThanOrEqual(paneBox!.x + paneBox!.width - 16);
+  await pen.click();
+  const clearBox = await page.getByTestId('calculation-scratchpad-clear').boundingBox();
+  const expandedPenBox = await pen.boundingBox();
+  expect(clearBox).not.toBeNull();
+  expect(expandedPenBox!.x).toBeGreaterThan(clearBox!.x);
+  await pen.click();
+
+  await page.setViewportSize({ width: 390, height: 844 });
+  const mobilePenBox = await pen.boundingBox();
+  const mobileMoreBox = await page.getByTestId('shenlun-more').boundingBox();
+  const mobilePaneBox = await page.getByTestId('shenlun-question').boundingBox();
+  expect(mobilePenBox!.x).toBeGreaterThanOrEqual(mobileMoreBox!.x + mobileMoreBox!.width);
+  expect(mobilePenBox!.x + mobilePenBox!.width).toBeLessThanOrEqual(390);
+  expect(mobilePenBox!.x + mobilePenBox!.width).toBeGreaterThanOrEqual(mobilePaneBox!.x + mobilePaneBox!.width - 16);
+  await pen.click();
+  const mobileClearBox = await page.getByTestId('calculation-scratchpad-clear').boundingBox();
+  const expandedMobilePenBox = await pen.boundingBox();
+  expect(expandedMobilePenBox!.x).toBeGreaterThan(mobileClearBox!.x);
+  await pen.click();
+  await page.setViewportSize({ width: 1280, height: 800 });
 
   await page.getByTestId('shenlun-create-flashcard').click();
   const card = page.getByTestId('favorite-flashcard-card');
@@ -455,7 +479,7 @@ test('申论切题后保留当前 OCR 与来源答案模式', async ({ page }) =
   await expect(page.getByTestId('shenlun-source-answer')).toBeVisible();
 });
 
-test('申论 AI 模式始终提供删除对话入口', async ({ page }) => {
+test('未生成申论 AI 对话时不提供删除操作', async ({ page }) => {
   await loginAsAdmin(page);
   let deleted = false;
   await page.route('**/api/v1/question-bank/practice/questions/*/ai**', async route => {
@@ -482,11 +506,9 @@ test('申论 AI 模式始终提供删除对话入口', async ({ page }) => {
   await openShenlun(page);
   await expect(page.getByTestId('question-bank-ai-status')).toContainText('未生成');
   await page.getByTestId('shenlun-more').click();
-  await expect(page.getByTestId('shenlun-delete-current')).toBeVisible();
-  await page.getByTestId('shenlun-delete-current').click();
-  await expect(page.getByTestId('question-bank-ai-delete-confirm')).toBeVisible();
-  await page.getByTestId('question-bank-ai-delete-confirm').click();
-  await expect.poll(() => deleted).toBe(true);
+  await expect(page.getByText('暂无可用操作')).toBeVisible();
+  await expect(page.getByTestId('shenlun-delete-current')).toHaveCount(0);
+  expect(deleted).toBe(false);
 });
 
 test('已生成的申论解析在三点菜单中提供删除操作', async ({ page }) => {
@@ -870,7 +892,8 @@ test('申论解析和批改分别使用独立会话、草稿与删除状态', as
   await expect.poll(() => observed.deletes).toEqual(['grading', 'analysis']);
   await expect(page.getByTestId('question-bank-ai-messages')).not.toContainText('解析独立会话正文');
   await page.getByTestId('shenlun-more').click();
-  await expect(page.getByTestId('shenlun-delete-current')).toBeVisible();
+  await expect(page.getByText('暂无可用操作')).toBeVisible();
+  await expect(page.getByTestId('shenlun-delete-current')).toHaveCount(0);
   await page.getByTestId('training-answer-sheet-toggle').click();
   await page.getByTestId('question-bank-practice-number').nth(1).click();
   await expect(page.getByTestId('shenlun-question')).toContainText('请提出优化基层服务');

@@ -598,7 +598,6 @@ pub(super) fn question_bank_question_header(props: &QuestionBankQuestionHeaderPr
                 }
             </div>
             <div class="ml-auto flex shrink-0 items-center gap-0">
-                <QuestionInkToggle />
                 if scratch_open {
                     if let Some(passage) = &props.passage {
                         <QuestionBankScrollButtons passage={passage.clone()} can_scroll_up={props.can_scroll_up}
@@ -608,6 +607,7 @@ pub(super) fn question_bank_question_header(props: &QuestionBankQuestionHeaderPr
                 } else {
                     {props.leading.clone()}{props.tabs.clone()}{props.trailing.clone()}
                 }
+                <QuestionInkToggle />
             </div>
         </div>
     }
