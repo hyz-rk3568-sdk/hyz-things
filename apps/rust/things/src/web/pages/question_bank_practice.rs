@@ -935,18 +935,24 @@ pub(crate) struct QuestionAiReviewProps {
 pub(crate) fn question_ai_review(props: &QuestionAiReviewProps) -> Html {
     let state = use_state(|| None::<AiReviewState>);
     let history_generation = use_state(|| 0u64);
-    let history_has_runs = use_state(|| false);
+    let history_has_runs = use_state(|| None::<bool>);
     {
-        let can_delete = *history_has_runs
-            || state
-                .as_ref()
-                .as_ref()
-                .is_some_and(|value| value.status != "idle" || !value.messages.is_empty());
+        let state_has_content = state
+            .as_ref()
+            .as_ref()
+            .is_some_and(|value| value.status != "idle" || !value.messages.is_empty());
+        let can_delete = history_has_runs.unwrap_or(false) || state_has_content;
+        let availability_known = history_has_runs.is_some() || state_has_content;
         let notify = props.on_delete_availability.clone();
-        use_effect_with(can_delete, move |available| {
-            notify.emit(*available);
-            || ()
-        });
+        use_effect_with(
+            (availability_known, can_delete),
+            move |(known, available)| {
+                if *known {
+                    notify.emit(*available);
+                }
+                || ()
+            },
+        );
     }
     let diagram_root = use_node_ref();
     let failure = use_state(|| None::<String>);
@@ -1600,7 +1606,7 @@ pub(crate) fn question_ai_review(props: &QuestionAiReviewProps) -> Html {
                 match result {
                     Ok(value) => {
                         state.set(Some(value));
-                        history_has_runs.set(false);
+                        history_has_runs.set(Some(false));
                         history_generation.set(history_generation.wrapping_add(1));
                         ai_draft_write(&request_key, "");
                         request_id.set(None);
@@ -1889,7 +1895,7 @@ pub(crate) fn question_ai_review(props: &QuestionAiReviewProps) -> Html {
                 messages={current.as_ref().map(|value| value.messages.clone()).unwrap_or_default()}
                 on_history_availability={Callback::from({
                     let history_has_runs = history_has_runs.clone();
-                    move |available| history_has_runs.set(available)
+                    move |available| history_has_runs.set(Some(available))
                 })}/>
             if let Some(active) = stream.as_ref().as_ref() {
                 if active.status == "running" && !active.text.is_empty() {

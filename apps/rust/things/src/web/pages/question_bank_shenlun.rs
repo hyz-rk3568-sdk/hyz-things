@@ -677,14 +677,7 @@ pub(super) fn question_bank_shenlun(props: &QuestionBankShenlunProps) -> Html {
                                 aria-label="AI 批改" title="AI 批改" aria-pressed={(mode_value=="grade").to_string()} data-testid="shenlun-mode-grade"
                                 onclick={Callback::from({
                                     let mode=mode.clone();
-                                    let availability=ai_delete_availability.clone();
-                                    let key=(question_id.clone(),"grade".to_owned());
-                                    move |_| {
-                                        let mut next=(*availability).clone();
-                                        next.remove(&key);
-                                        availability.set(next);
-                                        mode.set("grade".into());
-                                    }
+                                    move |_| mode.set("grade".into())
                                 })}>
                                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="4" y="3" width="16" height="18" rx="2"/><path d="M8 8h8M8 12h4m-4 4 2 2 4-4"/></svg>
                             </button>
@@ -703,14 +696,7 @@ pub(super) fn question_bank_shenlun(props: &QuestionBankShenlunProps) -> Html {
                                 original={Callback::from({let mode=mode.clone();move |_|mode.set("source".into())})}
                                 ai={Callback::from({
                                     let mode=mode.clone();
-                                    let availability=ai_delete_availability.clone();
-                                    let key=(question_id.clone(),"ai".to_owned());
-                                    move |_| {
-                                        let mut next=(*availability).clone();
-                                        next.remove(&key);
-                                        availability.set(next);
-                                        mode.set("ai".into());
-                                    }
+                                    move |_| mode.set("ai".into())
                                 })}/>
                         </>
                     }}
@@ -764,13 +750,7 @@ pub(super) fn question_bank_shenlun(props: &QuestionBankShenlunProps) -> Html {
                 }
             </section>
         };
-        let navigation_allowed = Callback::from({
-            let availability = ai_delete_availability.clone();
-            move |_: ()| {
-                availability.set(HashMap::new());
-                true
-            }
-        });
+        let navigation_allowed = Callback::from(|_: ()| true);
         let groups = vec![NavigationGroup {
             label: "全部题目".into(),
             subtitle: None,

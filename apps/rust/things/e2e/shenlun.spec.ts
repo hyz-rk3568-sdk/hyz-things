@@ -511,22 +511,45 @@ test('未生成申论 AI 对话时不提供删除操作', async ({ page }) => {
   expect(deleted).toBe(false);
 });
 
-test('历史申论 AI 运行记录仍提供删除操作', async ({ page }) => {
+test('申论第 2 题解析与批改的删除状态彼此独立且切换时保留', async ({ page }) => {
   await loginAsAdmin(page);
   const runId = '00000000-0000-4000-8000-000000000001';
+  const historyScopes: string[] = [];
+  let holdAnalysisReload = false;
+  let analysisReloadStarted = false;
+  let releaseAnalysisReload: () => void;
+  const analysisReloadGate = new Promise<void>(resolve => {
+    releaseAnalysisReload = () => resolve();
+  });
   await page.route('**/api/v1/question-bank/practice/questions/*/ai**', async route => {
-    const path = new URL(route.request().url()).pathname;
-    if (path.endsWith('/runs'))
-      return route.fulfill({ json: {
-        items: [{ run_id: runId, status: 'complete', assistant_message_id: null }],
-        next_after: null, has_more: false,
-      } });
+    const requestUrl = new URL(route.request().url());
+    const path = requestUrl.pathname;
+    const pathParts = path.split('/');
+    const aiPathIndex = pathParts.lastIndexOf('ai');
+    const scopedQuestionId = pathParts[aiPathIndex - 1] ?? '';
+    const scope = requestUrl.searchParams.get('scope') ?? 'analysis';
+    if (path.endsWith('/runs')) {
+      historyScopes.push(`${scopedQuestionId}:${scope}`);
+      if (holdAnalysisReload && scopedQuestionId === nextQuestionId && scope === 'analysis') {
+        analysisReloadStarted = true;
+        await analysisReloadGate;
+      }
+      const items = scopedQuestionId === nextQuestionId && scope === 'analysis'
+        ? [{ run_id: runId, status: 'complete', assistant_message_id: null }]
+        : [];
+      return route.fulfill({ json: { items, next_after: null, has_more: false } });
+    }
     if (path.includes('/runs/'))
       return route.fulfill({ json: { items: [], next_after: null, has_more: false } });
     if (path.endsWith('/events'))
       return route.fulfill({ status: 200, contentType: 'text/event-stream', body: '' });
-    if (path.endsWith('/ai'))
-      return route.fulfill({ json: { question_id: questionId, status: 'idle', error: null, messages: [] } });
+    if (path.endsWith('/ai') && route.request().method() === 'GET') {
+      if (holdAnalysisReload && scopedQuestionId === nextQuestionId && scope === 'analysis') {
+        analysisReloadStarted = true;
+        await analysisReloadGate;
+      }
+      return route.fulfill({ json: { question_id: scopedQuestionId, status: 'idle', error: null, messages: [] } });
+    }
     return route.fulfill({ status: 404, json: {} });
   });
   await page.route('**/api/v1/question-bank/shenlun/**', async route => {
@@ -536,9 +559,37 @@ test('历史申论 AI 运行记录仍提供删除操作', async ({ page }) => {
     throw new Error('Unexpected Shenlun request: ' + route.request().method() + ' ' + pathname);
   });
   await openShenlun(page);
+  await page.getByTestId('training-answer-sheet-toggle').click();
+  await page.getByTestId('question-bank-practice-number').nth(1).click();
+  await expect(page.getByTestId('shenlun-question-heading')).toContainText('原卷第 2 题');
+  await expect.poll(() => historyScopes).toContain(`${nextQuestionId}:analysis`);
   await expect(page.getByTestId('question-bank-ai-progress')).toContainText('第 1 轮 · 已完成');
   await page.getByTestId('shenlun-more').click();
   await expect(page.getByTestId('shenlun-delete-current')).toBeVisible();
+  await page.getByTestId('shenlun-more').click();
+  await page.getByTestId('shenlun-mode-ai').click();
+  await page.getByTestId('shenlun-more').click();
+  await expect(page.getByTestId('shenlun-delete-current')).toBeVisible();
+  await page.getByTestId('shenlun-more').click();
+
+  await page.getByTestId('shenlun-mode-grade').click();
+  await expect.poll(() => historyScopes).toContain(`${nextQuestionId}:grading`);
+  await page.getByTestId('shenlun-more').click();
+  await expect(page.getByText('暂无可用操作')).toBeVisible();
+  await page.getByTestId('shenlun-more').click();
+
+  holdAnalysisReload = true;
+  await page.getByTestId('shenlun-mode-ai').click();
+  try {
+    await expect.poll(() => analysisReloadStarted).toBe(true);
+    await page.evaluate(() => new Promise<void>(resolve =>
+      requestAnimationFrame(() => requestAnimationFrame(resolve))));
+    await page.getByTestId('shenlun-more').click();
+    await expect(page.getByTestId('shenlun-delete-current')).toBeVisible();
+  } finally {
+    releaseAnalysisReload();
+  }
+  await expect(page.getByTestId('question-bank-ai-progress')).toContainText('第 1 轮 · 已完成');
 });
 
 test('申论当前完成状态的解析仍提供删除操作', async ({ page }) => {
