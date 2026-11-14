@@ -117,6 +117,26 @@ test('drill collection practice keeps ungradable questions and reports separate 
   await expect(page.getByTestId('drill-progress-card')).toHaveCount(0);
 });
 
+test('weekly Codex remaining percentage controls the rendered bar width', async ({page}) => {
+  await page.route('**/api/v1/question-bank/ai/rate-limits', route => route.fulfill({json: {
+    five_hour: {remaining_percent: 72, resets_at: 1900000000},
+    week: {remaining_percent: 25, resets_at: 1900400000},
+  }}));
+  await loginAsAdmin(page);
+  await page.goto('/#/study/training');
+  await page.getByTestId('training-mode-question-bank-drill').click();
+  await page.getByTestId('question-bank-drill-collection').filter({hasText: '小P 2026 数量关系讲义'}).click();
+  await page.getByTestId('question-bank-drill-paper').filter({hasText: '方程关系'}).click();
+  await page.getByTestId('question-bank-practice-start').click();
+  await expect(page.getByTestId('codex-limit-week')).toContainText('25%');
+  const fillPercent = await page.getByTestId('codex-limit-week').locator('.training-progress-track svg rect').evaluate(rect => {
+    const track = rect.parentElement?.parentElement;
+    if (!track) throw new Error('weekly progress track is missing');
+    return rect.getBoundingClientRect().width / track.getBoundingClientRect().width * 100;
+  });
+  expect(fillPercent).toBeCloseTo(25, 0);
+});
+
 test('exam paper list does not include drill collections',async({page})=>{
   await loginAsAdmin(page);
   await page.goto('/#/study/training');
@@ -223,6 +243,58 @@ test('drill review displays a safe AI SVG diagram',async({page})=>{
   await expect.poll(()=>image.evaluate((node:HTMLImageElement)=>node.complete&&node.naturalWidth>0)).toBe(true);
 });
 
+
+test('专项练习中的历史 AI 运行记录仍可删除', async ({page}) => {
+  const runId = '00000000-0000-4000-8000-000000000011';
+  let deleted = false;
+  let deleteHeaders: Record<string, string> | undefined;
+  await page.route('**/api/v1/question-bank/practice/questions/*/ai**', async route => {
+    const request = route.request();
+    const {pathname} = new URL(request.url());
+    const questionId = pathname.split('/').at(-2)!;
+    if (pathname.endsWith('/runs')) {
+      return route.fulfill({json: {
+        items: deleted ? [] : [{run_id: runId, status: 'complete', assistant_message_id: null}],
+        next_after: null, has_more: false,
+      }});
+    }
+    if (pathname.endsWith('/events'))
+      return route.fulfill({status: 200, contentType: 'text/event-stream', body: ''});
+    if (pathname.endsWith('/ai') && request.method() === 'DELETE') {
+      deleted = true;
+      deleteHeaders = request.headers();
+      return route.fulfill({json: {question_id: questionId, status: 'idle', error: null, messages: []}});
+    }
+    if (pathname.endsWith('/ai') && request.method() === 'GET')
+      return route.fulfill({json: {question_id: questionId, status: 'idle', error: null, messages: []}});
+    return route.fulfill({status: 404, json: {}});
+  });
+
+  await loginAsAdmin(page);
+  await page.goto('/#/study/training');
+  await page.getByTestId('training-mode-question-bank-drill').click();
+  await page.getByTestId('question-bank-drill-collection').filter({hasText: '小P 2026 数量关系讲义'}).click();
+  await page.getByTestId('question-bank-drill-paper').filter({hasText: '方程关系'}).click();
+  await page.getByTestId('question-bank-practice-start').click();
+  await page.getByTestId('question-bank-practice-submit').click();
+  await page.getByRole('button', {name: '确认交卷'}).click();
+  await page.getByTestId('question-bank-practice-records').click();
+  await page.getByTestId('question-bank-practice-history-item').first()
+    .getByRole('button', {name: '查看原题与解析'}).click();
+  await page.getByTestId('question-bank-ai-tab').click();
+  await expect(page.getByTestId('question-bank-ai-progress')).toContainText('第 1 轮 · 已完成');
+  await page.getByRole('button', {name: '更多解析操作'}).click();
+  await page.getByTestId('question-bank-ai-delete').click();
+  const deletion = page.waitForResponse(response => response.request().method() === 'DELETE'
+    && new URL(response.url()).pathname.endsWith('/ai'));
+  await page.getByTestId('question-bank-ai-delete-confirm').click();
+  expect((await deletion).status()).toBe(200);
+  expect(deleted).toBe(true);
+  expect(deleteHeaders?.['x-hyz-csrf']).toBeTruthy();
+  await expect(page.getByTestId('question-bank-ai-status')).toContainText('未生成');
+  await page.getByRole('button', {name: '更多解析操作'}).click();
+  await expect(page.getByText('暂无可用操作')).toBeVisible();
+});
 
 test('Codex limits show unavailable windows without blocking practice', async ({page}) => {
   await page.route('**/api/v1/question-bank/ai/rate-limits', route => route.fulfill({status: 503}));
