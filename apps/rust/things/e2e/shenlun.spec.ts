@@ -701,6 +701,18 @@ test('申论 OCR 即时回显图片、流式显示工具进度，并在复盘期
   });
   await openShenlun(page);
   await page.getByTestId('shenlun-mode-ocr').click();
+  await expect(page.getByTestId('shenlun-ocr-pane')).toBeVisible();
+  await expect(page.getByTestId('shenlun-split')).toBeVisible();
+  await expect(page.getByTestId('shenlun-materials')).toBeVisible();
+  await expect(page.getByTestId('shenlun-question')).toBeVisible();
+  await expect(page.getByTestId('shenlun-ocr-question-context')).toHaveCount(0);
+  await page.setViewportSize({ width: 1280, height: 800 });
+  const materialBounds = await page.getByTestId('shenlun-materials').boundingBox();
+  const questionBounds = await page.getByTestId('shenlun-question').boundingBox();
+  expect(materialBounds).not.toBeNull();
+  expect(questionBounds).not.toBeNull();
+  expect(materialBounds!.x + materialBounds!.width).toBeLessThan(questionBounds!.x);
+  await page.setViewportSize({ width: 390, height: 844 });
 
   const submitOcr = async (expectedRun: string, expectedText: string) => {
     const file = page.getByTestId('shenlun-ocr-images').locator('input[type=file]');
@@ -739,6 +751,11 @@ test('申论 OCR 即时回显图片、流式显示工具进度，并在复盘期
     });
     await expect(activity.getByRole('button')).toHaveAttribute('aria-expanded', 'false');
     await expect(page.getByTestId('shenlun-ocr-tool')).toHaveCount(0);
+    await activity.getByRole('button').click();
+    await expect(activity.getByRole('button')).toHaveAttribute('aria-expanded', 'true');
+    const expandedOutput = activity.getByTestId('shenlun-ocr-output');
+    await expect(expandedOutput).toContainText('已读取图片并开始识别');
+    expect(await expandedOutput.evaluate(element => getComputedStyle(element).fontSize)).toBe('12px');
     await emit('message', {
       version: 1, run_id: expectedRun, seq: 3, kind: 'run_finished', payload: { markdown: expectedText },
     });

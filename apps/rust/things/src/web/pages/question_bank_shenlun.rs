@@ -727,10 +727,6 @@ pub(super) fn question_bank_shenlun(props: &QuestionBankShenlunProps) -> Html {
                         delete_signal={*ai_delete_signal} on_delete_availability={on_delete_availability}/>
                 } else if mode_value=="ocr" {
                     <div class="flex min-h-0 flex-1 flex-col overflow-hidden" data-testid="shenlun-ocr-pane">
-                        <div class="max-h-[35%] shrink-0 overflow-y-auto border-b border-base-content/10 p-4"
-                            data-testid="shenlun-ocr-question-context">
-                            {question_body.clone()}
-                        </div>
                         <super::shenlun_ai_panel::ShenlunAiPanel key={question_id.clone()}
                             question_id={question_id.clone()} csrf={props.csrf.clone()}
                             attempts={ocr_question_attempts.clone()} on_start={ocr_start_for_question.clone()}/>
