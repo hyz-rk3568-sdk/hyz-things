@@ -244,6 +244,7 @@ pub(super) struct AiReviewActivityProps {
     pub refresh_key: String,
     pub stream: Option<StreamSnapshot>,
     pub messages: Vec<AiReviewMessage>,
+    pub on_history_availability: Callback<bool>,
 }
 
 #[function_component(AiReviewActivity)]
@@ -252,6 +253,7 @@ pub(super) fn ai_review_activity(props: &AiReviewActivityProps) -> Html {
     let loading = use_state(|| false);
     let error = use_state(|| None::<String>);
     let retry = use_state(|| 0u64);
+    let on_history_availability = props.on_history_availability.clone();
     {
         let runs = runs.clone();
         let loading = loading.clone();
@@ -270,6 +272,7 @@ pub(super) fn ai_review_activity(props: &AiReviewActivityProps) -> Html {
                 let scope = *scope;
                 loading.set(true);
                 error.set(None);
+                let on_history_availability = on_history_availability.clone();
                 spawn_local(async move {
                     let mut cursor = 0i64;
                     let mut all = Vec::new();
@@ -298,6 +301,7 @@ pub(super) fn ai_review_activity(props: &AiReviewActivityProps) -> Html {
                                     cursor = next;
                                 }
                                 if !page.has_more {
+                                    on_history_availability.emit(!all.is_empty());
                                     runs.set(all);
                                     break;
                                 }

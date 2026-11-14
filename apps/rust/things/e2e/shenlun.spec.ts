@@ -511,7 +511,37 @@ test('未生成申论 AI 对话时不提供删除操作', async ({ page }) => {
   expect(deleted).toBe(false);
 });
 
-test('已生成的申论解析在三点菜单中提供删除操作', async ({ page }) => {
+test('历史申论 AI 运行记录仍提供删除操作', async ({ page }) => {
+  await loginAsAdmin(page);
+  const runId = '00000000-0000-4000-8000-000000000001';
+  await page.route('**/api/v1/question-bank/practice/questions/*/ai**', async route => {
+    const path = new URL(route.request().url()).pathname;
+    if (path.endsWith('/runs'))
+      return route.fulfill({ json: {
+        items: [{ run_id: runId, status: 'complete', assistant_message_id: null }],
+        next_after: null, has_more: false,
+      } });
+    if (path.includes('/runs/'))
+      return route.fulfill({ json: { items: [], next_after: null, has_more: false } });
+    if (path.endsWith('/events'))
+      return route.fulfill({ status: 200, contentType: 'text/event-stream', body: '' });
+    if (path.endsWith('/ai'))
+      return route.fulfill({ json: { question_id: questionId, status: 'idle', error: null, messages: [] } });
+    return route.fulfill({ status: 404, json: {} });
+  });
+  await page.route('**/api/v1/question-bank/shenlun/**', async route => {
+    const { pathname } = new URL(route.request().url());
+    if (pathname.endsWith('/shenlun/papers')) return route.fulfill({ json: catalog });
+    if (pathname.endsWith('/shenlun/papers/' + paperId)) return route.fulfill({ json: paperView });
+    throw new Error('Unexpected Shenlun request: ' + route.request().method() + ' ' + pathname);
+  });
+  await openShenlun(page);
+  await expect(page.getByTestId('question-bank-ai-progress')).toContainText('第 1 轮 · 已完成');
+  await page.getByTestId('shenlun-more').click();
+  await expect(page.getByTestId('shenlun-delete-current')).toBeVisible();
+});
+
+test('申论当前完成状态的解析仍提供删除操作', async ({ page }) => {
   await loginAsAdmin(page);
   await page.route('**/api/v1/question-bank/practice/questions/*/ai**', async route => {
     const path = new URL(route.request().url()).pathname;
