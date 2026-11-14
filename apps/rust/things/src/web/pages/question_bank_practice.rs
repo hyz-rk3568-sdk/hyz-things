@@ -156,20 +156,6 @@ fn module_filter_labels(filters: &ModulePracticeFilters) -> [String; 3] {
     ]
 }
 
-fn paper_catalog_label(papers: &[PaperSummary]) -> String {
-    let mut years = papers
-        .iter()
-        .filter(|paper| paper.role == "primary")
-        .map(|paper| paper.year);
-    let Some(first) = years.next() else {
-        return "0 份原卷".into();
-    };
-    let (min, max, count) = years.fold((first, first, 1), |(min, max, count), year| {
-        (min.min(year), max.max(year), count + 1)
-    });
-    format!("{min}—{max} · {count} 份原卷")
-}
-
 fn history_mode_label(mode: &PracticeMode) -> &'static str {
     match mode {
         PracticeMode::Paper | PracticeMode::PaperModule => "套卷训练",
@@ -3510,12 +3496,6 @@ pub(crate) fn question_bank_training(props: &QuestionBankTrainingProps) -> Html 
             </button>
         }
     };
-    let expanded_regions = web_sys::window()
-        .and_then(|window| window.inner_width().ok())
-        .and_then(|width| width.as_f64())
-        .filter(|width| *width >= 1024.0)
-        .map(|_| 2)
-        .unwrap_or(1);
     let collection_groups = collection_modules(browse, catalog.as_ref());
     let collection_filtered = browse
         .iter()
@@ -3803,53 +3783,16 @@ pub(crate) fn question_bank_training(props: &QuestionBankTrainingProps) -> Html 
                     if papers.is_empty() {
                         <p class="rounded-box bg-base-200 p-4 text-sm">{"暂无可用试卷，请先在题库管理同步原卷。"}</p>
                     }
-                    <div class="question-bank-paper-grid">
-                    {for {
-                        let mut grouped = std::collections::BTreeMap::<String,std::collections::BTreeMap<i32,Vec<&PaperSummary>>>::new();
-                        for paper in papers.iter().filter(|paper|paper.role=="primary") {
-                            grouped.entry(paper.region.clone()).or_default()
-                                .entry(paper.year).or_default().push(paper);
-                        }
-                        grouped.into_iter().enumerate().map(|(group_index,(region,years))| {
-                            let total=years.values().map(Vec::len).sum::<usize>();
-                            html! {
-                            <details class="rounded-box border border-base-content/10 bg-base-100" open={group_index<expanded_regions} data-testid="question-bank-region-group">
-                                <summary class="flex cursor-pointer select-none items-center justify-between px-4 py-3" data-testid="question-bank-region">
-                                    <span class="font-semibold">{region.clone()}</span>
-                                    <span class="text-xs text-base-content/50">{format!("{total}份")}</span>
-                                </summary>
-                                <div class="space-y-2 border-t border-base-content/10 p-3">
-                                    {for years.into_iter().rev().enumerate().map(|(year_index,(year,items))|html! {
-                                        <details class="question-bank-year-group rounded-box bg-base-200/50" open={year_index==0} data-testid="question-bank-year-group">
-                                            <summary class="flex items-center justify-between px-3 py-2 text-sm" data-testid="question-bank-year">
-                                                <span>{format!("{year} 年")}</span><span class="text-xs text-base-content/45">{format!("{} 份",items.len())}</span>
-                                            </summary>
-                                            <div class="grid gap-2 px-2 pb-2">
-                                                {for items.into_iter().map(|paper|{
-                                                    let id=paper.id.clone();
-                                                    let active=*selected_paper==id;
-                                                    let selected_paper=selected_paper.clone();
-                                                    let selected_module=selected_module.clone();
-                                                    html! {
-                                                        <button type="button" class="question-bank-paper-option"
-                                                            data-testid="question-bank-paper-option" aria-pressed={active.to_string()}
-                                                            onclick={Callback::from(move |_|{selected_paper.set(id.clone());selected_module.set(String::new());})}>
-                                                            <span class="min-w-0">
-                                                                <strong class="block text-sm">{paper.title.clone()}</strong>
-                                                                if !paper.variant.is_empty() { <span class="mt-0.5 block text-xs text-base-content/50">{paper.variant.clone()}</span> }
-                                                            </span>
-                                                            <span class="shrink-0 text-xs opacity-60">{format!("{}题",paper.questions)}</span>
-                                                        </button>
-                                                    }
-                                                })}
-                                            </div>
-                                        </details>
-                                    })}
-                                </div>
-                            </details>
-                        }})
-                    }}
-                    </div>
+                    <QuestionBankPaperPicker papers={(*papers).clone()}
+                        selected_id={(*selected_paper).clone()}
+                        on_select={Callback::from({
+                            let selected_paper=selected_paper.clone();
+                            let selected_module=selected_module.clone();
+                            move |id| {
+                                selected_paper.set(id);
+                                selected_module.set(String::new());
+                            }
+                        })}/>
                 </section>
             }
             if collection.is_none() && *mode == PracticeMode::Module {

@@ -11,6 +11,7 @@ use hyz_things::domain::question_bank::{
 
 #[derive(Properties, PartialEq)]
 pub(super) struct QuestionBankShenlunProps {
+    pub(super) active: bool,
     pub(super) on_immersive_change: Callback<bool>,
     pub(super) csrf: String,
 }
@@ -30,11 +31,11 @@ fn topic_label(question: &QuestionView) -> &str {
 pub(super) fn question_bank_shenlun(props: &QuestionBankShenlunProps) -> Html {
     let papers = use_state(|| None::<Vec<PaperSummary>>);
     let paper = use_state(|| None::<PaperView>);
+    let selected_paper = use_state(String::new);
     let selected = use_state(|| 0_usize);
     let busy = use_state(|| false);
     let loading = use_state(|| true);
     let error = use_state(|| None::<String>);
-    let refresh = use_state(|| 0_u32);
     let mode = use_state(|| "ai".to_owned());
     let ai_delete_signal = use_state(|| 0_u32);
     let ai_delete_availability = use_state(|| None::<(String, String, bool)>);
@@ -90,7 +91,7 @@ pub(super) fn question_bank_shenlun(props: &QuestionBankShenlunProps) -> Html {
         let papers = papers.clone();
         let loading = loading.clone();
         let error = error.clone();
-        use_effect_with(*refresh, move |_| {
+        use_effect_with((), move |_| {
             let alive = Rc::new(Cell::new(true));
             let guard = alive.clone();
             loading.set(true);
@@ -168,6 +169,9 @@ pub(super) fn question_bank_shenlun(props: &QuestionBankShenlunProps) -> Html {
             availability.set(None);
             || ()
         });
+    }
+    if !props.active {
+        return Html::default();
     }
     if let Some(current) = (*paper).as_ref() {
         let index = (*selected).min(current.questions.len().saturating_sub(1));
@@ -392,11 +396,9 @@ pub(super) fn question_bank_shenlun(props: &QuestionBankShenlunProps) -> Html {
             </section>
         };
         let navigation_allowed = Callback::from({
-            let mode = mode.clone();
             let availability = ai_delete_availability.clone();
             move |_: ()| {
                 availability.set(None);
-                mode.set("ai".into());
                 true
             }
         });
@@ -438,79 +440,81 @@ pub(super) fn question_bank_shenlun(props: &QuestionBankShenlunProps) -> Html {
             </div>
         }
     } else {
-        let mut grouped = std::collections::BTreeMap::<
-            String,
-            std::collections::BTreeMap<i32, Vec<&PaperSummary>>,
-        >::new();
-        if let Some(all) = (*papers).as_ref() {
-            for item in all.iter().filter(|item| item.role == "primary") {
-                grouped
-                    .entry(item.region.clone())
-                    .or_default()
-                    .entry(item.year)
-                    .or_default()
-                    .push(item);
-            }
-        }
-        html! {
-            <section class="flex h-full min-h-0 flex-col gap-3 overflow-hidden" data-testid="shenlun-catalog">
-                <div class="flex items-center justify-between gap-2">
-                    <div>
-                        <h2 class="font-semibold">{"申论训练 · 选择原卷"}</h2>
-                        <p class="text-xs text-base-content/55">{"选择原卷后直接进入真题 AI 批改与复盘。"}</p>
-                    </div>
-                    <button type="button" class="btn btn-ghost btn-sm"
-                        onclick={Callback::from({let refresh=refresh.clone();move |_|refresh.set(refresh.wrapping_add(1))})}>{"刷新"}</button>
-                </div>
-                if let Some(message)=(*error).as_ref() {
-                    <p role="alert" class="text-sm text-error">{message.clone()}</p>
+        let available_papers = (*papers)
+            .as_ref()
+            .map(|items| {
+                items
+                    .iter()
+                    .filter(|item| item.role == "primary")
+                    .cloned()
+                    .collect::<Vec<_>>()
+            })
+            .unwrap_or_default();
+        let selected_summary = available_papers
+            .iter()
+            .find(|item| item.id == *selected_paper);
+        let selected_exists = selected_summary.is_some();
+        let action_detail = selected_summary
+            .map(|item| format!("{} · {} 题", item.title, item.questions))
+            .unwrap_or_else(|| "请选择一份申论原卷".into());
+        let start_review = {
+            let selected_paper = selected_paper.clone();
+            let open = open.clone();
+            Callback::from(move |_| {
+                let id = (*selected_paper).clone();
+                if !id.is_empty() {
+                    open.emit(id);
                 }
-                <div class="min-h-0 flex-1 overflow-y-auto" data-testid="shenlun-paper-list">
-                    if *loading {
-                        <p class="py-4 text-sm">{"正在加载申论原卷…"}</p>
-                    } else {
-                        <div class="question-bank-paper-grid">
-                            {for grouped.into_iter().enumerate().map(|(group_index,(region,years))| {
-                                let total=years.values().map(Vec::len).sum::<usize>();
-                                html!{
-                                    <details class="rounded-box border border-base-content/10 bg-base-100"
-                                        open={group_index<2} data-testid="shenlun-region-group">
-                                        <summary class="flex cursor-pointer justify-between px-4 py-3">
-                                            <strong>{region}</strong><span class="text-xs opacity-60">{format!("{total}份")}</span>
-                                        </summary>
-                                        <div class="space-y-2 border-t border-base-content/10 p-3">
-                                            {for years.into_iter().rev().enumerate().map(|(year_index,(year,items))|html!{
-                                                <details class="question-bank-year-group rounded-box bg-base-200/50" open={year_index==0}>
-                                                    <summary class="flex cursor-pointer justify-between px-3 py-2 text-sm">
-                                                        <span>{format!("{year} 年")}</span><span class="text-xs opacity-60">{format!("{} 份",items.len())}</span>
-                                                    </summary>
-                                                    <div class="grid gap-2 px-2 pb-2">
-                                                        {for items.iter().map(|item|{
-                                                            let id=item.id.clone();
-                                                            let open=open.clone();
-                                                            html! {
-                                                                <button type="button" class="question-bank-paper-option"
-                                                                    data-testid="shenlun-open-paper" disabled={*busy}
-                                                                    onclick={Callback::from(move |_|open.emit(id.clone()))}>
-                                                                    <span class="min-w-0">
-                                                                        <strong class="block text-sm">{item.title.clone()}</strong>
-                                                                        <span class="block text-xs opacity-55">{item.variant.clone()}</span>
-                                                                    </span>
-                                                                    <span class="shrink-0 text-xs opacity-60">{format!("{}题",item.questions)}</span>
-                                                                </button>
-                                                            }
-                                                        })}
-                                                    </div>
-                                                </details>
-                                            })}
-                                        </div>
-                                    </details>
-                                }
-                            })}
-                        </div>
+            })
+        };
+        let start_action = html! {
+            <button class={TRAINING_PRIMARY_BUTTON} data-testid="shenlun-start-review"
+                disabled={!selected_exists || *busy || props.csrf.is_empty()} onclick={start_review}>
+                {if *busy {"正在打开…"} else {"开始申论复盘"}}
+            </button>
+        };
+        let select_paper = {
+            let selected_paper = selected_paper.clone();
+            Callback::from(move |id: String| selected_paper.set(id))
+        };
+        html! {
+            <TrainingSetupLayout test_id="shenlun-catalog" wide={true}
+                action={Some(start_action)} summary="申论复盘" detail={action_detail}>
+                <div class="question-bank-setup-content space-y-5">
+                    <div class="question-bank-heading">
+                        <h2 class="text-2xl font-bold">{"申论训练"}</h2>
+                        <p class="mt-1 text-sm leading-6 text-base-content/60">
+                            {"选择申论原卷，按题目进入批改、解析、OCR 与参考答案复盘。"}
+                        </p>
+                    </div>
+                    if let Some(message)=(*error).as_ref() {
+                        <p role="alert" class="text-sm text-error">{message.clone()}</p>
                     }
+                    <section class="space-y-3" aria-label="选择申论原卷">
+                        <div class="flex items-end justify-between gap-3">
+                            <div>
+                                <h3 class="font-semibold">{"选择原卷"}</h3>
+                                <p class="text-xs text-base-content/60">{"按地区展开年份与原卷；已选原卷高亮显示。"}</p>
+                            </div>
+                            <span class="text-xs text-base-content/50" data-testid="question-bank-paper-total">
+                                {paper_catalog_label(&available_papers)}
+                            </span>
+                        </div>
+                        if *loading {
+                            <p class="rounded-box bg-base-200 p-4 text-sm" role="status" data-testid="question-bank-paper-loading">
+                                {"正在加载申论原卷…"}
+                            </p>
+                        } else if available_papers.is_empty() {
+                            <p class="rounded-box bg-base-200 p-4 text-sm">
+                                {"暂无可用申论原卷，请先在题库管理同步原卷。"}
+                            </p>
+                        } else {
+                            <QuestionBankPaperPicker papers={available_papers}
+                                selected_id={(*selected_paper).clone()} on_select={select_paper}/>
+                        }
+                    </section>
                 </div>
-            </section>
+            </TrainingSetupLayout>
         }
     }
 }

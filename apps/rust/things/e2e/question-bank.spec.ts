@@ -1812,8 +1812,9 @@ for (const viewport of [{width:1280,height:800},{width:390,height:720}]) {
   });
 }
 
-test('AI activity loads every history page and expands full command output',async({page})=>{
+test('AI activity keeps the collapsed tool summary within two lines and wraps expanded output',async({page})=>{
   const requests:string[]=[];
+  const longCommand=`printf ${'x'.repeat(600)}`;
   await page.route('**/api/v1/question-bank/practice/questions/*/ai/runs**',async route=>{
     const url=new URL(route.request().url());
     requests.push(url.pathname+url.search);
@@ -1825,7 +1826,7 @@ test('AI activity loads every history page and expands full command output',asyn
     } else if (url.pathname.includes('/run-a/')) {
       const event=(seq:number,kind:string,payload:unknown)=>({version:1,run_id:'run-a',seq,kind,payload});
       await route.fulfill({json:after==='0'
-        ? {items:[event(1,'tool_started',{item_id:'cmd',tool:'命令',details:{command:'printf full-output'}}),event(2,'command_output_delta',{item_id:'cmd',text:'第一部分'})],next_after:2,has_more:true}
+        ? {items:[event(1,'tool_started',{item_id:'cmd',tool:'命令',details:{command:longCommand}}),event(2,'command_output_delta',{item_id:'cmd',text:'第一部分'})],next_after:2,has_more:true}
         : {items:[event(3,'command_output_delta',{item_id:'cmd',text:'第二部分'}),event(4,'tool_finished',{item_id:'cmd',tool:'命令',status:'completed'})],next_after:4,has_more:false}});
     } else {
       await route.fulfill({json:{items:[],next_after:null,has_more:false}});
@@ -1841,14 +1842,56 @@ test('AI activity loads every history page and expands full command output',asyn
   await expect(page.getByTestId('question-bank-ai-message')).toContainText('已保存的回答');
   expect(await rounds.first().evaluate(node => !!(node.compareDocumentPosition(document.querySelector('[data-testid=question-bank-ai-message]')!) & Node.DOCUMENT_POSITION_FOLLOWING))).toBe(true);
   expect(requests.some(url=>url.includes('/events?'))).toBe(false);
-  await rounds.first().locator(':scope > button').click();
-  const tool=rounds.first().getByTestId('question-bank-ai-tool');
-  await expect(tool.getByTestId('question-bank-ai-command')).toHaveText('printf full-output');
+  const firstRound=rounds.first();
+  const toggle=firstRound.locator(':scope > button');
+  await toggle.click();
+  const tool=firstRound.getByTestId('question-bank-ai-tool');
+  const command=tool.getByTestId('question-bank-ai-command');
+  await expect(command).toHaveText(longCommand);
+  await expect.poll(()=>requests.some(url=>url.includes('/run-a/events?after=2&limit=50'))).toBe(true);
+  await expect(tool).toContainText('completed');
+  await expect(tool.getByTestId('question-bank-ai-output')).toHaveText('第一部分第二部分');
+  await toggle.click();
+  const summary=firstRound.getByTestId('question-bank-ai-progress-summary');
+  await expect(summary).toBeVisible();
+  const summaryMetrics=await summary.evaluate(element=>{
+    const style=getComputedStyle(element);
+    return {
+      lineClamp:style.webkitLineClamp,
+      width:element.clientWidth,
+      scrollWidth:element.scrollWidth,
+      height:element.getBoundingClientRect().height,
+      lineHeight:Number.parseFloat(style.lineHeight),
+    };
+  });
+  expect(summaryMetrics.lineClamp).toBe('2');
+  expect(summaryMetrics.height).toBeLessThanOrEqual(summaryMetrics.lineHeight*2+1);
+  expect(summaryMetrics.scrollWidth).toBeLessThanOrEqual(summaryMetrics.width);
+  await toggle.click();
+  const commandMetrics=await command.evaluate(element=>{
+    const style=getComputedStyle(element);
+    return {
+      whiteSpace:style.whiteSpace,
+      wordBreak:style.wordBreak,
+      width:element.clientWidth,
+      scrollWidth:element.scrollWidth,
+      height:element.getBoundingClientRect().height,
+      lineHeight:Number.parseFloat(style.lineHeight),
+    };
+  });
+  expect(commandMetrics.whiteSpace).toBe('pre-wrap');
+  expect(commandMetrics.wordBreak).toBe('break-all');
+  expect(commandMetrics.height).toBeGreaterThan(commandMetrics.lineHeight*2);
+  expect(commandMetrics.scrollWidth).toBeLessThanOrEqual(commandMetrics.width);
+  const paneMetrics=await page.getByTestId('question-bank-practice-question-pane').evaluate(element=>({
+    width:element.clientWidth, scrollWidth:element.scrollWidth,
+  }));
+  expect(paneMetrics.scrollWidth).toBeLessThanOrEqual(paneMetrics.width);
   await expect(rounds.first().getByRole('button',{name:'加载更多输出'})).toHaveCount(0);
   await expect.poll(()=>requests.some(url=>url.includes('/run-a/events?after=2&limit=50'))).toBe(true);
   await expect(tool).toContainText('completed');
   await expect(page.getByRole('button',{name:'加载更多执行记录'})).toHaveCount(0);
-  await expect(tool.getByTestId('question-bank-ai-command')).toHaveText('printf full-output');
+  await expect(tool.getByTestId('question-bank-ai-command')).toHaveText(longCommand);
   await expect(tool.getByTestId('question-bank-ai-output')).toHaveText('第一部分第二部分');
   await page.getByRole('button',{name:'下一题',exact:true}).click();
   await page.getByRole('button',{name:'上一题',exact:true}).click();

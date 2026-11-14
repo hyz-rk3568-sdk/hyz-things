@@ -3,6 +3,17 @@ use super::{document::valid_id, BankError, PaperContent, QuestionBankApplication
 use crate::application::favorite_flashcards::{FavoriteQuestion, FavoriteQuestionPort};
 use async_trait::async_trait;
 
+fn shenlun_flashcard_category(question_type: Option<&str>) -> &'static str {
+    match question_type {
+        Some("summary" | "generalization" | "归纳概括") => "归纳概括",
+        Some("analysis" | "综合分析") => "综合分析",
+        Some("measures" | "countermeasure" | "提出对策") => "提出对策",
+        Some("document_writing" | "document" | "official_document" | "公文写作") => "公文写作",
+        Some("essay" | "composition" | "大作文") => "大作文",
+        _ => "其他",
+    }
+}
+
 #[async_trait]
 impl FavoriteQuestionPort for QuestionBankApplication {
     async fn load(&self, question_id: &str) -> Result<FavoriteQuestion, BankError> {
@@ -27,6 +38,11 @@ impl FavoriteQuestionPort for QuestionBankApplication {
             return Err(BankError::Conflict);
         }
         let question = content.question(question_id).ok_or(BankError::NotFound)?;
+        let shenlun = indexed.summary.subject == "shenlun"
+            && indexed.summary.role == "primary"
+            && indexed.summary.kind == "exam"
+            && question.answer_type == "subjective"
+            && !question.stem.trim().is_empty();
         let mut front = Vec::new();
         for id in &question.materials {
             let material = content
@@ -43,15 +59,29 @@ impl FavoriteQuestionPort for QuestionBankApplication {
         front.push(question.options_markdown.clone());
         Ok(FavoriteQuestion {
             question_id: question.id.clone(),
-            module: question.module.clone(),
-            category: question.category.clone(),
+            module: if shenlun {
+                Some("申论".into())
+            } else {
+                question.module.clone()
+            },
+            category: if shenlun {
+                Some(shenlun_flashcard_category(question.question_type.as_deref()).into())
+            } else {
+                question.category.clone()
+            },
             front: front.join("\n\n"),
-            correct_answer: question.correct_answer.clone(),
+            // Shenlun reference answers stay behind the existing gated source-answer view.
+            correct_answer: if shenlun {
+                Vec::new()
+            } else {
+                question.correct_answer.clone()
+            },
             source_revision: indexed.hash,
             gradable: question.gradable,
-            allow_manual_answer: indexed.summary.kind == "drill"
-                && question.correct_answer.is_empty()
-                && !question.stem.trim().is_empty(),
+            allow_manual_answer: shenlun
+                || (indexed.summary.kind == "drill"
+                    && question.correct_answer.is_empty()
+                    && !question.stem.trim().is_empty()),
         })
     }
 
