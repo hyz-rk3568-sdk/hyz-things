@@ -59,7 +59,6 @@ use question_bank_shenlun::*;
 use question_navigation::*;
 use related_method_card::*;
 pub(crate) use scratchpad::*;
-use shenlun_ai_panel::*;
 pub(crate) use study::*;
 pub(crate) use study_markdown::*;
 pub(crate) use system::*;

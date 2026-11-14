@@ -1,13 +1,16 @@
 //! 申论训练：复用 Question Bank 真题复盘工作区，而非建立第二套考试 Session。
+use super::ai_composer::PendingImage;
 use super::favorite_flashcard::{favorite_can_create, FavoriteFlashcardWorkspace, FavoritePreview};
 use super::material_scroll::{use_training_scroll_pair, MaterialScrollButton};
 use super::question_bank_practice::{
     use_practice_favorite, QuestionAiReview, QuestionBankQuestionHeader,
 };
+use super::shenlun_ai_panel::{OcrAttempt, OcrEvent, OcrRunSnapshot};
 use super::*;
 use hyz_things::domain::question_bank::{
     FavoriteState, PaperSummary, PaperView, QuestionView, SetFavorite,
 };
+use std::collections::HashMap;
 
 #[derive(Properties, PartialEq)]
 pub(super) struct QuestionBankShenlunProps {
@@ -25,6 +28,230 @@ fn topic_label(question: &QuestionView) -> &str {
         Some("essay" | "composition" | "大作文") => "大作文",
         _ => "其他",
     }
+}
+
+#[derive(serde::Serialize)]
+struct OcrStartRequest {
+    attachments: Vec<String>,
+}
+
+#[derive(serde::Deserialize)]
+struct OcrStartReceipt {
+    run_id: String,
+}
+
+type OcrAttempts = HashMap<String, Vec<OcrAttempt>>;
+type OcrAttemptStore = Rc<RefCell<OcrAttempts>>;
+
+fn push_ocr_attempt(
+    store: &OcrAttemptStore,
+    attempts: &UseStateHandle<OcrAttempts>,
+    question_id: &str,
+    attempt: OcrAttempt,
+) {
+    let next = {
+        let mut current = store.borrow_mut();
+        current
+            .entry(question_id.to_owned())
+            .or_default()
+            .push(attempt);
+        current.clone()
+    };
+    attempts.set(next);
+}
+
+fn update_ocr_attempt(
+    store: &OcrAttemptStore,
+    attempts: &UseStateHandle<OcrAttempts>,
+    question_id: &str,
+    local_id: u64,
+    update: impl FnOnce(&mut OcrAttempt) -> bool,
+) -> bool {
+    let (terminal, next) = {
+        let mut current = store.borrow_mut();
+        let Some(attempt) = current.get_mut(question_id).and_then(|values| {
+            values
+                .iter_mut()
+                .find(|attempt| attempt.local_id == local_id)
+        }) else {
+            return false;
+        };
+        let terminal = update(attempt);
+        (terminal, current.clone())
+    };
+    attempts.set(next);
+    terminal
+}
+
+fn apply_ocr_snapshot(
+    store: &OcrAttemptStore,
+    attempts: &UseStateHandle<OcrAttempts>,
+    question_id: &str,
+    local_id: u64,
+    run_id: &str,
+    snapshot: OcrRunSnapshot,
+) -> bool {
+    if snapshot.version != 1 || snapshot.question_id != question_id || snapshot.run_id != run_id {
+        return false;
+    }
+    update_ocr_attempt(store, attempts, question_id, local_id, |attempt| {
+        attempt.run_id = Some(snapshot.run_id);
+        attempt.seq = snapshot.seq;
+        attempt.status = snapshot.status;
+        attempt.events = snapshot.progress;
+        attempt.markdown = snapshot.markdown;
+        attempt.error = snapshot.error;
+        matches!(attempt.status.as_str(), "complete" | "failed" | "stopped")
+    })
+}
+
+fn apply_ocr_event(
+    store: &OcrAttemptStore,
+    attempts: &UseStateHandle<OcrAttempts>,
+    question_id: &str,
+    local_id: u64,
+    run_id: &str,
+    event: OcrEvent,
+) -> bool {
+    if event.version != 1 || event.run_id != run_id {
+        return false;
+    }
+    update_ocr_attempt(store, attempts, question_id, local_id, |attempt| {
+        if event.seq <= attempt.seq || event.seq != attempt.seq.saturating_add(1) {
+            return false;
+        }
+        attempt.seq = event.seq;
+        match event.kind.as_str() {
+            "tool_started"
+            | "tool_finished"
+            | "command_output_delta"
+            | "tool_output_delta"
+            | "tool_progress" => attempt.events.push(event.clone()),
+            "run_finished" => {
+                attempt.status = "complete".into();
+                attempt.markdown = event
+                    .payload
+                    .get("markdown")
+                    .and_then(serde_json::Value::as_str)
+                    .map(str::to_owned);
+            }
+            "run_failed" => {
+                attempt.status = "failed".into();
+                attempt.error = event
+                    .payload
+                    .get("error")
+                    .and_then(serde_json::Value::as_str)
+                    .map(str::to_owned);
+            }
+            _ => {}
+        }
+        matches!(attempt.status.as_str(), "complete" | "failed" | "stopped")
+    })
+}
+
+struct OcrEventSource {
+    source: web_sys::EventSource,
+    handlers: Vec<(String, Closure<dyn FnMut(web_sys::MessageEvent)>)>,
+}
+
+impl Drop for OcrEventSource {
+    fn drop(&mut self) {
+        self.source.close();
+        for (name, handler) in &self.handlers {
+            let _ = self
+                .source
+                .remove_event_listener_with_callback(name, handler.as_ref().unchecked_ref());
+        }
+    }
+}
+
+fn subscribe_ocr_stream(
+    question_id: String,
+    local_id: u64,
+    run_id: String,
+    store: OcrAttemptStore,
+    attempts: UseStateHandle<OcrAttempts>,
+    streams: Rc<RefCell<Vec<OcrEventSource>>>,
+) {
+    let endpoint =
+        format!("/api/v1/question-bank/shenlun/questions/{question_id}/ocr/{run_id}/events");
+    let source = match web_sys::EventSource::new(&endpoint) {
+        Ok(source) => source,
+        Err(_) => {
+            update_ocr_attempt(&store, &attempts, &question_id, local_id, |attempt| {
+                attempt.status = "failed".into();
+                attempt.error = Some("无法连接 OCR 实时进度".into());
+                true
+            });
+            return;
+        }
+    };
+    let snapshot_source = source.clone();
+    let snapshot_store = store.clone();
+    let snapshot_attempts = attempts.clone();
+    let snapshot_question = question_id.clone();
+    let snapshot_run = run_id.clone();
+    let snapshot = Closure::wrap(Box::new(move |event: web_sys::MessageEvent| {
+        let Some(data) = event.data().as_string() else {
+            return;
+        };
+        let Ok(snapshot) = serde_json::from_str::<OcrRunSnapshot>(&data) else {
+            return;
+        };
+        if apply_ocr_snapshot(
+            &snapshot_store,
+            &snapshot_attempts,
+            &snapshot_question,
+            local_id,
+            &snapshot_run,
+            snapshot,
+        ) {
+            snapshot_source.close();
+        }
+    }) as Box<dyn FnMut(_)>);
+    let _ = source.add_event_listener_with_callback("snapshot", snapshot.as_ref().unchecked_ref());
+
+    let message_source = source.clone();
+    let message_store = store.clone();
+    let message_attempts = attempts.clone();
+    let message_question = question_id.clone();
+    let message_run = run_id.clone();
+    let message = Closure::wrap(Box::new(move |event: web_sys::MessageEvent| {
+        let Some(data) = event.data().as_string() else {
+            return;
+        };
+        let Ok(event) = serde_json::from_str::<OcrEvent>(&data) else {
+            return;
+        };
+        if apply_ocr_event(
+            &message_store,
+            &message_attempts,
+            &message_question,
+            local_id,
+            &message_run,
+            event,
+        ) {
+            message_source.close();
+        }
+    }) as Box<dyn FnMut(_)>);
+    let _ = source.add_event_listener_with_callback("message", message.as_ref().unchecked_ref());
+    streams.borrow_mut().push(OcrEventSource {
+        source,
+        handlers: vec![("snapshot".into(), snapshot), ("message".into(), message)],
+    });
+}
+
+fn clear_ocr_session(
+    store: &OcrAttemptStore,
+    attempts: &UseStateHandle<OcrAttempts>,
+    streams: &Rc<RefCell<Vec<OcrEventSource>>>,
+    generation: &Rc<RefCell<u64>>,
+) {
+    let next_generation = generation.borrow().wrapping_add(1);
+    *generation.borrow_mut() = next_generation;
+    streams.borrow_mut().clear();
+    *store.borrow_mut() = HashMap::new();
+    attempts.set(HashMap::new());
 }
 
 #[function_component(QuestionBankShenlun)]
@@ -51,6 +278,111 @@ pub(super) fn question_bank_shenlun(props: &QuestionBankShenlunProps) -> Html {
     let flashcard_error = use_state(|| None::<String>);
     let flashcard_open = use_state(|| false);
     let flashcard_revision = use_state(|| 0_u32);
+    let ocr_attempts = use_state(OcrAttempts::new);
+    let ocr_attempt_store = use_mut_ref(OcrAttempts::new);
+    let ocr_next_id = use_mut_ref(|| 0_u64);
+    let ocr_streams = use_mut_ref(Vec::<OcrEventSource>::new);
+    let ocr_session_generation = use_mut_ref(|| 0_u64);
+    {
+        let attempts = ocr_attempts.clone();
+        let store = ocr_attempt_store.clone();
+        let streams = ocr_streams.clone();
+        let generation = ocr_session_generation.clone();
+        use_effect_with(props.active, move |active| {
+            if !*active {
+                clear_ocr_session(&store, &attempts, &streams, &generation);
+            }
+            || ()
+        });
+    }
+    {
+        let attempts = ocr_attempts.clone();
+        let store = ocr_attempt_store.clone();
+        let streams = ocr_streams.clone();
+        let generation = ocr_session_generation.clone();
+        use_effect_with((), move |_| {
+            move || clear_ocr_session(&store, &attempts, &streams, &generation)
+        });
+    }
+    let on_ocr_start = {
+        let attempts = ocr_attempts.clone();
+        let store = ocr_attempt_store.clone();
+        let next_id = ocr_next_id.clone();
+        let streams = ocr_streams.clone();
+        let generation = ocr_session_generation.clone();
+        let csrf = props.csrf.clone();
+        Callback::from(move |(question_id, images): (String, Vec<PendingImage>)| {
+            if images.is_empty() {
+                return;
+            }
+            let local_id = {
+                let mut next = next_id.borrow_mut();
+                *next = next.wrapping_add(1);
+                *next
+            };
+            let session_generation = *generation.borrow();
+            push_ocr_attempt(
+                &store,
+                &attempts,
+                &question_id,
+                OcrAttempt {
+                    local_id,
+                    run_id: None,
+                    images: images.clone(),
+                    status: "starting".into(),
+                    seq: 0,
+                    events: Vec::new(),
+                    markdown: None,
+                    error: None,
+                },
+            );
+            let body = OcrStartRequest {
+                attachments: images.iter().map(|image| image.id.clone()).collect(),
+            };
+            let endpoint = format!("/api/v1/question-bank/shenlun/questions/{question_id}/ocr");
+            let attempts = attempts.clone();
+            let store = store.clone();
+            let streams = streams.clone();
+            let generation = generation.clone();
+            let csrf = csrf.clone();
+            spawn_local(async move {
+                let result = post_json_response::<_, OcrStartReceipt>(
+                    &endpoint,
+                    &csrf,
+                    &body,
+                    "手写图片转写",
+                )
+                .await;
+                if *generation.borrow() != session_generation {
+                    return;
+                }
+                match result {
+                    Ok(receipt) => {
+                        update_ocr_attempt(&store, &attempts, &question_id, local_id, |attempt| {
+                            attempt.run_id = Some(receipt.run_id.clone());
+                            attempt.status = "running".into();
+                            false
+                        });
+                        subscribe_ocr_stream(
+                            question_id,
+                            local_id,
+                            receipt.run_id,
+                            store,
+                            attempts,
+                            streams,
+                        );
+                    }
+                    Err(message) => {
+                        update_ocr_attempt(&store, &attempts, &question_id, local_id, |attempt| {
+                            attempt.status = "failed".into();
+                            attempt.error = Some(message);
+                            true
+                        });
+                    }
+                }
+            });
+        })
+    };
     {
         let flashcard_preview = flashcard_preview.clone();
         let flashcard_error = flashcard_error.clone();
@@ -156,7 +488,12 @@ pub(super) fn question_bank_shenlun(props: &QuestionBankShenlunProps) -> Html {
         let paper = paper.clone();
         let mode = mode.clone();
         let immersive = props.on_immersive_change.clone();
+        let attempts = ocr_attempts.clone();
+        let store = ocr_attempt_store.clone();
+        let streams = ocr_streams.clone();
+        let generation = ocr_session_generation.clone();
         Callback::from(move |_| {
+            clear_ocr_session(&store, &attempts, &streams, &generation);
             immersive.emit(false);
             mode.set("ai".into());
             paper.set(None);
@@ -190,6 +527,17 @@ pub(super) fn question_bank_shenlun(props: &QuestionBankShenlunProps) -> Html {
         let material_scroll = scroll.first.clone();
         let material_edges = *scroll.first_edges;
         let mode_value = (*mode).clone();
+        let ocr_question_attempts = (*ocr_attempts)
+            .get(&question_id)
+            .cloned()
+            .unwrap_or_default();
+        let ocr_start_for_question = {
+            let start = on_ocr_start.clone();
+            let question_id = question_id.clone();
+            Callback::from(move |images| {
+                start.emit((question_id.clone(), images));
+            })
+        };
         let icon_button = super::question_header_actions::QUESTION_HEADER_ICON_BUTTON;
 
         let left = html! {
@@ -205,7 +553,7 @@ pub(super) fn question_bank_shenlun(props: &QuestionBankShenlunProps) -> Html {
                 </div>
                 <div ref={material_scroll} onscroll={scroll.on_scroll.clone()}
                     class="min-h-0 flex-1 space-y-5 overflow-y-auto overscroll-contain px-4 pb-5 pt-3"
-                    data-testid="shenlun-material-scroll" data-swipe-ignore="true">
+                    data-testid="shenlun-material-scroll">
                     {for current.materials.iter().map(|material| html! {
                         <article key={material.id.clone()} class="space-y-2">
                             <h3 class="font-semibold">{material.name.clone()}</h3>
@@ -377,12 +725,13 @@ pub(super) fn question_bank_shenlun(props: &QuestionBankShenlunProps) -> Html {
                             data-testid="shenlun-ocr-question-context">
                             {question_body.clone()}
                         </div>
-                        <ShenlunAiPanel key={question_id.clone()}
-                            question_id={question_id.clone()} csrf={props.csrf.clone()}/>
+                        <super::shenlun_ai_panel::ShenlunAiPanel key={question_id.clone()}
+                            question_id={question_id.clone()} csrf={props.csrf.clone()}
+                            attempts={ocr_question_attempts.clone()} on_start={ocr_start_for_question.clone()}/>
                     </div>
                 } else {
                     <div class="min-h-0 flex-1 overflow-y-auto overscroll-contain p-4" ref={scroll.second.clone()}
-                        onscroll={scroll.on_scroll.clone()} data-testid="shenlun-source-scroll" data-swipe-ignore="true">
+                        onscroll={scroll.on_scroll.clone()} data-testid="shenlun-source-scroll">
                         {question_body.clone()}
                         if mode_value=="source" {
                             <super::shenlun_ai_panel::ShenlunSourceAnswerPanel key={question_id.clone()}

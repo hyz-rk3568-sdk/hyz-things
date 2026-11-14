@@ -1,6 +1,8 @@
 //! Authenticated, transient Markdown OCR and source-reference endpoints.
 use super::*;
-use crate::adapters::outbound::shenlun_ai::{ShenlunAiError, ShenlunAiService};
+use crate::adapters::outbound::shenlun_ai::{
+    OcrRunPush, OcrRunSnapshot, ShenlunAiError, ShenlunAiService,
+};
 use axum::Extension;
 
 pub fn with_shenlun_ai(router: Router, ai: Option<Arc<ShenlunAiService>>) -> Router {
@@ -76,10 +78,161 @@ pub(super) async fn ocr(
         Ok(service) => service,
         Err(error) => return error,
     };
-    match service.ocr(&id, &input.attachments).await {
-        Ok(result) => Json(result).into_response(),
+    match service.start_ocr(&id, &input.attachments).await {
+        Ok(receipt) => (StatusCode::ACCEPTED, Json(receipt)).into_response(),
         Err(error) => ai_error(error),
     }
+}
+
+struct OcrEventConnection {
+    state: AppState,
+    headers: HeaderMap,
+    service: Arc<ShenlunAiService>,
+    question_id: String,
+    run_id: String,
+    receiver: tokio::sync::broadcast::Receiver<OcrRunPush>,
+    snapshot: Option<OcrRunSnapshot>,
+    seq: u64,
+    next_authorization: tokio::time::Instant,
+    next_heartbeat: tokio::time::Instant,
+    done: bool,
+    _permit: tokio::sync::OwnedSemaphorePermit,
+}
+
+impl OcrEventConnection {
+    async fn reauthorize_if_due(&mut self) -> bool {
+        if tokio::time::Instant::now() < self.next_authorization {
+            return true;
+        }
+        if authorize_sensitive_read(&self.state, &self.headers)
+            .await
+            .is_err()
+            || self
+                .service
+                .ocr_run_snapshot(&self.question_id, &self.run_id)
+                .is_none()
+        {
+            return false;
+        }
+        self.next_authorization = tokio::time::Instant::now() + std::time::Duration::from_secs(2);
+        true
+    }
+}
+
+pub(super) async fn ocr_events(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    service: Service,
+    Path((question_id, run_id)): Path<(String, String)>,
+) -> Response {
+    if let Err(response) = authorize_sensitive_read(&state, &headers).await {
+        return response;
+    }
+    let service = match require_service(service) {
+        Ok(service) => service,
+        Err(error) => return error,
+    };
+    let permit = match service.ocr_stream_permit() {
+        Ok(permit) => permit,
+        Err(error) => return ai_error(error),
+    };
+    let Some((snapshot, receiver)) = service.subscribe_ocr_run(&question_id, &run_id) else {
+        return StatusCode::NOT_FOUND.into_response();
+    };
+    let connection = OcrEventConnection {
+        state,
+        headers,
+        service,
+        question_id,
+        run_id,
+        receiver,
+        snapshot: Some(snapshot),
+        seq: 0,
+        next_authorization: tokio::time::Instant::now(),
+        next_heartbeat: tokio::time::Instant::now() + std::time::Duration::from_secs(15),
+        done: false,
+        _permit: permit,
+    };
+    let stream = futures_util::stream::unfold(connection, |mut connection| async move {
+        if connection.done {
+            return None;
+        }
+        loop {
+            if !connection.reauthorize_if_due().await {
+                return None;
+            }
+            if let Some(snapshot) = connection.snapshot.take() {
+                connection.seq = snapshot.seq;
+                connection.done = snapshot.status != "running";
+                let id = format!("{}:{}", snapshot.run_id, snapshot.seq);
+                let data = serde_json::to_string(&snapshot).ok()?;
+                let event = axum::response::sse::Event::default()
+                    .event("snapshot")
+                    .id(id)
+                    .data(data);
+                return Some((Ok::<_, std::convert::Infallible>(event), connection));
+            }
+            let received = tokio::select! {
+                value = connection.receiver.recv() => Some(value),
+                _ = tokio::time::sleep_until(connection.next_authorization) => continue,
+                _ = tokio::time::sleep_until(connection.next_heartbeat) => None,
+            };
+            if !connection.reauthorize_if_due().await {
+                return None;
+            }
+            match received {
+                None => {
+                    connection.next_heartbeat =
+                        tokio::time::Instant::now() + std::time::Duration::from_secs(15);
+                    return Some((
+                        Ok(axum::response::sse::Event::default().comment("keepalive")),
+                        connection,
+                    ));
+                }
+                Some(Err(tokio::sync::broadcast::error::RecvError::Closed)) => return None,
+                Some(Err(tokio::sync::broadcast::error::RecvError::Lagged(_))) => {
+                    connection.snapshot = connection
+                        .service
+                        .ocr_run_snapshot(&connection.question_id, &connection.run_id);
+                    if connection.snapshot.is_none() {
+                        return None;
+                    }
+                }
+                Some(Ok(push)) => {
+                    if push.question_id != connection.question_id
+                        || push.run_id != connection.run_id
+                        || push.event.seq <= connection.seq
+                    {
+                        continue;
+                    }
+                    if push.event.seq != connection.seq + 1 {
+                        connection.snapshot = connection
+                            .service
+                            .ocr_run_snapshot(&connection.question_id, &connection.run_id);
+                        if connection.snapshot.is_none() {
+                            return None;
+                        }
+                        continue;
+                    }
+                    connection.seq = push.event.seq;
+                    connection.done =
+                        matches!(push.event.kind.as_str(), "run_finished" | "run_failed");
+                    let id = format!("{}:{}", push.event.run_id, push.event.seq);
+                    let data = serde_json::to_string(&push.event).ok()?;
+                    let event = axum::response::sse::Event::default().id(id).data(data);
+                    return Some((Ok(event), connection));
+                }
+            }
+        }
+    });
+    let mut response = axum::response::sse::Sse::new(stream).into_response();
+    response
+        .headers_mut()
+        .insert(header::CACHE_CONTROL, HeaderValue::from_static("no-store"));
+    response
+        .headers_mut()
+        .insert("x-accel-buffering", HeaderValue::from_static("no"));
+    response
 }
 
 pub(super) async fn reference(

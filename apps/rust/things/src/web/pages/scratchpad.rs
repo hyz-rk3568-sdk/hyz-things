@@ -468,9 +468,7 @@ pub(crate) fn ink_toolbar_slot() -> Html {
                     </button>
                 </div>
             }
-            <button type="button" class={if tools.enabled {"btn btn-primary btn-sm btn-square"} else {INK_ICON_BUTTON}}
-                data-testid="calculation-scratchpad-toggle" aria-label={if tools.enabled {"关闭草稿"} else {"开启草稿"}}
-                aria-expanded={tools.enabled.to_string()} disabled={!tools.ready} onclick={tools.toggle}>{"✎"}</button>
+            <QuestionInkToggle />
         </div>
     }
 }
