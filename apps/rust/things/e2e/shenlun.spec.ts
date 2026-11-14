@@ -455,6 +455,40 @@ test('申论切题后保留当前 OCR 与来源答案模式', async ({ page }) =
   await expect(page.getByTestId('shenlun-source-answer')).toBeVisible();
 });
 
+test('申论 AI 模式始终提供删除对话入口', async ({ page }) => {
+  await loginAsAdmin(page);
+  let deleted = false;
+  await page.route('**/api/v1/question-bank/practice/questions/*/ai**', async route => {
+    const request = route.request();
+    const path = new URL(request.url()).pathname;
+    if (path.endsWith('/runs'))
+      return route.fulfill({ json: { items: [], next_after: null, has_more: false } });
+    if (path.endsWith('/events'))
+      return route.fulfill({ status: 200, contentType: 'text/event-stream', body: '' });
+    if (path.endsWith('/ai') && request.method() === 'GET')
+      return route.fulfill({ json: { question_id: questionId, status: 'idle', error: null, messages: [] } });
+    if (path.endsWith('/ai') && request.method() === 'DELETE') {
+      deleted = true;
+      return route.fulfill({ json: { question_id: questionId, status: 'idle', error: null, messages: [] } });
+    }
+    return route.fulfill({ status: 404, json: {} });
+  });
+  await page.route('**/api/v1/question-bank/shenlun/**', async route => {
+    const { pathname } = new URL(route.request().url());
+    if (pathname.endsWith('/shenlun/papers')) return route.fulfill({ json: catalog });
+    if (pathname.endsWith('/shenlun/papers/' + paperId)) return route.fulfill({ json: paperView });
+    throw new Error('Unexpected Shenlun request: ' + route.request().method() + ' ' + pathname);
+  });
+  await openShenlun(page);
+  await expect(page.getByTestId('question-bank-ai-status')).toContainText('未生成');
+  await page.getByTestId('shenlun-more').click();
+  await expect(page.getByTestId('shenlun-delete-current')).toBeVisible();
+  await page.getByTestId('shenlun-delete-current').click();
+  await expect(page.getByTestId('question-bank-ai-delete-confirm')).toBeVisible();
+  await page.getByTestId('question-bank-ai-delete-confirm').click();
+  await expect.poll(() => deleted).toBe(true);
+});
+
 test('已生成的申论解析在三点菜单中提供删除操作', async ({ page }) => {
   await loginAsAdmin(page);
   await page.route('**/api/v1/question-bank/practice/questions/*/ai**', async route => {
@@ -823,6 +857,18 @@ test('申论解析和批改分别使用独立会话、草稿与删除状态', as
   expect(observed.requestStatuses).toEqual(expect.arrayContaining(['analysis', 'grading']));
   expect(observed.requestIds).not.toContain(legacyRequestId);
   expect(legacyGradeJobs).toBe(0);
+  const analysisInput = page.getByTestId('question-bank-ai-input');
+  await analysisInput.fill('追问如何落地');
+  await page.getByTestId('question-bank-ai-send').click();
+  await expect.poll(() => observed.followUps.some(({ scope, message }) =>
+    scope === 'analysis' && message === '追问如何落地')).toBe(true);
+  await expect(page.getByTestId('question-bank-ai-messages')).toContainText('解析追问独立回答');
+  await page.getByTestId('shenlun-more').click();
+  await expect(page.getByTestId('shenlun-delete-current')).toBeVisible();
+  await page.getByTestId('shenlun-delete-current').click();
+  await page.getByTestId('question-bank-ai-delete-confirm').click();
+  await expect.poll(() => observed.deletes).toEqual(['grading', 'analysis']);
+  await expect(page.getByTestId('question-bank-ai-messages')).not.toContainText('解析独立会话正文');
   await page.getByTestId('shenlun-more').click();
   await expect(page.getByTestId('shenlun-delete-current')).toBeVisible();
   await page.getByTestId('training-answer-sheet-toggle').click();
