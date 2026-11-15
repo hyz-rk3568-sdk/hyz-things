@@ -1,6 +1,6 @@
 # Question Bank 前端瘦身与模块边界重构 Plan
 
-> 状态：**提案 / 待审阅**。本 PR **只提交此 Plan，不修改业务代码、SQL、测试或部署**。
+> 状态：**提案 / 待审阅**。PR #128 目前**只包含 Plan**，尚未修改业务代码、SQL、E2E 或部署；方案通过审阅后，可**直接在同一个 Draft PR 中分阶段追加实现 commit**，不另拆多个实现 PR。
 > 日期：2026-11-15；审查基线：`main@d54aa6b94e4eadfa4d4cd1b6263586fe4c22162c`。
 > 原则：**以当前已实现的代码、HTTP 路由、E2E 所表达的最新产品行为为准**；历史 Plan 仅供追溯，不作为新增功能或兼容要求。
 
@@ -11,8 +11,9 @@
 1. 纠正 `pages/` 目录中“页面入口”和“训练业务组件”混放的问题，让文件名直接反映职责。
 2. 将行测与申论统一放在一个 `question_bank` 前端业务模块下。申论是科目（`subject=shenlun`），不是与 Question Bank 平级的产品模块；归纳概括等才是具体题型。
 3. 在**不改变当前用户体验**前提下，拆分单体 `QuestionAiReview`、解耦手写板定位、用强类型表示申论 UI 模式。
-4. 审计并删除旧 Plan 遗留、现行流程不再使用的申论 Attempt/Job/确认转写实现及过期测试模拟，减少实际代码，而非仅搬文件。
-5. 保留未来 React + TypeScript 可按同一业务模块边界逐块迁移的可能性；优先稳定 HTTP、数据 DTO 和持久化契约。
+4. 审计并删除旧 Plan 遗留、现行流程不再使用的申论 Attempt/Job/确认转写实现，减少实际代码，而非仅搬文件。
+5. 最后一阶段系统重构和瘦身题库相关 E2E：删除旧模拟、去除重复初始化与巨型 Mock、按行为重组测试；**保留甚至强化真正的回归保护**。
+6. 保留未来 React + TypeScript 可按同一业务模块边界逐块迁移的可能性；优先稳定 HTTP、数据 DTO 和持久化契约。
 
 **非目标（本轮不做）**
 
@@ -127,13 +128,21 @@ apps/rust/things/src/
 | `application/question_bank/shenlun_grading.rs` | 旧逐页 JSON `validate_transcription`、孤立 `SKILL_VERSION` | 当前 OCR HTTP 响应为 Markdown + events，先确认该校验已不在运行路径 |
 | `adapters/outbound/question_bank_sqlite.rs` | Attempt 的新增、读取、保存、交卷 SQL 及旧测试 | **学习统计仍在两处查询 `shenlun_attempts`**；先决定历史数据只读兼容或受控迁移 |
 | `migrations/question_bank/20261113*shenlun*.sql` | 已废弃 Attempt/Job 表、列、索引 | **已执行迁移不得删除或重写**；新库初始化、旧库升级都应可用 |
-| `e2e/shenlun.spec.ts` | `Attempt` / `draftAttempt()` / 旧 `/shenlun/attempts`、`/jobs` 模拟 | 将“不应访问旧接口”改成可失败的负向约束；不要保留误导性成功 mock |
+| `e2e/shenlun.spec.ts` | `Attempt` / `draftAttempt()` / 旧 `/shenlun/attempts`、`/jobs` 模拟 | 在最终 E2E 瘦身阶段统一删除成功 Mock，用明确负向断言表达“旧接口不得调用” |
 
 **数据兼容是阻断项**：`question_bank_sqlite.rs::daily_answered_counts` 和 `daily_answered_breakdown` 当前都读取 `shenlun_attempts`。不能先删表/迁移再让统计运行时报错。若历史数据仍有价值，保留只读统计并隔离旧表；若确实决定彻底移除，应在单独数据迁移设计中明确历史数据处理、新旧数据库验证和回滚策略。
 
 **清理规则**：先做调用图检索，再检查动态注册 / SQL / 测试 / 数据库迁移；未证明无用之前列为“待确认”，而非宣称已删干净。保留服务鉴权、OCR 错误处理、来源答案保护以及实际使用的 Codex service。
 
-## 5. E2E 是当前行为基线，不是全部业务定义
+## 5. E2E：当前行为基线 + 最终独立瘦身阶段
+
+**当前测试规模和可维护性问题（静态审查）**
+
+- `e2e/shenlun.spec.ts` 约 **859 行**；反复出现 `loginAsAdmin`、`page.route('**/api/v1/question-bank/shenlun/**', ...)`、试卷目录及来源答案模拟。开头仍有旧 `Attempt`、`draftAttempt` 模型，实际流程不再创建它。
+- `e2e/question-bank.spec.ts` 约 **2,338 行**，混合题库练习、AI 对话/SSE、附件、Markdown 布局、断线重试、移动端交互等大量不同业务场景。应按测试**行为领域**分组；已有其他独立 question-bank spec，不复制相同覆盖。
+- `e2e/favorite-flashcard.spec.ts` 约 **935 行**，包含收藏/Flashcard 主流程及大量 AI、手写板交叉验证；可复用部分题库 AI Mock/导航 helper，但不能把收藏专属断言迁丢。
+- `e2e/support.ts` 约 **127 行**，主要是通用手势/计时辅助；**不应**将题库专用的所有复杂模拟塞进这个通用文件。若提取 helper，放在 `e2e/helpers/question-bank.ts` 或邻近小模块，fixture 数据与请求行为分开。
+- 文件行数本身不是缺陷：重点是**删除过期测试模型、减少重复初始化与 Mock、保留测试独立性和失败定位**。行数减少不是验收唯一指标。
 
 **现有 `e2e/shenlun.spec.ts` 已覆盖的重要约束**
 
@@ -143,13 +152,23 @@ apps/rust/things/src/
 - OCR 是一次性图片转写，结果为 Markdown，显示工具输出，无转写确认或 legacy write。
 - 多视口布局、固定 Composer、内部滚动与题库共享工作区的外观一致性。
 
-**后续应增加 / 加强**
+**在实现阶段 A—D 期间，按改动持续回归，不等到最后**
 
-1. 把旧 Attempt/Job 成功模拟替换为异常请求失败 + 请求次数为零的负向断言；不要测试一个实际已不支持的接口“能用”。
+1. 将旧 Attempt/Job 写请求视为非法：不再返回成功 Mock，直接失败并记录调用次数应为零；该测试修改可与后端清理一起完成，最后 E 阶段统一整理结构。
 2. AI 各 scope 的历史/事件、删除及晚到响应分别断言；跨题切换和后台请求完成后不泄漏错误内容。
 3. `data-ink-pane` 语义绑定的测试不替换旧 `data-testid`；加入隐藏工作区、屏幕旋转/滚动后的书写命中测试。
 4. SQLite 统计测试：空数据库、带历史 `shenlun_attempts` 数据库、新安装与升级数据库；核对 `daily_answered_counts` 和 breakdown。
-5. 模块移动后更新 `apps/rust/things/tools/select-related-e2e.sh` 路径匹配，避免 E2E 选择器漏跑；共享组件变更同时跑 Question Bank、收藏、生成相关用例。
+5. 模块移动后同步更新 `apps/rust/things/tools/select-related-e2e.sh` 路径匹配，避免 E2E 选择器漏跑；共享组件变更同时跑 Question Bank、收藏、生成相关用例。
+
+**最终阶段 E — E2E 专项重构与瘦身（本轮明确要实施）**
+
+1. **删除遗留**：移除 `Attempt`、`draftAttempt`、旧 `/shenlun/attempts` 和 Job 成功模拟及无意义的假状态；对被废弃的写接口使用 `route.abort()` / 显式 throw 或请求监听计数，确保发生请求就使测试失败，而不是默默成功。
+2. **收敛重复 setup**：把申论试卷目录、纸张题目、来源参考答案的基础 fixture 与常用 `openShenlun` / `installShenlunRoutes` 收敛为小型辅助。支持各测试覆盖个别响应和延迟场景，不创建一个需要几十个选项的万能 Mock 服务。
+3. **按行为组织套件**：题库练习、共享 AI（流与请求生命周期）、申论、收藏 Flashcard、手写及布局等各有清楚的归属；可以将 `question-bank.spec.ts` 的 AI 大段拆进 `question-bank-ai.spec.ts`，但首先排查与现有 `question-bank-*.spec.ts` 重复的测试。切忌只拆文件不消除重复逻辑。
+4. **保留不同测试层次**：真实 HTTP 上传/鉴权/CSRF 与数据库集成测试继续跑真实路径；Mock 用于稳定重现异步/竞态/错误，不可用 Mock 全绿替代真实路径验证。不要把需要验证的响应模型全部硬编码到 helper 里掩盖协议变化。
+5. **保持核心断言**：各科目选题/切题、AI `analysis/grading` 隔离、SSE 重连、请求幂等/冲突、独立草稿、Ink IndexedDB 恢复、OCR Markdown 与工具输出、来源答案、收藏和 Flashcard、WebKit 几何；不要为减少 case 数量而删除边界/失败路径覆盖。
+6. **维护测试执行选择器**：若拆分 `question-bank.spec.ts` 等 suite，同步更新 `tools/select-related-e2e.sh`、CI 指定 spec 与受影响的测试命令。检查新 spec 在 CI 下实际被选中执行，而不是只有本地可以运行。
+7. **验证方式**：E 阶段前后记录测试清单、关键场景映射、用例数量及实际执行结果；对比删掉的仅是重复/过时断言。`sh e2e`/Playwright 通过且与真实接口测试结合，才可认定“瘦身不降覆盖”。
 
 **验证建议（在后续实现 PR 中执行，不能以本计划代替实际结果）**
 
@@ -158,16 +177,21 @@ apps/rust/things/src/
 - 真实 iPad / 手机检查手写、OCR 上传、长 Markdown、SSE 断线重连、切模式与滚动；
 - 查看 SQLite 新库与旧库升级情况，禁止测试仅 Mock 全绿就直接宣称数据库兼容。
 
-## 6. 建议拆分为多个实现 PR，而不是一个大爆炸式重构
+## 6. **同一个实现 PR、分阶段 commit**
 
-| 实施 PR | 范围 | 合并前必须确认 |
+**按用户决策，本重构不拆多个实现 PR。** 当前 Draft PR #128 先供审阅 Plan，审阅确定后可在该 PR 继续追加 A—E 的代码提交；每一阶段对应独立的 commit（必要时数个小 commit），完成后统一 review、统一合并，绝不在某一阶段未验收时提前宣称全部完成。
+
+| 阶段 / 建议 commit | 范围 | 阶段检查 |
 | --- | --- | --- |
-| A | `ShenlunMode` 枚举 + E2E 明确当前模式契约 | 行为不变、scope/草稿隔离 |
-| B | 手写板 `data-ink-pane` 解耦 | 行测/申论/收藏、笔迹恢复及 WebKit |
-| C | `QuestionAiReview` 提取 + `ai_review_timeline` 命名 + `question_bank/` 目录归位 | 不改变网络/存储契约；共享调用方编译和测试 |
-| D | 旧申论 Attempt/Job/转写校验清理 + 测试 Mock 瘦身 | 无活跃调用；学习统计与旧库兼容方案先通过测试 |
+| A `refactor(question-bank): type Shenlun UI modes` | `ShenlunMode` 枚举，模式映射显式化 | 行为不变、scope/草稿隔离、相关 E2E |
+| B `refactor(ink): select panes by semantic attributes` | 手写板 `data-ink-pane` 解耦 | 行测/申论/收藏、笔迹恢复及 WebKit |
+| C `refactor(question-bank): extract shared AI review and organize modules` | `QuestionAiReview` 拆分、`ai_review_timeline` 命名、`question_bank/` 归位 | 不改变网络/存储契约；共享调用方、编译及 E2E |
+| D `refactor(shenlun): retire unused attempt and job prototype` | 旧申论 Attempt/Job/转写校验及未用代码清理；同时修正必要测试负向断言 | 无活跃调用；学习统计与旧库兼容验证通过 |
+| E `test(e2e): slim and organize question bank regression suites` | **最后统一 E2E 瘦身**：过时 mock、重复 setup、巨型 spec、套件归属、CI 选择器 | 场景覆盖无下降；相关套件与真实 API/上传/数据库测试验证 |
 
-以上每个 PR 都应是可以独立回滚和复查的行为保持型改造；如 B 与 C 的模块移动冲突，应先提语义选择器再移动文件。不可为了追求单 PR 完成而混合大规模迁移、存储改造和 UI 功能新增。
+**每阶段检查必须运行并如实记录**：静态编译与目标单测 + 涉及的现有 E2E；E 阶段负责测试结构整体瘦身和收尾回归，不意味着 A—D 可以不跑测试。保留阶段 commit 以便审阅和精准回滚，不要求拆独立 PR。若 B/C 文件移动冲突，先完成语义选择器替换再移动。
+
+PR #128 在全部阶段实施完成且关键测试通过以前一直保持 Draft；本次更新仍只有 Plan 文档，不代表实现已开始或完成。
 
 ## 7. React 迁移预留（只约束边界，不提前实现）
 
@@ -179,8 +203,8 @@ apps/rust/things/src/
 ## 8. 完成标准与状态
 
 - [x] 本 Plan 对照当前路由、申论 E2E、申论 HTTP endpoint、题库 AI/Ink、SQLite 统计引用进行静态审查。
-- [ ] 实现 PR A-D（需要独立审查与实际验证）。
+- [ ] **在同一个 Draft PR #128 中按 A—E 阶段分别提交 commit 并验证**（当前尚未实施）。
 - [ ] 对公共类型、组件依赖及本地存储键进行回归验证。
 - [ ] 完成旧库和真实设备测试；未执行前一律记录为“未验证”。
 
-**本 PR 只供审阅重构范围、命名、顺序和清理策略；不授权自动删库、改行为或合并。**
+**当前 PR #128 仅含此 Plan；后续按 A—E 阶段在同一个 PR 中追加代码、专项测试与 E2E 瘦身。未经过审阅和兼容验证前，不删已有数据库迁移、不改变业务行为、不自动合并。**
