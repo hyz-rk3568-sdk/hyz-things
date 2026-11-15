@@ -152,7 +152,7 @@ apps/rust/things/src/
 - `e2e/question-bank.spec.ts` 约 **2,338 行**，混合题库练习、AI 对话/SSE、附件、Markdown 布局、断线重试、移动端交互等大量不同业务场景。应按测试**行为领域**分组；已有其他独立 question-bank spec，不复制相同覆盖。
 - `e2e/favorite-flashcard.spec.ts` 约 **935 行**，包含收藏/Flashcard 主流程及大量 AI、手写板交叉验证；可复用部分题库 AI Mock/导航 helper，但不能把收藏专属断言迁丢。
 - `e2e/comprehensive.spec.ts` 约 **1,358 行 / 24 个用例**，覆盖 AI 出题（资料分析）的准备、恢复、暂停续答、用户出题要求，以及 Ink/IndexedDB/PWA 安全区等横切行为；生成流程与手写/布局断言混在同一文件。
-- `e2e/logic-judgment.spec.ts` 约 **664 行 / 20 个用例**，覆盖 AI 出题（判断推理与数量关系）的生成、交卷、复盘、计时恢复和手写命中；与综合训练共享“生成试卷 → 进入训练 → 停走恢复”的同类 setup。
+- `e2e/logic-judgment.spec.ts` 约 **664 行 / 19 个用例**，覆盖 AI 出题（判断推理与数量关系）的生成、交卷、复盘、计时恢复和手写命中；与综合训练共享“生成试卷 → 进入训练 → 停走恢复”的同类 setup。
 - `e2e/support.ts` 约 **127 行**，主要是通用手势/计时辅助；**不应**将题库专用的所有复杂模拟塞进这个通用文件。若提取 helper，放在 `e2e/helpers/question-bank.ts` 或邻近小模块，fixture 数据与请求行为分开。
 - 文件行数本身不是缺陷：重点是**删除过期测试模型、减少重复初始化与 Mock、保留测试独立性和失败定位**。行数减少不是验收唯一指标。
 
