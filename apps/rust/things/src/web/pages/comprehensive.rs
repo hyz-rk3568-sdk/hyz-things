@@ -69,7 +69,7 @@ fn analysis_panes(props: &AnalysisPanesProps) -> Html {
                         </div>
                     }
                 </div>
-                <div ref={passage} onscroll={on_scroll.clone()} class="min-h-0 flex-1 overflow-y-auto overscroll-contain touch-pan-y scroll-auto" data-testid="analysis-material-scroll">
+                <div ref={passage} onscroll={on_scroll.clone()} class="min-h-0 flex-1 overflow-y-auto overscroll-contain touch-pan-y scroll-auto" data-testid="analysis-material-scroll" data-ink-pane="material">
                     <div class="whitespace-pre-wrap px-4 pb-4 pt-2 text-base leading-8">{props.material.text.clone()}</div>
                 </div>
                 </article>
@@ -88,7 +88,7 @@ fn analysis_panes(props: &AnalysisPanesProps) -> Html {
                             <InkToolbarSlot />
                         </div>
                     </div>
-                    <article ref={question_scroll} onscroll={on_scroll} class="min-h-0 flex-1 overflow-y-auto overscroll-contain touch-pan-y" data-testid="analysis-question">{props.question.clone()}</article>
+                    <article ref={question_scroll} onscroll={on_scroll} class="min-h-0 flex-1 overflow-y-auto overscroll-contain touch-pan-y" data-testid="analysis-question" data-ink-pane="answer">{props.question.clone()}</article>
                 </section>
             }}
         />

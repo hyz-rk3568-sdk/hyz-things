@@ -174,30 +174,28 @@ struct PaneViewport {
 
 fn pane_selector(pane: InkPane) -> &'static str {
     match pane {
-        InkPane::Material => concat!(
-            "[data-testid='analysis-material-scroll'], ",
-            "[data-testid='logic-question-scroll'], ",
-            "[data-testid='quant-question-scroll'], ",
-            "[data-testid='question-bank-practice-material-scroll'], ",
-            "[data-testid='collection-review-material-scroll'], ",
-            "[data-testid='shenlun-material-scroll']",
-        ),
-        InkPane::Question => concat!(
-            "[data-testid='analysis-question'], ",
-            "[data-testid='logic-answer-scroll'], ",
-            "[data-testid='quant-answer-scroll'], ",
-            "[data-testid='question-bank-practice-question-scroll'], ",
-            "[data-testid='collection-review-question-scroll'], ",
-            "[data-testid='question-bank-ai-messages'], ",
-            "[data-testid='shenlun-source-scroll'], ",
-            "[data-testid='shenlun-ocr-question-context']",
-        ),
+        InkPane::Material => "[data-ink-pane='material']",
+        InkPane::Question => "[data-ink-pane='answer']",
     }
+}
+
+/// Pick the visible pane within this overlay's own workspace. Inactive training
+/// workspaces may keep hidden scroll containers mounted; the first zero-sized
+/// match must not capture the pen.
+fn pane_element(surface: &Element, pane: InkPane) -> Option<Element> {
+    let nodes = surface.query_selector_all(pane_selector(pane)).ok()?;
+    (0..nodes.length())
+        .filter_map(|index| nodes.get(index))
+        .filter_map(|node| node.dyn_into::<Element>().ok())
+        .find(|element| {
+            let rect = element.get_bounding_client_rect();
+            rect.width() > 0.0 && rect.height() > 0.0
+        })
 }
 
 fn pane_viewport(canvas: &HtmlCanvasElement, pane: InkPane) -> Option<PaneViewport> {
     let surface = canvas.closest(INK_SURFACE_SELECTOR).ok()??;
-    let element = surface.query_selector(pane_selector(pane)).ok()??;
+    let element = pane_element(&surface, pane)?;
     let canvas_rect = canvas.get_bounding_client_rect();
     let rect = element.get_bounding_client_rect();
     Some(PaneViewport {
@@ -514,9 +512,9 @@ pub(crate) fn question_ink_controls() -> Html {
     html! {
         <div class="relative z-30 flex shrink-0 items-center gap-1" data-testid="calculation-scratchpad-controls">
             <div class="flex items-center gap-1" data-testid="calculation-scratchpad-toolbar">
-                <button type="button" class={super::question_header_actions::QUESTION_HEADER_ICON_BUTTON} data-testid="calculation-scratchpad-undo" aria-label="撤销" disabled={!tools.has_undo} onclick={tools.undo}>{"↶"}</button>
-                <button type="button" class={super::question_header_actions::QUESTION_HEADER_ICON_BUTTON} data-testid="calculation-scratchpad-redo" aria-label="重做" disabled={!tools.has_redo} onclick={tools.redo}>{"↷"}</button>
-                <button type="button" class={super::question_header_actions::QUESTION_HEADER_ICON_BUTTON} data-testid="calculation-scratchpad-clear" aria-label="清空草稿" disabled={!tools.has_ink} onclick={tools.clear}>
+                <button type="button" class={QUESTION_HEADER_ICON_BUTTON} data-testid="calculation-scratchpad-undo" aria-label="撤销" disabled={!tools.has_undo} onclick={tools.undo}>{"↶"}</button>
+                <button type="button" class={QUESTION_HEADER_ICON_BUTTON} data-testid="calculation-scratchpad-redo" aria-label="重做" disabled={!tools.has_redo} onclick={tools.redo}>{"↷"}</button>
+                <button type="button" class={QUESTION_HEADER_ICON_BUTTON} data-testid="calculation-scratchpad-clear" aria-label="清空草稿" disabled={!tools.has_ink} onclick={tools.clear}>
                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 7h18M9 7V4h6v3M5 7l1 13h12l1-13M10 11v5m4-5v5"/></svg>
                 </button>
             </div>

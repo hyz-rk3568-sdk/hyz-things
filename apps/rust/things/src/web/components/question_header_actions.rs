@@ -1,10 +1,10 @@
 use yew::prelude::*;
 
-pub(super) const QUESTION_HEADER_ICON_BUTTON: &str =
+pub(crate) const QUESTION_HEADER_ICON_BUTTON: &str =
     "btn btn-ghost btn-sm btn-square h-8 w-8 min-h-0 shrink-0 p-0";
 
 #[derive(Clone, PartialEq, Properties)]
-pub(super) struct QuestionHeaderActionsProps {
+pub(crate) struct QuestionHeaderActionsProps {
     pub favorite: Option<bool>,
     pub favorite_busy: bool,
     pub favorite_label: AttrValue,
@@ -26,7 +26,7 @@ fn flashcard_badge(count: usize) -> String {
 }
 
 #[function_component(QuestionHeaderActions)]
-pub(super) fn question_header_actions(props: &QuestionHeaderActionsProps) -> Html {
+pub(crate) fn question_header_actions(props: &QuestionHeaderActionsProps) -> Html {
     let flashcard = props
         .flashcard_count
         .filter(|count| *count > 0 || props.flashcard_can_create);

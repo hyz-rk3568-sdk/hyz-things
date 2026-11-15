@@ -19,7 +19,7 @@ struct GenerationSnapshot {
 }
 
 #[derive(Properties, PartialEq)]
-pub(super) struct GenerationActivityProps {
+pub(crate) struct GenerationActivityProps {
     pub module: &'static str,
     pub job_id: String,
     pub test_prefix: &'static str,
@@ -36,7 +36,7 @@ struct ToolActivity {
 }
 
 #[function_component(GenerationActivity)]
-pub(super) fn generation_activity(props: &GenerationActivityProps) -> Html {
+pub(crate) fn generation_activity(props: &GenerationActivityProps) -> Html {
     let snapshot = use_state(|| None::<GenerationSnapshot>);
     let opened = use_state(|| false);
     let disconnected = use_state(|| false);
@@ -240,7 +240,7 @@ pub(super) fn generation_activity(props: &GenerationActivityProps) -> Html {
                                 tool.tool,
                                 if tool.status.is_empty() { String::new() } else { format!(" · {}", tool.status) },
                             );
-                            super::ai_review_activity::tool_execution_item(
+                            tool_execution_item(
                                 &label,
                                 &tool.command,
                                 &tool.output,

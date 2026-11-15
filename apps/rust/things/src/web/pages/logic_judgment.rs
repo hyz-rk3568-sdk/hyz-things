@@ -98,7 +98,7 @@ fn logic_scroll_pane(props: &LogicScrollPaneProps) -> Html {
                 </div>
                 <article ref={question_scroll} onscroll={on_scroll.clone()}
                     class="min-h-0 flex-1 overflow-y-auto overscroll-contain touch-pan-y px-4 pb-8 sm:px-6"
-                    data-testid={format!("{prefix}-question-scroll")}>
+                    data-testid={format!("{prefix}-question-scroll")} data-ink-pane="material">
                     {props.question.clone()}
                 </article>
                 </section>
@@ -122,7 +122,7 @@ fn logic_scroll_pane(props: &LogicScrollPaneProps) -> Html {
                 </div>
                 <article ref={answer_scroll} onscroll={on_scroll}
                     class="min-h-0 flex-1 overflow-y-auto overscroll-contain touch-pan-y px-4 pb-8 sm:px-6"
-                    data-testid={format!("{prefix}-answer-scroll")}>
+                    data-testid={format!("{prefix}-answer-scroll")} data-ink-pane="answer">
                     {props.answers.clone()}
                 </article>
                 </section>

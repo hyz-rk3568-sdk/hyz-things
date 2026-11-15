@@ -1,30 +1,30 @@
 //! Viewport-bounded settings, history, and results inside the training shell.
 use super::*;
 
-pub(super) const TRAINING_PRIMARY_BUTTON: &str = "btn btn-primary h-auto min-h-12 w-full p-3";
+pub(crate) const TRAINING_PRIMARY_BUTTON: &str = "btn btn-primary h-auto min-h-12 w-full p-3";
 
 #[derive(Properties, PartialEq)]
-pub(super) struct TrainingSetupLayoutProps {
-    pub(super) test_id: AttrValue,
+pub(crate) struct TrainingSetupLayoutProps {
+    pub(crate) test_id: AttrValue,
     #[prop_or_default]
-    pub(super) summary: AttrValue,
+    pub(crate) summary: AttrValue,
     #[prop_or_default]
-    pub(super) detail: AttrValue,
+    pub(crate) detail: AttrValue,
     #[prop_or_default]
-    pub(super) action: Option<Html>,
+    pub(crate) action: Option<Html>,
     /// Bottom-docked, non-scrolling content above the prepare/enter action.
     #[prop_or_default]
-    pub(super) activity: Option<Html>,
+    pub(crate) activity: Option<Html>,
     #[prop_or_default]
-    pub(super) heading: Option<Html>,
+    pub(crate) heading: Option<Html>,
     /// Use the wider content column for question-bank setup.
     #[prop_or_default]
-    pub(super) wide: bool,
-    pub(super) children: Children,
+    pub(crate) wide: bool,
+    pub(crate) children: Children,
 }
 
 #[function_component(TrainingSetupLayout)]
-pub(super) fn training_setup_layout(props: &TrainingSetupLayoutProps) -> Html {
+pub(crate) fn training_setup_layout(props: &TrainingSetupLayoutProps) -> Html {
     let scroll = use_node_ref();
     {
         let scroll = scroll.clone();
@@ -61,16 +61,16 @@ pub(super) fn training_setup_layout(props: &TrainingSetupLayoutProps) -> Html {
 }
 
 #[derive(Properties, PartialEq)]
-pub(super) struct TrainingQuestionCountProps {
-    pub(super) value: usize,
-    pub(super) on_change: Callback<usize>,
-    pub(super) test_id: &'static str,
+pub(crate) struct TrainingQuestionCountProps {
+    pub(crate) value: usize,
+    pub(crate) on_change: Callback<usize>,
+    pub(crate) test_id: &'static str,
     #[prop_or("题")]
-    pub(super) unit: &'static str,
+    pub(crate) unit: &'static str,
 }
 
 #[function_component(TrainingQuestionCount)]
-pub(super) fn training_question_count(props: &TrainingQuestionCountProps) -> Html {
+pub(crate) fn training_question_count(props: &TrainingQuestionCountProps) -> Html {
     html! {
         <div class="training-count-options" role="group" aria-label="本轮题数" data-testid={props.test_id}>
             {for [10, 20, 50].into_iter().map(|value| {

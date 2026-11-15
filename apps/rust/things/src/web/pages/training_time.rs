@@ -5,27 +5,27 @@ use js_sys::{Date, Math};
 use std::collections::VecDeque;
 
 #[derive(Clone, PartialEq)]
-pub(super) struct StudyClockValue {
+pub(crate) struct StudyClockValue {
     snapshot: TrainingTimeSnapshot,
     received_ms: f64,
 }
 #[derive(Clone, PartialEq)]
-pub(super) struct StudyClockContext {
+pub(crate) struct StudyClockContext {
     value: UseStateHandle<Option<StudyClockValue>>,
-    pub(super) event: Callback<(String, Option<String>, Option<String>)>,
+    pub(crate) event: Callback<(String, Option<String>, Option<String>)>,
     tick: u64,
     csrf: String,
-    pub(super) goals_revision: u64,
-    pub(super) refresh_goals: Callback<()>,
+    pub(crate) goals_revision: u64,
+    pub(crate) refresh_goals: Callback<()>,
 }
 #[derive(Properties, PartialEq)]
-pub(super) struct StudyClockProviderProps {
+pub(crate) struct StudyClockProviderProps {
     pub csrf: String,
     pub children: Children,
 }
 
 #[function_component(StudyClockProvider)]
-pub(super) fn study_clock_provider(props: &StudyClockProviderProps) -> Html {
+pub(crate) fn study_clock_provider(props: &StudyClockProviderProps) -> Html {
     let value = use_state(|| None::<StudyClockValue>);
     let tick = use_state(|| 0_u64);
     let warning = use_state(|| None::<String>);
@@ -193,14 +193,14 @@ fn paid_today_ms(ctx: &StudyClockContext) -> Option<i64> {
 /// Two compact bars shared by every study/review page header: today's answered
 /// questions and today's effective study time against the administrator goal.
 #[derive(Properties, PartialEq)]
-pub(super) struct StudyGoalBarsProps {
+pub(crate) struct StudyGoalBarsProps {
     /// Full-width rows for practice headers that give the bars their own line.
     #[prop_or(false)]
     pub wide: bool,
 }
 
 #[function_component(StudyGoalBars)]
-pub(super) fn study_goal_bars(props: &StudyGoalBarsProps) -> Html {
+pub(crate) fn study_goal_bars(props: &StudyGoalBarsProps) -> Html {
     let status = use_state(|| None::<StudyGoalStatus>);
     let clock = use_context::<StudyClockContext>();
     let goals_revision = clock
@@ -293,7 +293,7 @@ pub(super) fn study_goal_bars(props: &StudyGoalBarsProps) -> Html {
 }
 
 #[function_component(StudyTimeInline)]
-pub(super) fn study_time_inline() -> Html {
+pub(crate) fn study_time_inline() -> Html {
     let ctx = use_context::<StudyClockContext>();
     let Some(ctx) = ctx else {
         return Html::default();

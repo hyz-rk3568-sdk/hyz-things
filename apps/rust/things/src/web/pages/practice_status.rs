@@ -126,7 +126,7 @@ pub(crate) fn training_status_bar(props: &TrainingStatusBarProps) -> Html {
 }
 
 #[function_component(CodexLimitBars)]
-pub(super) fn codex_limit_bars() -> Html {
+pub(crate) fn codex_limit_bars() -> Html {
     let limits = use_state(|| None::<hyz_things::domain::question_bank::CodexLimits>);
     let open = use_state(|| false);
     {
@@ -191,7 +191,7 @@ pub(super) fn codex_limit_bars() -> Html {
     }
 }
 
-pub(super) fn score_summary(score: &hyz_things::domain::question_bank::PracticeScore) -> Html {
+pub(crate) fn score_summary(score: &hyz_things::domain::question_bank::PracticeScore) -> Html {
     html! {
         <TrainingStatusBar prefix="question-bank-practice-score"
             test_id="question-bank-practice-score"

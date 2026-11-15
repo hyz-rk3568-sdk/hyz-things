@@ -12,6 +12,7 @@ mod ui;
 
 mod hooks;
 mod pages;
+mod question_bank;
 
 use api::*;
 use app::*;
@@ -21,6 +22,7 @@ use media::*;
 use navigation::*;
 use pages::*;
 use protected_control::*;
+use question_bank::*;
 use resources::*;
 
 use std::{

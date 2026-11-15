@@ -1,12 +1,6 @@
 //! Review of a saved wrong or favorite question. The timed training
 //! sessions stay separate; this view only reads one question at a time and
 //! lets the reader swipe through the filtered collection.
-use super::favorite_flashcard::{favorite_can_create, FavoriteFlashcardWorkspace, FavoritePreview};
-use super::material_scroll::{scroll_edges, ScrollEdges};
-use super::question_bank_practice::{
-    answer_options, use_practice_favorite, use_question_ai_tab, QuestionAiHeaderActions,
-    QuestionAiReview, QuestionBankQuestionHeader, QUESTION_BANK_PANE_HEADER,
-};
 use super::*;
 use hyz_things::domain::question_bank::{
     FavoriteState, PracticeBrowseItem, PracticeMode, PracticeQuestionDetail, SetFavorite,
@@ -254,7 +248,7 @@ pub(crate) fn collection_question_review(props: &CollectionQuestionReviewProps) 
                 </div>
                 <div ref={material_scroll.clone()}
                     class="min-h-0 flex-1 overflow-y-auto overscroll-contain touch-pan-y p-4"
-                    data-testid="collection-review-material-scroll">
+                    data-testid="collection-review-material-scroll" data-ink-pane="material">
                     {for current.materials.iter().map(|material| html!{
                         <section class="mb-5">
                             if current.materials.len()>1 {<h3 class="font-bold">{material.name.clone()}</h3>}
@@ -273,7 +267,7 @@ pub(crate) fn collection_question_review(props: &CollectionQuestionReviewProps) 
                 </div>
                 <div ref={material_scroll.clone()}
                     class="min-h-0 flex-1 overflow-y-auto overscroll-contain touch-pan-y p-4"
-                    data-testid="collection-review-material-scroll">
+                    data-testid="collection-review-material-scroll" data-ink-pane="material">
                     <div class="study-markdown question-bank-passage" data-testid="collection-review-stem">
                         {render_question_bank_markdown(&current.question.stem)}
                     </div>
@@ -348,7 +342,7 @@ pub(crate) fn collection_question_review(props: &CollectionQuestionReviewProps) 
                                 {"重试收藏"}
                             </button>
                         }
-                            <super::question_header_actions::QuestionHeaderActions
+                            <QuestionHeaderActions
                                 favorite={favorite_state.map(|value| value.favorite)} favorite_busy={*favorite_busy}
                                 favorite_label={if *favorite_busy {"正在更新收藏"} else {favorite_label}}
                                 favorite_test_id="collection-review-favorite" on_favorite={toggle_favorite}
@@ -368,7 +362,7 @@ pub(crate) fn collection_question_review(props: &CollectionQuestionReviewProps) 
                     <div ref={question_scroll.clone()}
                         onscroll={Callback::from({let refresh=refresh_question_edges.clone();move |_|refresh.emit(())})}
                         class="min-h-0 flex-1 overflow-y-auto overscroll-contain touch-pan-y p-4"
-                        data-testid="collection-review-question-scroll">{question_content.clone()}</div>
+                        data-testid="collection-review-question-scroll" data-ink-pane="answer">{question_content.clone()}</div>
                 }
             </section>
         };

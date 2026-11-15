@@ -59,9 +59,9 @@ pub(super) fn use_ai_review_stream(
                 let alive = Rc::new(Cell::new(true));
                 let cursor = Rc::new(RefCell::new(None::<StreamSnapshot>));
                 let scope = *scope;
-                let source = web_sys::EventSource::new(
-                    &super::question_bank_practice::ai_scope_url(endpoint, "/events", scope, None),
-                );
+                let source = web_sys::EventSource::new(&super::ai_review_api::ai_scope_url(
+                    endpoint, "/events", scope, None,
+                ));
                 let mut handlers: Vec<Closure<dyn FnMut(web_sys::MessageEvent)>> = Vec::new();
                 let mut error_handler: Option<Closure<dyn FnMut(Event)>> = None;
                 if let Ok(source) = &source {
@@ -73,9 +73,8 @@ pub(super) fn use_ai_review_stream(
                         let alive = alive.clone();
                         Rc::new(move || {
                             let history = history.clone();
-                            let endpoint = super::question_bank_practice::ai_scope_url(
-                                &endpoint, "", scope, None,
-                            );
+                            let endpoint =
+                                super::ai_review_api::ai_scope_url(&endpoint, "", scope, None);
                             let revision = revision.clone();
                             let alive = alive.clone();
                             *revision.borrow_mut() += 1;

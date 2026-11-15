@@ -1,19 +1,50 @@
 //! 申论训练：复用 Question Bank 真题复盘工作区，而非建立第二套考试 Session。
-use super::favorite_flashcard::{favorite_can_create, FavoriteFlashcardWorkspace, FavoritePreview};
-use super::material_scroll::{use_training_scroll_pair, MaterialScrollButton};
-use super::question_bank_practice::{
-    use_practice_favorite, QuestionAiReview, QuestionBankQuestionHeader,
-};
+use super::practice::{use_practice_favorite, QuestionBankQuestionHeader};
 use super::*;
 use hyz_things::domain::question_bank::{
     FavoriteState, PaperSummary, PaperView, QuestionView, SetFavorite,
 };
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum ShenlunMode {
+    Analysis,
+    Grading,
+    Ocr,
+    Source,
+}
+
+impl ShenlunMode {
+    const fn ai_scope(self) -> Option<&'static str> {
+        match self {
+            Self::Analysis => Some("analysis"),
+            Self::Grading => Some("grading"),
+            Self::Ocr | Self::Source => None,
+        }
+    }
+
+    const fn prompt_mode(self) -> Option<&'static str> {
+        match self {
+            Self::Analysis => Some("analysis"),
+            Self::Grading => Some("grade"),
+            Self::Ocr | Self::Source => None,
+        }
+    }
+
+    const fn key(self) -> &'static str {
+        match self {
+            Self::Analysis => "ai",
+            Self::Grading => "grade",
+            Self::Ocr => "ocr",
+            Self::Source => "source",
+        }
+    }
+}
+
 #[derive(Properties, PartialEq)]
-pub(super) struct QuestionBankShenlunProps {
-    pub(super) active: bool,
-    pub(super) on_immersive_change: Callback<bool>,
-    pub(super) csrf: String,
+pub(crate) struct QuestionBankShenlunProps {
+    pub(crate) active: bool,
+    pub(crate) on_immersive_change: Callback<bool>,
+    pub(crate) csrf: String,
 }
 
 fn topic_label(question: &QuestionView) -> &str {
@@ -28,7 +59,7 @@ fn topic_label(question: &QuestionView) -> &str {
 }
 
 #[function_component(QuestionBankShenlun)]
-pub(super) fn question_bank_shenlun(props: &QuestionBankShenlunProps) -> Html {
+pub(crate) fn question_bank_shenlun(props: &QuestionBankShenlunProps) -> Html {
     let papers = use_state(|| None::<Vec<PaperSummary>>);
     let paper = use_state(|| None::<PaperView>);
     let selected_paper = use_state(String::new);
@@ -36,9 +67,9 @@ pub(super) fn question_bank_shenlun(props: &QuestionBankShenlunProps) -> Html {
     let busy = use_state(|| false);
     let loading = use_state(|| true);
     let error = use_state(|| None::<String>);
-    let mode = use_state(|| "ai".to_owned());
+    let mode = use_state(|| ShenlunMode::Analysis);
     let ai_delete_signal = use_state(|| 0_u32);
-    let ai_delete_availability = use_state(|| None::<(String, String, bool)>);
+    let ai_delete_availability = use_state(|| None::<(String, ShenlunMode, bool)>);
     let scroll = use_training_scroll_pair();
     let question_key = (*paper).as_ref().and_then(|p| {
         p.questions
@@ -142,7 +173,7 @@ pub(super) fn question_bank_shenlun(props: &QuestionBankShenlunProps) -> Html {
                 {
                     Ok(value) => {
                         selected.set(0);
-                        mode.set("ai".into());
+                        mode.set(ShenlunMode::Analysis);
                         paper.set(Some(value));
                         immersive.emit(true);
                     }
@@ -158,13 +189,13 @@ pub(super) fn question_bank_shenlun(props: &QuestionBankShenlunProps) -> Html {
         let immersive = props.on_immersive_change.clone();
         Callback::from(move |_| {
             immersive.emit(false);
-            mode.set("ai".into());
+            mode.set(ShenlunMode::Analysis);
             paper.set(None);
         })
     };
     {
         let availability = ai_delete_availability.clone();
-        let reset_key = (question_key.clone(), (*mode).clone());
+        let reset_key = (question_key.clone(), *mode);
         use_effect_with(reset_key, move |_| {
             availability.set(None);
             || ()
@@ -189,12 +220,12 @@ pub(super) fn question_bank_shenlun(props: &QuestionBankShenlunProps) -> Html {
         let question_id = question.map(|item| item.id.clone()).unwrap_or_default();
         let material_scroll = scroll.first.clone();
         let material_edges = *scroll.first_edges;
-        let mode_value = (*mode).clone();
-        let icon_button = super::question_header_actions::QUESTION_HEADER_ICON_BUTTON;
+        let mode_value = *mode;
+        let icon_button = QUESTION_HEADER_ICON_BUTTON;
 
         let left = html! {
             <section class="flex min-h-0 min-w-0 flex-col overflow-hidden rounded-box border border-base-content/10 bg-base-100" data-testid="shenlun-materials">
-                <div class={classes!(super::question_bank_practice::QUESTION_BANK_PANE_HEADER, "question-bank-pane-header")}>
+                <div class={classes!(super::practice::QUESTION_BANK_PANE_HEADER, "question-bank-pane-header")}>
                     <strong class="text-sm">{"原卷材料"}</strong>
                     <div class="ml-auto flex shrink-0 gap-1" role="group" aria-label="材料滚动">
                         <MaterialScrollButton passage={material_scroll.clone()} up={true}
@@ -205,7 +236,7 @@ pub(super) fn question_bank_shenlun(props: &QuestionBankShenlunProps) -> Html {
                 </div>
                 <div ref={material_scroll} onscroll={scroll.on_scroll.clone()}
                     class="min-h-0 flex-1 space-y-5 overflow-y-auto overscroll-contain px-4 pb-5 pt-3"
-                    data-testid="shenlun-material-scroll" data-swipe-ignore="true">
+                    data-testid="shenlun-material-scroll" data-ink-pane="material" data-swipe-ignore="true">
                     {for current.materials.iter().map(|material| html! {
                         <article key={material.id.clone()} class="space-y-2">
                             <h3 class="font-semibold">{material.name.clone()}</h3>
@@ -268,7 +299,7 @@ pub(super) fn question_bank_shenlun(props: &QuestionBankShenlunProps) -> Html {
             })
         };
         let leading = html! {
-            <super::question_header_actions::QuestionHeaderActions
+            <QuestionHeaderActions
                 favorite={favorite_value.map(|state|state.favorite)}
                 favorite_busy={*favorite_busy || !favorite_ready}
                 favorite_label={if !favorite_ready {"正在加载收藏状态"} else if starred {"取消收藏"} else {"收藏题目"}}
@@ -283,16 +314,16 @@ pub(super) fn question_bank_shenlun(props: &QuestionBankShenlunProps) -> Html {
                     move |_|flashcard_open.set(true)
                 })}/>
         };
-        let can_delete = matches!(mode_value.as_str(), "grade" | "ai")
+        let can_delete = mode_value.ai_scope().is_some()
             && ai_delete_availability.as_ref().as_ref().is_some_and(
                 |(qid, active_mode, available)| {
                     qid == &question_id && active_mode == &mode_value && *available
                 },
             );
         let menu = html! {
-            <super::question_bank_practice::QuestionAiMoreMenu
+            <super::practice::QuestionAiMoreMenu
                 can_delete={can_delete}
-                reset_key={format!("{paper_id}:{question_id}:{mode_value}")}
+                reset_key={format!("{paper_id}:{question_id}:{}", mode_value.key())}
                 button_test_id="shenlun-more"
                 delete_test_id="shenlun-delete-current"
                 button_label="更多题目操作"
@@ -305,9 +336,9 @@ pub(super) fn question_bank_shenlun(props: &QuestionBankShenlunProps) -> Html {
         let on_delete_availability = {
             let availability = ai_delete_availability.clone();
             let question_id = question_id.clone();
-            let mode = mode_value.clone();
+            let mode = mode_value;
             Callback::from(move |available| {
-                availability.set(Some((question_id.clone(), mode.clone(), available)));
+                availability.set(Some((question_id.clone(), mode, available)));
             })
         };
         let right = html! {
@@ -325,25 +356,25 @@ pub(super) fn question_bank_shenlun(props: &QuestionBankShenlunProps) -> Html {
                     leading={leading}
                     tabs={html! {
                         <>
-                            <button type="button" class={classes!(icon_button, if mode_value=="grade" {"text-primary"} else {""})}
-                                aria-label="AI 批改" title="AI 批改" aria-pressed={(mode_value=="grade").to_string()} data-testid="shenlun-mode-grade"
-                                onclick={Callback::from({let mode=mode.clone();move |_|mode.set("grade".into())})}>
+                            <button type="button" class={classes!(icon_button, if mode_value==ShenlunMode::Grading {"text-primary"} else {""})}
+                                aria-label="AI 批改" title="AI 批改" aria-pressed={(mode_value==ShenlunMode::Grading).to_string()} data-testid="shenlun-mode-grade"
+                                onclick={Callback::from({let mode=mode.clone();move |_|mode.set(ShenlunMode::Grading)})}>
                                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="4" y="3" width="16" height="18" rx="2"/><path d="M8 8h8M8 12h4m-4 4 2 2 4-4"/></svg>
                             </button>
-                            <button type="button" class={classes!(icon_button, if mode_value=="ocr" {"text-primary"} else {""})}
-                                aria-label="OCR 转写" title="OCR 转写" aria-pressed={(mode_value=="ocr").to_string()} data-testid="shenlun-mode-ocr"
-                                onclick={Callback::from({let mode=mode.clone();move |_|mode.set("ocr".into())})}>
+                            <button type="button" class={classes!(icon_button, if mode_value==ShenlunMode::Ocr {"text-primary"} else {""})}
+                                aria-label="OCR 转写" title="OCR 转写" aria-pressed={(mode_value==ShenlunMode::Ocr).to_string()} data-testid="shenlun-mode-ocr"
+                                onclick={Callback::from({let mode=mode.clone();move |_|mode.set(ShenlunMode::Ocr)})}>
                                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 3H5a2 2 0 0 0-2 2v3M16 3h3a2 2 0 0 1 2 2v3M3 16v3a2 2 0 0 0 2 2h3m8 0h3a2 2 0 0 0 2-2v-3M7 12h10M9 9h6m-6 6h6"/></svg>
                             </button>
-                            <super::question_bank_practice::QuestionAiModeTabs
-                                active={mode_value=="ai"}
-                                original_active={Some(mode_value=="source")}
+                            <super::practice::QuestionAiModeTabs
+                                active={mode_value==ShenlunMode::Analysis}
+                                original_active={Some(mode_value==ShenlunMode::Source)}
                                 original_test_id="shenlun-mode-source"
                                 ai_test_id="shenlun-mode-ai"
                                 original_label="来源参考答案"
                                 ai_label="AI 解析与追问"
-                                original={Callback::from({let mode=mode.clone();move |_|mode.set("source".into())})}
-                                ai={Callback::from({let mode=mode.clone();move |_|mode.set("ai".into())})}/>
+                                original={Callback::from({let mode=mode.clone();move |_|mode.set(ShenlunMode::Source)})}
+                                ai={Callback::from({let mode=mode.clone();move |_|mode.set(ShenlunMode::Analysis)})}/>
                         </>
                     }}
                     trailing={menu}/>
@@ -363,29 +394,29 @@ pub(super) fn question_bank_shenlun(props: &QuestionBankShenlunProps) -> Html {
                                 })}/>
                         </div>
                     }
-                } else if matches!(mode_value.as_str(), "grade"|"ai") {
-                    <QuestionAiReview key={format!("{}:{}",question_id,mode_value)}
-                        mode={if mode_value=="grade" {"grade"} else {"analysis"}}
+                } else if let Some(prompt_mode) = mode_value.prompt_mode() {
+                    <QuestionAiReview key={format!("{}:{}",question_id,mode_value.key())}
+                        mode={prompt_mode}
                         draft_namespace={Some("shenlun")}
                         csrf={props.csrf.clone()} question_id={question_id.clone()}
                         question_content={question_body.clone()}
                         question_scroll={scroll.second.clone()} on_question_scroll={scroll.on_scroll.clone()}
                         delete_signal={*ai_delete_signal} on_delete_availability={on_delete_availability}/>
-                } else if mode_value=="ocr" {
+                } else if mode_value==ShenlunMode::Ocr {
                     <div class="flex min-h-0 flex-1 flex-col overflow-hidden" data-testid="shenlun-ocr-pane">
                         <div class="max-h-[35%] shrink-0 overflow-y-auto border-b border-base-content/10 p-4"
-                            data-testid="shenlun-ocr-question-context">
+                            data-testid="shenlun-ocr-question-context" data-ink-pane="answer">
                             {question_body.clone()}
                         </div>
-                        <ShenlunAiPanel key={question_id.clone()}
+                        <super::ocr_panel::ShenlunAiPanel key={question_id.clone()}
                             question_id={question_id.clone()} csrf={props.csrf.clone()}/>
                     </div>
                 } else {
                     <div class="min-h-0 flex-1 overflow-y-auto overscroll-contain p-4" ref={scroll.second.clone()}
-                        onscroll={scroll.on_scroll.clone()} data-testid="shenlun-source-scroll" data-swipe-ignore="true">
+                        onscroll={scroll.on_scroll.clone()} data-testid="shenlun-source-scroll" data-ink-pane="answer" data-swipe-ignore="true">
                         {question_body.clone()}
-                        if mode_value=="source" {
-                            <super::shenlun_ai_panel::ShenlunSourceAnswerPanel key={question_id.clone()}
+                        if mode_value==ShenlunMode::Source {
+                            <super::source_answer_panel::ShenlunSourceAnswerPanel key={question_id.clone()}
                                 question_id={question_id.clone()}/>
                         }
                         if let Some(message)=(*error).as_ref() {
@@ -412,7 +443,7 @@ pub(super) fn question_bank_shenlun(props: &QuestionBankShenlunProps) -> Html {
         // This shared answer sheet is the sole question switcher in review mode.
         let answered = vec![false; current.questions.len()];
         html! {
-            <div class={classes!(super::question_bank_practice::WORKSPACE, "gap-2")} data-testid="shenlun-workspace">
+            <div class={classes!(super::practice::WORKSPACE, "gap-2")} data-testid="shenlun-workspace">
                 <TrainingHeader class="flex shrink-0 flex-col gap-1 border-b border-base-content/10 pb-2 sm:flex-row sm:flex-nowrap sm:items-center sm:justify-between sm:gap-2">
                     <div class="flex min-w-0 flex-1 items-center gap-3">
                         <button type="button" class="btn btn-ghost btn-sm" onclick={close}>{"← 返回选题"}</button>

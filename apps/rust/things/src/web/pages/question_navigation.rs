@@ -31,7 +31,7 @@ fn question_tab_style(selected: bool, marker: Option<bool>, is_review: bool) -> 
 ///
 /// Data analysis groups its 20 questions into four materials of five.
 /// Logic judgment displays all ten questions without material tabs.
-pub(super) fn question_navigation(
+pub(crate) fn question_navigation(
     current: UseStateHandle<usize>,
     index: usize,
     markers: &[Option<bool>],
@@ -180,16 +180,16 @@ fn allows_navigation(guard: &Option<Callback<(), bool>>) -> bool {
 /// swipes with a decisive horizontal displacement change the item. Mouse and
 /// interactive controls stay inert, and active inking keeps the pen for ink.
 #[derive(Properties, PartialEq)]
-pub(super) struct TrainingSwipeSurfaceProps {
-    pub(super) current: UseStateHandle<usize>,
-    pub(super) total: usize,
-    pub(super) children: Children,
+pub(crate) struct TrainingSwipeSurfaceProps {
+    pub(crate) current: UseStateHandle<usize>,
+    pub(crate) total: usize,
+    pub(crate) children: Children,
     #[prop_or_default]
-    pub(super) navigation_allowed: Option<Callback<(), bool>>,
+    pub(crate) navigation_allowed: Option<Callback<(), bool>>,
     /// Notified whenever a page turn commits or rolls back, so callers can
     /// drive a session instead of a plain index.
     #[prop_or_default]
-    pub(super) on_change: Option<Callback<usize>>,
+    pub(crate) on_change: Option<Callback<usize>>,
 }
 
 fn navigate_to(
@@ -360,7 +360,7 @@ fn schedule_turn_cleanup(
 }
 
 #[function_component(TrainingSwipeSurface)]
-pub(super) fn training_swipe_surface(props: &TrainingSwipeSurfaceProps) -> Html {
+pub(crate) fn training_swipe_surface(props: &TrainingSwipeSurfaceProps) -> Html {
     let origin = use_mut_ref(|| None::<(i32, i32, i32)>);
     let drag = use_mut_ref(|| None::<SwipeDrag>);
     let ink_active = use_context::<bool>().unwrap_or(false);
@@ -595,24 +595,24 @@ pub(super) fn training_swipe_surface(props: &TrainingSwipeSurfaceProps) -> Html 
 
 /// One contiguous section in the compact answer sheet.
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub(super) struct NavigationGroup {
-    pub(super) label: String,
-    pub(super) subtitle: Option<String>,
-    pub(super) start: usize,
-    pub(super) end: usize,
+pub(crate) struct NavigationGroup {
+    pub(crate) label: String,
+    pub(crate) subtitle: Option<String>,
+    pub(crate) start: usize,
+    pub(crate) end: usize,
 }
 
 /// Compact shared navigation used by large papers. All question numbers live
 /// in an overlay and never grow the fixed footer beyond one row.
 #[derive(Properties, PartialEq)]
-pub(super) struct CompactQuestionNavigationProps {
-    pub(super) current: UseStateHandle<usize>,
-    pub(super) numbers: Vec<u32>,
-    pub(super) answered: Vec<bool>,
-    pub(super) grades: Option<Vec<Option<bool>>>,
-    pub(super) groups: Vec<NavigationGroup>,
+pub(crate) struct CompactQuestionNavigationProps {
+    pub(crate) current: UseStateHandle<usize>,
+    pub(crate) numbers: Vec<u32>,
+    pub(crate) answered: Vec<bool>,
+    pub(crate) grades: Option<Vec<Option<bool>>>,
+    pub(crate) groups: Vec<NavigationGroup>,
     #[prop_or_default]
-    pub(super) navigation_allowed: Option<Callback<(), bool>>,
+    pub(crate) navigation_allowed: Option<Callback<(), bool>>,
 }
 
 #[derive(Properties, PartialEq)]
@@ -748,7 +748,7 @@ fn training_answer_sheet(props: &TrainingAnswerSheetProps) -> Html {
 }
 
 #[function_component(CompactQuestionNavigation)]
-pub(super) fn compact_question_navigation(props: &CompactQuestionNavigationProps) -> Html {
+pub(crate) fn compact_question_navigation(props: &CompactQuestionNavigationProps) -> Html {
     let total = props.numbers.len();
     let index = (*props.current).min(total.saturating_sub(1));
     let previous = {
