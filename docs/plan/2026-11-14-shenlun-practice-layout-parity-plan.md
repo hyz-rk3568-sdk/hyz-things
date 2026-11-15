@@ -3,6 +3,8 @@
 **状态：实施及本地验证完成。** Rust 集成测试 10/10、严格 Clippy 与 80 项 Playwright/WebKit 回归通过；五种视口截图已完成对照。PR #125 包含本计划对应的页面、会话隔离与 E2E 实现。
 **参照源：** `apps/rust/things/src/web/pages/question_bank_practice.rs`（4100 行）及其依赖；**目标：** `question_bank_shenlun.rs`（替代原 `shenlun_training.rs`）。
 
+> **2026-11-15 现状标注**：本文件的“现状证据”“差异”和最终验收记录保留其历史时点含义，不将整改前的代码快照误判为当前代码。下文仅划掉与当前 `e2e/shenlun.spec.ts` 和在用实现明确不符的**持续性要求/描述**；以当前实现和 E2E 为准。后续瘦身安排见 [新 Plan](2026-11-15-question-bank-frontend-slimming-and-boundaries-plan.md)。
+
 ## 0. 已阅读并对照的现有实现
 
 - `question_bank_practice.rs`：工作区根节点（约 316 行、3106—3204 行）、题目头和 AI 菜单（580—682 行）、AI 会话状态与删除可用性（843—979 行）、训练状态、计时、导航和滑动（约 1919—3204 行）、目录与历史相关逻辑；其他辅助区域不作为申论业务原样移植的目标。
@@ -42,7 +44,7 @@
 3. 参照 `QuestionAiReview::on_delete_availability` 把可删除状态回传父组件；切题、切模式、删除完成、异步响应返回、退出原卷均要清零或校验状态来源，避免旧题会话的按钮泄漏到新题或非 AI 模式。
 4. **后端会话隔离不可遗漏：** 当前 grade/analysis 都指向 `/practice/questions/{id}/ai`，会出现内容交叉。实施时先设计真实 `purpose`/scope 及独立读写/删除（含草稿键和事件流），再允许按各自会话显示和删除。不能只改前端文案就声称隔离完成。将此项纳入同一个代码整改任务的功能验收；如后端隔离未实现，PR 不能宣称已完成。
 
-### C. 将「批改」与「解析/追问」拆成不同页面和真正不同的 Codex Thread
+### C. 将「批改」与「解析/追问」拆成~~不同页面~~**同一工作区的不同模式**和真正不同的 Codex Thread
 
 **现状证据（已经核对 main）：**
 
@@ -51,11 +53,11 @@
 - `question_bank_ai.rs` 248、274—279 行：持久化 Key 为 `(question_id, stem_fingerprint)`，`question_ai_reviews.thread_id`、messages、requests、events、stream/stop/delete 都用同一 Key。
 - 申论 E2E 将共享工作区外观与会话隔离分开验收：解析/批改可复用同一套组件，但各自的 scope、Codex thread、历史/事件、请求和删除状态必须隔离。
 
-**明确目标不是“两个 tab 换标题”**，而是在题目右栏分别进入独立的 **AI 批改页面** 与 **AI 解析及追问页面**，同一题目也有独立持久会话和独立 Codex thread：
+**明确目标不是“两个 tab 换标题”**，而是在题目右栏分别进入~~独立的 AI 批改页面与 AI 解析及追问页面~~**同一申论工作区内的 AI 批改模式与 AI 解析/追问模式**，同一题目仍有独立持久会话和独立 Codex thread（当前 E2E 验证“复用工作区外观”与 scope 隔离）：
 
-1. **AI 批改页面：** 输入申论作答（文字/图片）、启动批改、显示评分和逐点反馈；在此页面追问扣分原因、提交二次作答，**只延续批改 thread**。保留复用的 AI Composer、消息流、进度与停止机制。
-2. **AI 解析及追问页面：** 以题目和材料为上下文启动讲解，后续追问继续**解析 thread**；不得自动显示批改历史、批改草稿、评分结果，也不得复用批改上下文。
-3. **服务端持久隔离：** 为申论定义并校验稳定 scope（如 `grade` / `analysis`），贯穿 GET/POST、follow-up、附件、history/runs/events、SSE/流、stop、retry、delete 和 Codex thread 恢复。设计时检查现有 SQLite 表的主键/索引/外键与历史记录迁移；不可仅在前端添加 query 参数、伪造两个页面或拼接未校验 key。其他科目的默认 analysis API 必须向后兼容。
+1. **AI 批改模式：** 输入申论作答（文字/图片）、启动批改、显示评分和逐点反馈；在此模式追问扣分原因、~~提交二次作答~~**通过同一批改会话追问或补充内容（不新增独立二稿提交/比对流程）**，**只延续批改 thread**。保留复用的 AI Composer、消息流、进度与停止机制。
+2. **AI 解析及追问模式：** 以题目和材料为上下文启动讲解，后续追问继续**解析 thread**；不得自动显示批改历史、批改草稿、评分结果，也不得复用批改上下文。
+3. **服务端持久隔离：** 为申论定义并校验稳定 scope（~~`grade`~~ `grading` / `analysis`），贯穿 GET/POST、follow-up、附件、history/runs/events、SSE/流、stop、retry、delete 和 Codex thread 恢复。设计时检查现有 SQLite 表的主键/索引/外键与历史记录迁移；不可仅在前端添加 query 参数、伪造两个页面或拼接未校验 key。其他科目的默认 analysis API 必须向后兼容。
 4. **删除与切换：** 删除按钮由**当前页面 + 当前题目 + 当前 scope 的实际会话状态**共同决定；删除批改不会删除解析，反之亦然；切模式、切题、刷新、恢复未完成任务均只读取正确 scope。独立的客户端草稿、request-id、上传进度和过期附件状态也要按 scope 隔离。
 5. **线程验收：** 启动同题批改和解析后，服务端存储的两个非空 `thread_id` 必须不同；批改追问沿用批改 ID、解析追问沿用解析 ID。交叉查询、历史列表、SSE、停止、删除都不能访问另一 scope；错误/重试及并发场景同样验证。
 
