@@ -26,6 +26,27 @@ test('answer sheet keeps its scroll position when reopened',async({page})=>{
   await expect.poll(()=>sheet.evaluate(node=>node.scrollTop)).toBe(60);
 });
 
+test('answer sheet keeps its position when the flashcard editor replaces the footer',async({page})=>{
+  await openFixtureReview(page);
+  await page.evaluate(() => {
+    const sheet = new CSSStyleSheet();
+    sheet.replaceSync('[data-testid="training-answer-sheet"] { max-height: 100px !important; }');
+    document.adoptedStyleSheets = [...document.adoptedStyleSheets, sheet];
+  });
+  await openSheet(page);
+  const sheet=page.getByTestId('training-answer-sheet');
+  await expect.poll(()=>sheet.evaluate(node=>node.scrollHeight-node.clientHeight)).toBeGreaterThan(75);
+  await sheet.evaluate(node=>{node.scrollTop=60});
+  await expect.poll(()=>sheet.evaluate(node=>node.scrollTop)).toBe(60);
+  await page.getByTestId('question-bank-practice-create-flashcard').click();
+  await expect(page.getByTestId('question-bank-practice-flashcard-dialog')).toBeVisible();
+  await expect(sheet).toHaveCount(0);
+  await page.getByRole('button',{name:'返回复盘'}).click();
+  const reopened=page.getByTestId('training-answer-sheet');
+  await expect(reopened).toBeVisible();
+  await expect.poll(()=>reopened.evaluate(node=>node.scrollTop)).toBe(60);
+});
+
 test('paper practice hides numbering and scroll tools until they are needed',async({page,request})=>{
   await loginAsAdmin(page);
   await page.goto('/#/study/training');

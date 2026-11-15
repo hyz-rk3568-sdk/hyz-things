@@ -2,6 +2,61 @@
 use super::*;
 use gloo_timers::callback::Timeout;
 
+thread_local! {
+    // The practice footer is unmounted while an overlay such as the flashcard
+    // editor replaces it. Keep the sheet state outside the component so the
+    // same practice session restores its open state and scroll position.
+    static ANSWER_SHEET_MEMORY: std::cell::RefCell<AnswerSheetMemory> =
+        const { std::cell::RefCell::new(AnswerSheetMemory::new()) };
+}
+
+struct AnswerSheetMemory {
+    key: String,
+    open: bool,
+    scroll_top: i32,
+}
+
+impl AnswerSheetMemory {
+    const fn new() -> Self {
+        Self {
+            key: String::new(),
+            open: false,
+            scroll_top: 0,
+        }
+    }
+}
+
+fn remember_answer_sheet(key: &str, open: Option<bool>, scroll_top: Option<i32>) {
+    if key.is_empty() {
+        return;
+    }
+    ANSWER_SHEET_MEMORY.with(|memory| {
+        let mut memory = memory.borrow_mut();
+        if memory.key != key {
+            memory.key.clear();
+            memory.key.push_str(key);
+            memory.open = false;
+            memory.scroll_top = 0;
+        }
+        if let Some(open) = open {
+            memory.open = open;
+        }
+        if let Some(scroll_top) = scroll_top {
+            memory.scroll_top = scroll_top;
+        }
+    });
+}
+
+fn remembered_answer_sheet(key: &str) -> Option<(bool, i32)> {
+    if key.is_empty() {
+        return None;
+    }
+    ANSWER_SHEET_MEMORY.with(|memory| {
+        let memory = memory.borrow();
+        (memory.key == key).then_some((memory.open, memory.scroll_top))
+    })
+}
+
 // A selected question keeps its grade during review. An active paper must
 // never expose correctness: Some(_) only means "already answered" there.
 fn question_tab_style(selected: bool, marker: Option<bool>, is_review: bool) -> &'static str {
@@ -613,6 +668,8 @@ pub(crate) struct CompactQuestionNavigationProps {
     pub(crate) groups: Vec<NavigationGroup>,
     #[prop_or_default]
     pub(crate) navigation_allowed: Option<Callback<(), bool>>,
+    #[prop_or_default]
+    pub(crate) state_key: AttrValue,
 }
 
 #[derive(Properties, PartialEq)]
@@ -626,15 +683,19 @@ struct TrainingAnswerSheetProps {
     navigation_allowed: Option<Callback<(), bool>>,
     #[prop_or(true)]
     source_paper: bool,
+    #[prop_or_default]
+    state_key: AttrValue,
 }
 
 /// One answer-sheet component shared by source papers and generated drills.
 /// Open/scroll state lives here; the caller owns answers, grades and navigation.
 #[function_component(TrainingAnswerSheet)]
 fn training_answer_sheet(props: &TrainingAnswerSheetProps) -> Html {
-    let open = use_state(|| false);
+    let state_key = props.state_key.to_string();
+    let remembered = remembered_answer_sheet(&state_key);
+    let open = use_state(|| remembered.is_some_and(|(open, _)| open));
     let sheet_ref = use_node_ref();
-    let sheet_scroll_top = use_mut_ref(|| 0i32);
+    let sheet_scroll_top = use_mut_ref(|| remembered.map_or(0, |(_, top)| top));
     {
         let sheet_ref = sheet_ref.clone();
         let sheet_scroll_top = sheet_scroll_top.clone();
@@ -649,9 +710,11 @@ fn training_answer_sheet(props: &TrainingAnswerSheetProps) -> Html {
     }
     let on_sheet_scroll = {
         let sheet_scroll_top = sheet_scroll_top.clone();
+        let state_key = state_key.clone();
         Callback::from(move |event: Event| {
             let sheet = event.target_unchecked_into::<HtmlElement>();
             *sheet_scroll_top.borrow_mut() = sheet.scroll_top();
+            remember_answer_sheet(&state_key, None, Some(sheet.scroll_top()));
         })
     };
     let total = props.numbers.len();
@@ -659,9 +722,12 @@ fn training_answer_sheet(props: &TrainingAnswerSheetProps) -> Html {
     let toggle = {
         let open = open.clone();
         let allowed = props.navigation_allowed.clone();
+        let state_key = state_key.clone();
         Callback::from(move |_| {
             if allows_navigation(&allowed) {
-                open.set(!*open);
+                let next = !*open;
+                open.set(next);
+                remember_answer_sheet(&state_key, Some(next), None);
             }
         })
     };
@@ -702,6 +768,7 @@ fn training_answer_sheet(props: &TrainingAnswerSheetProps) -> Html {
                                         let current = props.current.clone();
                                         let open = open.clone();
                                         let allowed = props.navigation_allowed.clone();
+                                        let state_key = state_key.clone();
                                         let number = props.numbers.get(i).copied().unwrap_or_default();
                                         let done = props.answered.get(i).copied().unwrap_or(false);
                                         let is_review = props.grades.is_some();
@@ -733,6 +800,7 @@ fn training_answer_sheet(props: &TrainingAnswerSheetProps) -> Html {
                                                     if allows_navigation(&allowed) {
                                                         current.set(i);
                                                         open.set(false);
+                                                        remember_answer_sheet(&state_key, Some(false), None);
                                                     }
                                                 })}>{number}</button>
                                         }
@@ -775,7 +843,8 @@ pub(crate) fn compact_question_navigation(props: &CompactQuestionNavigationProps
             <button type="button" class="btn btn-outline btn-sm" disabled={index==0} onclick={previous}>{"上一题"}</button>
             <TrainingAnswerSheet current={props.current.clone()} numbers={props.numbers.clone()}
                 answered={props.answered.clone()} grades={props.grades.clone()}
-                groups={props.groups.clone()} navigation_allowed={props.navigation_allowed.clone()}/>
+                groups={props.groups.clone()} navigation_allowed={props.navigation_allowed.clone()}
+                state_key={props.state_key.clone()}/>
             <button type="button" class="btn btn-primary btn-sm" disabled={index+1>=total} onclick={next}>{"下一题"}</button>
         </footer>
     }

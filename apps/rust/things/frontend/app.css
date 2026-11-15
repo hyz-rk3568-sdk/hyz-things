@@ -251,18 +251,19 @@ nav.tabs > button.tab:not(.tab-active) {
   }
 
   .study-markdown .markdown-media {
-    display: inline-block;
+    display: block;
     max-width: 100%;
-    max-height: 60vh;
     overflow: auto;
-    vertical-align: middle;
+    margin: 0.75rem 0;
     overscroll-behavior: contain;
   }
 
   .study-markdown .markdown-media img {
-    max-width: none;
-    max-height: none;
-    margin: 0;
+    display: block;
+    max-width: 100%;
+    max-height: 60vh;
+    height: auto;
+    margin: 0 auto;
   }
 }
 

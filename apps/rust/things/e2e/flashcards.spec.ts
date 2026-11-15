@@ -74,14 +74,15 @@ test("study card Markdown stays inside the card and scrolls wide blocks locally"
   await expect.poll(() => media.locator("img").evaluate((image: HTMLImageElement) => image.complete && image.naturalWidth > 0)).toBe(true);
   await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth - innerWidth)).toBeLessThanOrEqual(1);
   await expect.poll(() => front.evaluate(node => node.scrollWidth - node.clientWidth)).toBeLessThanOrEqual(1);
-  for (const target of [inlineMath, code, media]) {
+  for (const target of [inlineMath, code]) {
     await expect.poll(() => target.evaluate(node => node.scrollWidth - node.clientWidth)).toBeGreaterThan(10);
     await target.evaluate(node => { node.scrollLeft = node.scrollWidth; });
     await expect.poll(() => target.evaluate(node => node.scrollLeft)).toBeGreaterThan(10);
   }
-  await expect.poll(() => media.evaluate(node => node.scrollHeight - node.clientHeight)).toBeGreaterThan(10);
-  await media.evaluate(node => { node.scrollTop = node.scrollHeight; });
-  await expect.poll(() => media.evaluate(node => node.scrollTop)).toBeGreaterThan(10);
+  await expect.poll(() => media.evaluate(node => node.scrollWidth - node.clientWidth)).toBeLessThanOrEqual(1);
+  await expect.poll(() => media.evaluate(node => node.scrollHeight - node.clientHeight)).toBeLessThanOrEqual(1);
+  await expect.poll(() => media.locator("img").evaluate((image: HTMLImageElement) =>
+    image.getBoundingClientRect().width <= image.parentElement!.clientWidth + 1)).toBe(true);
 });
 
 test("legacy review route redirects into specialized training", async ({ page }) => {

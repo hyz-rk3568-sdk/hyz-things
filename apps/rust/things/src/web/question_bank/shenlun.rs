@@ -810,6 +810,7 @@ pub(crate) fn question_bank_shenlun(props: &QuestionBankShenlunProps) -> Html {
                 </div>
                 <CompactQuestionNavigation current={selected.clone()}
                     navigation_allowed={Some(navigation_allowed)}
+                    state_key={format!("shenlun-{paper_id}")}
                     numbers={current.questions.iter().map(|q|q.number).collect::<Vec<_>>()}
                     answered={answered} grades={None::<Vec<Option<bool>>>} groups={groups}/>
             </div>

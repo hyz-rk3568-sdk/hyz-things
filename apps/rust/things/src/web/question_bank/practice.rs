@@ -1896,6 +1896,7 @@ pub(crate) fn question_bank_training(props: &QuestionBankTrainingProps) -> Html 
                 <fieldset disabled={*busy} class="min-w-0 shrink-0 border-0 p-0">
                 <CompactQuestionNavigation current={index.clone()}
                     navigation_allowed={Some(navigation_allowed.clone())}
+                    state_key={current.session.id.clone()}
                     numbers={current.questions.iter().map(|q|q.item.number).collect::<Vec<_>>()}
                     answered={current.questions.iter().map(|q|!q.item.answer.is_empty()).collect::<Vec<_>>()}
                     groups={navigation_groups(&current.questions, &current.session.mode)}
