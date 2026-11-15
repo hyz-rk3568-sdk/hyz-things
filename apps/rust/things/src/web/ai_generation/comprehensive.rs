@@ -1,5 +1,4 @@
 //! 20 questions / 20 minutes. Immersive iPad workspace with 60:40 material/question panes.
-use super::material_scroll::{use_training_scroll_pair, MaterialScrollButton};
 use super::*;
 use gloo_timers::{callback::Interval, future::TimeoutFuture};
 use js_sys::Date;
@@ -211,10 +210,7 @@ pub(crate) fn comprehensive_training(props: &ComprehensiveProps) -> Html {
     let tick = use_state(|| 0_u64);
     let history = use_state(Vec::<ComprehensiveHistoryEntry>::new);
     let history_open = use_state(|| props.show_history);
-    let user_prompt = use_state(String::new);
-    let prompt_settings = use_state(|| None::<UserPromptSettings>);
-    let prompt_busy = use_state(|| false);
-    let prompt_error = use_state(|| None::<String>);
+    let generation_prompt = use_generation_prompt();
     let reviewing_history = use_state(|| false);
     let review_run_id = use_state(String::new);
     let unfinished = use_state(Vec::<UnfinishedRun>::new);
@@ -239,9 +235,7 @@ pub(crate) fn comprehensive_training(props: &ComprehensiveProps) -> Html {
         let ready_id = ready_id.clone();
         let preparing = preparing.clone();
         let loading_status = loading_status.clone();
-        let user_prompt = user_prompt.clone();
-        let prompt_settings = prompt_settings.clone();
-        let prompt_error = prompt_error.clone();
+        let generation_prompt = generation_prompt.clone();
         let unfinished = unfinished.clone();
         let controller = controller.clone();
         let current = current.clone();
@@ -250,18 +244,7 @@ pub(crate) fn comprehensive_training(props: &ComprehensiveProps) -> Html {
         use_effect_with((), move |_| {
             let history = history.clone();
             spawn_local(async move {
-                match fetch_json_typed::<UserPromptSettings>(
-                    &format!("{ANALYSIS_ROOT}/user-prompt"),
-                    "读取出题要求",
-                )
-                .await
-                {
-                    Ok(saved) => {
-                        user_prompt.set(saved.user_prompt.clone());
-                        prompt_settings.set(Some(saved));
-                    }
-                    Err(e) => prompt_error.set(Some(format!("读取出题要求失败：{e}"))),
-                }
+                generation_prompt.load(ANALYSIS_ROOT).await;
                 let status_result = fetch_json_typed::<AnalysisStatus>(
                     &format!("{ANALYSIS_ROOT}/status"),
                     "综合训练状态",
@@ -522,87 +505,22 @@ pub(crate) fn comprehensive_training(props: &ComprehensiveProps) -> Html {
         });
     }
     let edit_user_prompt = {
-        let user_prompt = user_prompt.clone();
+        let generation_prompt = generation_prompt.clone();
         Callback::from(move |event: web_sys::InputEvent| {
             use yew::TargetCast;
             let textarea: web_sys::HtmlTextAreaElement = event.target_unchecked_into();
-            user_prompt.set(textarea.value());
+            generation_prompt.text.set(textarea.value());
         })
     };
     let save_user_prompt = {
         let csrf = props.csrf.clone();
-        let user_prompt = user_prompt.clone();
-        let prompt_busy = prompt_busy.clone();
-        let prompt_settings = prompt_settings.clone();
-        let prompt_error = prompt_error.clone();
-        Callback::from(move |_| {
-            if *prompt_busy {
-                return;
-            }
-            prompt_busy.set(true);
-            prompt_error.set(None);
-            let csrf = csrf.clone();
-            let payload = (*user_prompt).clone();
-            let user_prompt = user_prompt.clone();
-            let prompt_busy = prompt_busy.clone();
-            let prompt_settings = prompt_settings.clone();
-            let prompt_error = prompt_error.clone();
-            spawn_local(async move {
-                match post_json_response_typed::<_, UserPromptSettings>(
-                    &format!("{ANALYSIS_ROOT}/user-prompt"),
-                    &csrf,
-                    &UserPromptUpdate {
-                        user_prompt: Some(payload),
-                    },
-                    "保存出题要求",
-                )
-                .await
-                {
-                    Ok(saved) => {
-                        user_prompt.set(saved.user_prompt.clone());
-                        prompt_settings.set(Some(saved));
-                    }
-                    Err(e) => prompt_error.set(Some(format!("保存失败：{e}"))),
-                }
-                prompt_busy.set(false);
-            });
-        })
+        let generation_prompt = generation_prompt.clone();
+        Callback::from(move |_| generation_prompt.save(ANALYSIS_ROOT, csrf.clone()))
     };
     let reset_user_prompt = {
         let csrf = props.csrf.clone();
-        let user_prompt = user_prompt.clone();
-        let prompt_busy = prompt_busy.clone();
-        let prompt_settings = prompt_settings.clone();
-        let prompt_error = prompt_error.clone();
-        Callback::from(move |_| {
-            if *prompt_busy {
-                return;
-            }
-            prompt_busy.set(true);
-            prompt_error.set(None);
-            let csrf = csrf.clone();
-            let user_prompt = user_prompt.clone();
-            let prompt_busy = prompt_busy.clone();
-            let prompt_settings = prompt_settings.clone();
-            let prompt_error = prompt_error.clone();
-            spawn_local(async move {
-                match post_json_response_typed::<_, UserPromptSettings>(
-                    &format!("{ANALYSIS_ROOT}/user-prompt"),
-                    &csrf,
-                    &UserPromptUpdate { user_prompt: None },
-                    "恢复默认出题要求",
-                )
-                .await
-                {
-                    Ok(saved) => {
-                        user_prompt.set(saved.user_prompt.clone());
-                        prompt_settings.set(Some(saved));
-                    }
-                    Err(e) => prompt_error.set(Some(format!("恢复默认失败：{e}"))),
-                }
-                prompt_busy.set(false);
-            });
-        })
+        let generation_prompt = generation_prompt.clone();
+        Callback::from(move |_| generation_prompt.reset(ANALYSIS_ROOT, csrf.clone()))
     };
 
     let start = {
@@ -1356,36 +1274,21 @@ pub(crate) fn comprehensive_training(props: &ComprehensiveProps) -> Html {
                         <p class="font-semibold">{"智能选卡 · 综合训练"}</p>
                         <p class="text-sm text-base-content/60">{"错题与知识点统一入队；按卡片虚拟次数全局选择20张，同篇5个不同题型。不设置题型保底或配额。"}</p>
                     </div>
-                    <details class="rounded-box border border-base-content/15 bg-base-100/50 p-3" data-testid="analysis-user-prompt">
-                        <summary class="cursor-pointer select-none font-semibold" data-testid="analysis-user-prompt-toggle">
-                            {"出题要求"}
-                            <span class="ml-2 text-xs font-normal text-base-content/60">
-                                {if prompt_settings.as_ref().as_ref().is_some_and(|v| v.customized) {"自定义版本 · 点击编辑"} else {"默认版本 · 点击编辑"}}
-                            </span>
-                        </summary>
-                        <div class="mt-3 space-y-3">
-                            <p class="text-xs text-base-content/65">
-                                {"决定材料风格、题目难度和出题限制。全卡池来源及同篇不同题型的结构由系统控制，不受本栏内容影响。"}
-                            </p>
-                            <textarea class="textarea textarea-bordered w-full min-h-48 font-mono text-base leading-6"
-                                data-testid="analysis-user-prompt-editor" maxlength="8000"
-                                aria-label="用户出题要求" value={(*user_prompt).clone()}
-                                oninput={edit_user_prompt} disabled={prompt_settings.is_none() || *prompt_busy}>
-                            </textarea>
-                            if let Some(message) = (*prompt_error).clone() {
-                                <p role="alert" class="text-error text-sm">{message}</p>
-                            }
-                            <div class="flex flex-wrap justify-end gap-2">
-                                <button type="button" class="btn btn-outline btn-sm" data-testid="analysis-user-prompt-reset"
-                                    disabled={*prompt_busy || prompt_settings.is_none() || props.csrf.is_empty()}
-                                    onclick={reset_user_prompt}>{"恢复默认"}</button>
-                                <button type="button" class="btn btn-primary btn-sm" data-testid="analysis-user-prompt-save"
-                                    disabled={*prompt_busy || prompt_settings.is_none() || user_prompt.trim().is_empty() || props.csrf.is_empty()}
-                                    onclick={save_user_prompt}>{if *prompt_busy {"保存中…"} else {"保存出题要求"}}</button>
-                            </div>
-                            <p class="text-xs text-base-content/60">{"保存至 RK3568，可跨设备使用；正在生成的试卷继续采用启动时的版本。"}</p>
-                        </div>
-                    </details>
+                    <GenerationPromptSettings prefix="analysis" textarea_id={None::<AttrValue>}
+                        aria_label={Some(AttrValue::from("用户出题要求"))}
+                        text={(*generation_prompt.text).clone()}
+                        status_label={if *generation_prompt.customized {"自定义版本 · 点击编辑"} else {"默认版本 · 点击编辑"}}
+                        busy={*generation_prompt.busy}
+                        editor_disabled={!*generation_prompt.loaded || *generation_prompt.busy}
+                        save_disabled={*generation_prompt.busy || !*generation_prompt.loaded
+                            || generation_prompt.text.trim().is_empty() || props.csrf.is_empty()}
+                        reset_disabled={*generation_prompt.busy || !*generation_prompt.loaded || props.csrf.is_empty()}
+                        error={(*generation_prompt.error).clone()}
+                        save_label="保存出题要求" busy_label="保存中…" reset_label="恢复默认"
+                        footer={Some(html!{<p class="text-xs text-base-content/60">{"保存至 RK3568，可跨设备使用；正在生成的试卷继续采用启动时的版本。"}</p>})}
+                        on_input={edit_user_prompt} on_save={save_user_prompt} on_reset={reset_user_prompt}>
+                        <p class="text-xs text-base-content/65">{"决定材料风格、题目难度和出题限制。全卡池来源及同篇不同题型的结构由系统控制，不受本栏内容影响。"}</p>
+                    </GenerationPromptSettings>
                     if let Some(p)=(*progress).clone(){
                         <div class="rounded-box bg-base-200 p-3 text-sm" data-testid="analysis-progress">
                             <div class="font-semibold">{format!("{} · 已生成 {}/20",p.state,p.verified)}</div>

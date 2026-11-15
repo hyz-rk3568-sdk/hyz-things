@@ -2,12 +2,9 @@ use super::*;
 
 mod calculation;
 mod camera;
-mod comprehensive;
 mod deployments;
 mod devices;
 mod favorite_flashcard;
-mod generation_activity;
-mod logic_judgment;
 mod material_scroll;
 mod network;
 mod overview;
@@ -29,12 +26,9 @@ mod training_time;
 
 pub(crate) use calculation::*;
 pub(crate) use camera::*;
-pub(crate) use comprehensive::*;
 pub(crate) use deployments::*;
 pub(crate) use devices::*;
 pub(crate) use favorite_flashcard::*;
-pub(crate) use generation_activity::GenerationActivity;
-pub(crate) use logic_judgment::*;
 pub(crate) use material_scroll::*;
 pub(crate) use network::*;
 pub(crate) use overview::*;

@@ -231,6 +231,7 @@ PR #128 在关键测试与最终 CI 通过以前保持 Draft；A—E 的实现�
 - D：删除 `ShenlunJobRequest`、`ShenlunJob`、`ConfirmShenlunTranscription`、`CreateShenlunAttempt`、`SaveShenlunDraft`、`ShenlunAttempt`、SSE 之外的旧批改校验与 Attempt/Job 读写路径；`shenlun_attempts` 历史表保留，学习统计继续只读兼容，并新增 `learning_statistics_read_legacy_shenlun_attempts_without_attempt_writes` 覆盖。
 - E：新增 `e2e/helpers/question-bank.ts` 与 `e2e/helpers/shenlun.ts` 收敛登录、选题、开始练习、AI 请求桩、申论 fixture 与 OCR EventSource；AI 用例拆入 `e2e/question-bank-ai.spec.ts`；`question-bank.spec.ts` 2,337 行降至约 1,074 行；删除旧 `/shenlun/attempts`、`/jobs` 成功 Mock，改为负向断言；同步 `tools/check-e2e-suites.py`、`tools/select-related-e2e.sh` 与 `AGENTS.md` 的本地并行分片说明。
 - E 追加：专项训练中的 AI 出题套件（`comprehensive.spec.ts` 资料分析、`logic-judgment.spec.ts` 判断推理与数量关系）纳入瘦身范围。数量关系由 `logic_judgment.rs` 的 `quantitative` 参数共用同一生成/作答工作区，因此与判断推理共用 `logic-judgment.spec.ts`；它与综合训练只共享“生成任务 → 进入训练 → 停走恢复”的 fixture 模式，题型 payload 和复盘断言保留在各自 spec。
+- F 追加：专项训练的 AI 出题页面归入 `web/ai_generation/`（`comprehensive`、`logic`、`activity`、`prompt`）。判断推理与数量关系继续共用同一套单题工作区；出题要求面板及其读取、保存、恢复状态收敛为 `GenerationPromptSettings` 与 `use_generation_prompt`，资料分析、判断推理、数量关系共享同一组件。
 - 合并 `origin/main` 的申论 OCR 流式保留功能（`2baec77b`、`28156ab7`）时，保留其内存态多次转写、工具进度与“OCR 模式隐藏题干”的产品行为；Stage D 仅退役数据库 Attempt/Job 原型，两者不冲突。同步修正 main 中三处与新行为不一致的断言（OCR 模式题干、删除可用性跨模式保留、铅笔 SVG 图标）。
 
 **本次实际执行**
@@ -248,6 +249,7 @@ PR #128 在关键测试与最终 CI 通过以前保持 Draft；A—E 的实现�
 | `e2e/question-bank.spec.ts` + `e2e/question-bank-ai.spec.ts` + reference + theme | 92/92 通过 |
 | `e2e/comprehensive.spec.ts` + `e2e/flashcards.spec.ts` | 43/43 通过 |
 | `e2e/logic-judgment.spec.ts` | 19/19 通过（含数量关系生成与手写用例） |
+| `e2e/comprehensive.spec.ts` + `e2e/logic-judgment.spec.ts`（F 重构后） | 42/43 一次完整运行；唯一失败是共享出题面板的 `aria-label` 覆盖了可见 `<label>`，移除后该用例单独复跑通过 |
 
 **未验证**
 
