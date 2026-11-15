@@ -114,6 +114,10 @@ async function install(page) {
     const method = request.method();
     let json;
     if (method === 'GET' && path === '/data-version') json = { version: 'reference-v1' };
+    else if (method === 'GET' && path === '/ai/rate-limits') json = {
+      five_hour: { remaining_percent: 72, resets_at: 1900000000 },
+      week: { remaining_percent: 38, resets_at: 1900400000 },
+    };
     else if (method === 'GET' && path === '/module-settings') json = { year_min: null, year_max: null, regions: [], exclude_regions: false, count: null };
     else if (method === 'GET' && path === '/collections') json = [];
     else if (method === 'GET' && /^\/practice\/questions\/[^/]+\/ai$/.test(path)) {

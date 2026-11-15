@@ -86,7 +86,8 @@ for (const colorScheme of ['dark', 'light'] as const) {
     await themeExpect(page.getByTestId('study-time-inline')).toHaveCSS('color', colors.primary);
     await themeExpect(page.getByTestId('question-bank-practice-timer')).toHaveCSS('color', colors['base-content']);
     const favorite = page.getByTestId('question-bank-favorite');
-    if (await favorite.getAttribute('aria-label') === '收藏题目') await favorite.click();
+    const initiallyFavorite = await favorite.getAttribute('aria-label') === '取消收藏';
+    if (!initiallyFavorite) await favorite.click();
     await expect(favorite).toHaveAttribute('aria-label', '取消收藏');
     await themeExpect(favorite).toHaveCSS('color', colors['base-content']);
     await page.getByRole('button', { name: /暂停并退出/ }).click();
@@ -105,5 +106,9 @@ for (const colorScheme of ['dark', 'light'] as const) {
     await expect(favorite).toHaveAttribute('aria-label', '取消收藏');
     await favorite.click();
     await expect(favorite).toHaveAttribute('aria-label', '收藏题目');
+    if (initiallyFavorite) {
+      await favorite.click();
+      await expect(favorite).toHaveAttribute('aria-label', '取消收藏');
+    }
   });
 }
