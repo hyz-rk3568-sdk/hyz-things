@@ -3032,7 +3032,6 @@ fn is_post_path(path: &str) -> bool {
             | "/api/v1/control/study/sync"
             | "/api/v1/control/question-bank/sync"
             | "/api/v1/question-bank/practice/sessions"
-            | "/api/v1/question-bank/shenlun/attempts"
             | "/api/v1/study/data-analysis/prepare"
             | "/api/v1/study/data-analysis/user-prompt"
             | "/api/v1/study/logic-judgment/prepare"
@@ -3043,7 +3042,6 @@ fn is_post_path(path: &str) -> bool {
         || is_logic_judgment_run_post_path(path)
         || is_quantitative_relations_run_post_path(path)
         || is_question_bank_practice_post_path(path)
-        || is_shenlun_attempt_post_path(path)
         || is_shenlun_ocr_post_path(path)
 }
 fn is_shenlun_ocr_post_path(path: &str) -> bool {
@@ -3052,24 +3050,6 @@ fn is_shenlun_ocr_post_path(path: &str) -> bool {
         && parts[..6] == ["", "api", "v1", "question-bank", "shenlun", "questions"]
         && crate::application::question_bank::document::valid_id(parts[6])
         && parts[7] == "ocr"
-}
-
-fn is_shenlun_attempt_post_path(path: &str) -> bool {
-    let parts: Vec<&str> = path.split('/').collect();
-    if parts.len() == 8
-        && parts[..6] == ["", "api", "v1", "question-bank", "shenlun", "jobs"]
-        && uuid::Uuid::parse_str(parts[6]).is_ok_and(|id| id.to_string() == parts[6])
-    {
-        return parts[7] == "stop";
-    }
-    if parts.len() < 8
-        || parts[..6] != ["", "api", "v1", "question-bank", "shenlun", "attempts"]
-        || !uuid::Uuid::parse_str(parts[6]).is_ok_and(|id| id.to_string() == parts[6])
-    {
-        return false;
-    }
-    parts.len() == 8 && matches!(parts[7], "draft" | "submit" | "jobs")
-        || parts.len() == 9 && parts[7] == "transcription" && parts[8] == "confirm"
 }
 
 fn is_question_bank_practice_post_path(path: &str) -> bool {
@@ -3343,19 +3323,18 @@ mod tests {
     #[test]
     fn question_bank_practice_mutations_have_exact_post_allowlist() {
         let id = "019a3d8e-1b32-7a60-9c83-f34217a6e210";
-        assert!(is_post_path("/api/v1/question-bank/shenlun/attempts"));
-        assert!(is_post_path(
-            "/api/v1/question-bank/shenlun/attempts/11111111-1111-4111-8111-111111111111/draft"
-        ));
-        assert!(is_post_path(
-            "/api/v1/question-bank/shenlun/attempts/11111111-1111-4111-8111-111111111111/submit"
-        ));
-        assert!(!is_post_path(
-            "/api/v1/question-bank/shenlun/attempts/not-an-id/draft"
-        ));
-        assert!(!is_post_path(
-            "/api/v1/question-bank/shenlun/attempts/11111111-1111-4111-8111-111111111111/unsafe"
-        ));
+        // Retired 申论 attempt/job prototypes must stay unregistered: there is no
+        // success path left for stale drafts or transcription confirmation.
+        for retired in [
+            "/api/v1/question-bank/shenlun/attempts",
+            "/api/v1/question-bank/shenlun/attempts/11111111-1111-4111-8111-111111111111/draft",
+            "/api/v1/question-bank/shenlun/attempts/11111111-1111-4111-8111-111111111111/submit",
+            "/api/v1/question-bank/shenlun/attempts/11111111-1111-4111-8111-111111111111/jobs",
+            "/api/v1/question-bank/shenlun/attempts/11111111-1111-4111-8111-111111111111/transcription/confirm",
+            "/api/v1/question-bank/shenlun/jobs/11111111-1111-4111-8111-111111111111/stop",
+        ] {
+            assert!(!is_post_path(retired), "retired route stayed writable: {retired}");
+        }
         assert!(is_post_path("/api/v1/question-bank/practice/sessions"));
         assert!(is_post_path(&format!(
             "/api/v1/question-bank/practice/sessions/{id}/submit"
