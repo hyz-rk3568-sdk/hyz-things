@@ -85,7 +85,7 @@ apps/rust/things/src/
 ### 阶段 A — 用类型表示申论 UI 模式（低风险起点）
 
 - 在 `web/question_bank/shenlun.rs`（移动前可先在原文件）引入 `enum ShenlunMode { Analysis, Grading, Ocr, Source }`，`Copy + Clone + PartialEq + Eq`。
-- 把 `use_state(|| "ai".to_owned())`、所有字符串匹配、标签切换回调改为枚举；集中实现 `ai_scope() -> Option<&\u0027static str>` 或同等转换。
+- 把 `use_state(|| "ai".to_owned())`、所有字符串匹配、标签切换回调改为枚举；集中实现 `ai_scope() -> Option<&'static str>` 或同等转换。
 - `analysis` / `grading` / `ocr` 仍作为**现有 API 边界**上的字符串；不更改后端字段、草稿存储 key、DOM 测试选择器和组件重挂载行为。
 - 验收：切题后模式记忆、四标签切换、批改与解析的独立会话/删除/草稿、OCR 及来源答案行为全部不变。
 
