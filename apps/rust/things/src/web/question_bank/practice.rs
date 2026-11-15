@@ -1972,7 +1972,7 @@ pub(crate) fn question_bank_training(props: &QuestionBankTrainingProps) -> Html 
                                     <button class="btn btn-sm btn-outline btn-error" data-testid="question-bank-practice-submit"
                                         disabled={*busy} onclick={Callback::from({let invoke=invoke.clone();move |_|invoke.emit(Action::Submit)})}>{"交卷"}</button>
                                 } else if let Some(score) = &current.session.score {
-                                    <span class="flex min-w-0 flex-wrap items-center gap-2" data-testid="question-bank-practice-score">
+                                    <span class="flex min-w-0 flex-wrap items-center gap-2">
                                         {score_summary(score)}
                                         <button type="button" class="btn btn-outline btn-sm" data-testid="question-bank-practice-records"
                                             onclick={Callback::from({

@@ -1,5 +1,6 @@
 import { expect, test, type Page } from '@playwright/test';
 import { expectNoHorizontalOverflow, loginAsAdmin, resetHarness } from './fixtures';
+import { chooseFixturePaper } from './helpers/question-bank';
 
 test.beforeEach(async ({ request }) => { await resetHarness(request); });
 
@@ -21,11 +22,7 @@ async function startFixturePaper(page: Page) {
   await loginWithIsolatedHistory(page);
   await page.goto('/#/study/training');
   await page.getByTestId('training-mode-question-bank-paper').click();
-  const region = page.getByTestId('question-bank-region').filter({ hasText: '国考' });
-  if (!(await region.evaluate(node => (node.closest('details') as HTMLDetailsElement).open))) {
-    await region.click();
-  }
-  await page.getByTestId('question-bank-paper-option').filter({ hasText: '行测真题训练端到端样卷' }).click();
+  await chooseFixturePaper(page);
   await page.getByTestId('question-bank-practice-start').click();
 }
 
@@ -184,7 +181,7 @@ test('question bank year disclosure keeps the selected paper when reopened', asy
   await page.goto('/#/study/training');
   await page.getByTestId('training-mode-question-bank-paper').click();
   const paper = page.getByTestId('question-bank-paper-option').filter({ hasText: '行测真题训练端到端样卷' });
-  await paper.click();
+  await chooseFixturePaper(page);
   const year = page.getByTestId('question-bank-year').filter({ hasText: '2008' });
   await year.click();
   await expect(paper).toBeHidden();
@@ -196,7 +193,7 @@ test('question bank fixed action summarizes the selected paper and module catego
   await loginAsAdmin(page);
   await page.goto('/#/study/training');
   await page.getByTestId('training-mode-question-bank-paper').click();
-  await page.getByTestId('question-bank-paper-option').filter({ hasText: '行测真题训练端到端样卷' }).click();
+  await chooseFixturePaper(page);
   await expect(page.getByTestId('training-setup-action')).toContainText('行测真题训练端到端样卷');
   await page.getByTestId('training-mode-question-bank-module').click();
   await page.getByTestId('question-bank-cross-category').filter({ hasText: '比重' }).click();
