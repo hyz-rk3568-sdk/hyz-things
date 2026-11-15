@@ -1,6 +1,6 @@
 # Question Bank 前端瘦身与模块边界重构 Plan
 
-> 状态：**提案 / 待审阅**。PR #128 当前包含**本重构 Plan + 两份旧申论 Plan 的过时条款删除线标注**（均为文档修改），尚未修改业务代码、SQL、E2E 或部署；后续可**直接在同一个 Draft PR 中分阶段追加实现 commit**，不另拆多个实现 PR。
+> 状态：**阶段 A—E 已实现，Rust 静态检查、目标单测与相关 WebKit E2E 已通过；真实 iPad/手机与旧库升级实测尚未执行**。实现、测试与 E2E 瘦身全部提交在同一个 PR #128 的同一分支，未另拆实现 PR，也尚未合并。
 > 日期：2026-11-15；审查基线：`main@d54aa6b94e4eadfa4d4cd1b6263586fe4c22162c`。
 > 原则：**以当前已实现的代码、HTTP 路由、E2E 所表达的最新产品行为为准**；历史 Plan 仅供追溯，不作为新增功能或兼容要求。
 
@@ -201,7 +201,7 @@ apps/rust/things/src/
 
 **每阶段检查必须运行并如实记录**：静态编译与目标单测 + 涉及的现有 E2E；E 阶段负责测试结构整体瘦身和收尾回归，不意味着 A—D 可以不跑测试。保留阶段 commit 以便审阅和精准回滚，不要求拆独立 PR。若 B/C 文件移动冲突，先完成语义选择器替换再移动。
 
-PR #128 在全部阶段实施完成且关键测试通过以前一直保持 Draft；当前只更改了本 Plan 与两份旧 Plan 的文字标注，**未开始业务实现、SQL 或 E2E 修改**。
+PR #128 在关键测试与最终 CI 通过以前保持 Draft；A—E 的实现提交、专项测试与 E2E 瘦身均已进入同一分支，验证结果见 §8。真实设备与旧库升级未验证前不宣称全部完成。
 
 ## 7. React 迁移预留（只约束边界，不提前实现）
 
@@ -213,8 +213,40 @@ PR #128 在全部阶段实施完成且关键测试通过以前一直保持 Draft
 ## 8. 完成标准与状态
 
 - [x] 本 Plan 对照当前路由、申论 E2E、申论 HTTP endpoint、题库 AI/Ink、SQLite 统计引用进行静态审查。
-- [ ] **在同一个 Draft PR #128 中按 A—E 阶段分别提交 commit 并验证**（当前尚未实施）。
-- [ ] 对公共类型、组件依赖及本地存储键进行回归验证。
-- [ ] 完成旧库和真实设备测试；未执行前一律记录为“未验证”。
+- [x] **在同一个 PR #128 中按 A—E 阶段提交 commit 并验证**。A—E 均已实现；Rust 静态检查、单元/集成测试与相关 WebKit E2E 通过。
+- [x] 对公共类型、组件依赖及本地存储键进行回归验证：`ShenlunMode` 只存在于 Web 层，HTTP 仍使用 `analysis`/`grading`/`ocr` 字符串；原 `data-testid`、AI scope、request-id、草稿 scope 与 Ink IndexedDB 键均未改变；`data-ink-pane` 仅新增语义属性。
+- [ ] 完成旧库和真实设备测试；**未执行前一律记录为“未验证”**。
 
-**当前 PR #128 仅含文档（本 Plan + 两份旧申论 Plan 的删除线标注）；后续按 A—E 阶段在同一个 PR 中追加代码、专项测试与 E2E 瘦身。未经过审阅和兼容验证前，不删已有数据库迁移、不改变业务行为、不自动合并。**
+### 实施与验证记录
+
+**阶段实现**
+
+- A：`web/question_bank/shenlun.rs` 引入 `ShenlunMode { Analysis, Grading, Ocr, Source }`，集中提供 `ai_scope()`、`prompt_mode()` 与 `key()`；模式状态改由枚举持有。
+- B：可书写容器增加 `data-ink-pane="material"|"answer"`；`scratchpad.rs` 改用 `pane_element` 按语义属性定位，并跳过零尺寸的隐藏工作区；原 `data-testid` 保留。
+- C：题库前端迁入 `web/question_bank/`（`practice`、`shenlun`、`collection_review`、`manage`、`setup`、`ocr_panel`、`source_answer_panel`）；`QuestionAiReview` 拆为 `ai_review`、`ai_review_api`、`ai_review_recovery`、`ai_review_stream`、`ai_review_timeline`、`ai_composer`、`ai_reply`；通用 `question_header_actions` 与 `tool_execution` 移入 `web/components/`。
+- D：删除 `ShenlunJobRequest`、`ShenlunJob`、`ConfirmShenlunTranscription`、`CreateShenlunAttempt`、`SaveShenlunDraft`、`ShenlunAttempt`、SSE 之外的旧批改校验与 Attempt/Job 读写路径；`shenlun_attempts` 历史表保留，学习统计继续只读兼容，并新增 `learning_statistics_read_legacy_shenlun_attempts_without_attempt_writes` 覆盖。
+- E：新增 `e2e/helpers/question-bank.ts` 与 `e2e/helpers/shenlun.ts` 收敛登录、选题、开始练习、AI 请求桩与申论 fixture；AI 用例拆入 `e2e/question-bank-ai.spec.ts`；`question-bank.spec.ts` 2,337 行降至约 1,074 行；删除旧 `/shenlun/attempts`、`/jobs` 成功 Mock，改为负向断言；同步 `tools/check-e2e-suites.py`、`tools/select-related-e2e.sh` 与 `AGENTS.md` 的本地并行分片说明。
+
+**本次实际执行**
+
+| 检查 | 结果 |
+| --- | --- |
+| `cargo fmt --check` | 通过 |
+| `cargo clippy --locked --manifest-path apps/rust/things/Cargo.toml --all-targets --features e2e -- -D warnings` | 通过 |
+| Web 单元测试 | 50/50 通过 |
+| Native 单元 + 集成测试 | 通过（含 28 个 question bank 测试与 SQLite 历史统计兼容测试） |
+| `tools/check-e2e-suites.py` | 通过：177 个声明用例 / 176 个可运行用例 |
+| `tools/test-portal-ci.py` | 9/9 通过 |
+| `make check-static`、`git diff --check` | 通过 |
+| `e2e/shenlun.spec.ts` | 16/16 通过（harness 启动时带 `HYZ_THINGS_E2E_SHENLUN_UPLOAD_FIXTURE=1`） |
+| `e2e/question-bank.spec.ts` + `e2e/question-bank-theme.spec.ts` | 35/35 通过 |
+| `e2e/question-bank-ai.spec.ts` | 37/37 通过 |
+| `e2e/question-bank-reference.spec.ts` + theme | 22/22 通过 |
+
+**未验证**
+
+- 真实 iPad / 手机 WebKit 触控、Apple Pencil 与真实设备上的长 Markdown、SSE 断线重连：**未执行**。
+- 旧设备数据库升级实测：**未执行**；目前只有旧表只读统计的单元测试作为兼容证据。
+- 本轮 E2E 在本机以 `--shard` 并行验证；最终合并门槛仍以 PR 最终 HEAD 的必需 CI 为准。
+
+**PR #128 现已包含 Plan 文档、A—E 实现、单元/集成测试与 E2E 瘦身。未执行真实设备与旧库升级验证前，不宣称“全部完成”；未获得确认前不合并。**
