@@ -83,20 +83,6 @@ composition root in its own Cargo package:
   只停止并重启对应应用的 init 服务，绝不重启 router；任何停止动作之前
   必须通过注册表记录的协议版本做兼容性检查。
 
-### 训练页面组件化
-
-- 专项训练、题库及资料分析、判断推理、数量关系等页面，在新增或修改
-  状态栏、答题区、复盘区、选项、分栏、导航与滚动交互前，先检查
-  `apps/rust/things/src/web/pages` 中已有共享组件，优先复用或抽取具有
-  相同行为的组件。组件使用明确的 props、事件回调及可访问标签。
-- 共享组件只负责公共界面与交互；各题型的答题规则、计时、成绩、权限、
-  题型专属数据请求和差异化展示由对应页面或现有应用边界负责。跨页面的
-  通用数据请求可封装在受限 HTTP 驱动的共享组件或 hook 中。保留各页面
-  已有的移动端布局、草稿纸、滚动位置、失败状态及安全约束。
-- 修改共享组件时，批量运行覆盖所有受影响页面的相关 E2E，并在浏览器中
-  验证答题、交卷、复盘与相关边界状态；布局调整还须检查桌面和手机尺寸。
-  避免为只有表面相似、行为不同的页面强行合并组件。
-
 ## GitHub workflow
 
 - 较大的功能开发或重构必须在独立分支完成，并通过 GitHub Pull Request 合入默认分支；不得直接提交到 `main`。
@@ -116,25 +102,6 @@ composition root in its own Cargo package:
 - PR CI 也应按变更范围选择相关 E2E；除非用户明确要求或发布策略规定，不在 PR 上无差别运行全量 E2E。已有 `main` 分支的发布/全量验证约束不因此放宽。
 - CI 中按本次实际选中的可运行 E2E 数量自动决定 Runner：**60 个及以下 1 片，超过 60 个 2 片（最多 2 片）**。每个 Runner 各自启动独立 E2E 后端和 WebKit；每 Runner 维持 `workers: 1`，使用测试级分片平衡大 spec 的执行量。矩阵设置 `fail-fast: false` 以汇集所有分片的失败，并保留稳定的聚合检查供合并门槛使用。
 - 不通过删除断言、`skip`、放宽失败判定、忽略错误退出码或屏蔽相关 spec 来换取通过；修复失败后要重新验证被改动行为。
-
-### 单轮 CI 尽可能暴露全部问题（强制）
-
-- **推送前集中检查**：优先运行 `git diff --check`、格式化检查、静态脚本/配置检查、E2E 套件清单及计数校验，以及受影响的最小测试集；先消灭显而易见的格式、locator、清单与构建脚本问题，再触发远端 CI。
-- **一次 CI 批次汇集失败**：保持可并行 job 同时执行；格式、静态、单元测试、Clippy、相关 E2E 在安全可行的情况下采用独立 job 或带 `!cancelled()` 的 failure-collecting 步骤，不因一个可独立排查的检查失败就提前跳过其他检查。各步骤必须保留非零退出码与可访问日志。
-- **一次读完失败结果**：完整检查所有失败 job、测试名、断言、日志和产物；能相互独立修复的错误应成批修完再 push。特别是同一轮同时出现格式、静态、native 测试和 Playwright 失败时，不得只修一个就反复启动整个流水线。
-- **卡住也必须能诊断**：为可能无限等待的异步测试加入带具体操作名的有限超时；CI 设置合理的 job/测试超时并保留当前测试名、stdout/stderr 与失败产物。原生测试长时间无输出时定位正在等待的具体测试和 channel/锁/网络边界；不能仅靠增加总超时，不能直接跳过卡住的测试。
-- 每次 CI 结果必须区分：当前 PR 回归、既有基线问题、测试自身过时/不稳定、环境依赖；无足够证据就标记“待定位”，不可声称一定是历史问题。**最终合入前**仍须在实际最终 HEAD 上通过全部必需检查。
-
-### CI batching and push discipline
-
-- 不要为了每个小修复、格式调整、测试定位器修改或单个 Red/Green 循环分别 push 并触发 GitHub Actions。
-- TDD 的“一个行为一个 Red-Green-Refactor 循环”约束的是实现与验证粒度，不等于“一次循环一个 commit / 一次 push / 一轮 CI”。
-- 在同一任务和同一分支内，多个彼此独立、不会互相掩盖失败原因的修改应先在工作树中累计成一个有意义的 checkpoint，再统一 commit/push。
-- 优先按功能批次触发 CI。例如一个功能可以同时包含 contract / DTO、application / adapter 实现、Web/API、unit / E2E，以及同一轮已经明确发现的相关回归修复。
-- 对纯格式、测试 locator、文案、计数基线等机械性修复，除非它本身阻塞后续分析，否则不要单独 push；与下一批相关代码一起提交。
-- 一轮 CI 失败后，先完整检查该轮所有失败 job 和日志，尽量一次收集并修复所有互不冲突的问题，再触发下一轮 CI；不要只修第一个错误就立即 push。
-- 仅在以下情况优先单独触发 CI：需要 CI 环境才能确认根因；修改涉及高风险共享契约、workflow 或安全边界，适合先建立独立检查点；当前批次过大，继续累积会降低可审查性或让失败归因变得困难；用户明确要求立即验证某个提交。
-- 合入 PR 前必须在最终候选 HEAD 上完整通过所有相关 CI；中间减少 CI 触发次数不得降低最终验证覆盖率。
 
 ## TDD
 
@@ -198,6 +165,28 @@ composition root in its own Cargo package:
   ./node_modules/.bin/playwright test e2e/logic-judgment.spec.ts e2e/comprehensive.spec.ts --reporter=line
   ```
 - `HYZ_THINGS_E2E_REUSE_FRONTEND_BUNDLE=1` 会校验当前输入、toolchain 与 archive hash；缓存不匹配时先重建一次。`HYZ_THINGS_E2E_REUSE_SERVER=1` 仅供本地显式附着到已启动的 harness。CI 不设置这两个变量，保持独立构建与服务。
+
+#### 本地并行分片（优先使用，节约测试时间）
+
+- 同一份 verified frontend bundle 可以同时服务多个 E2E 后端。每个 `hyz-things-e2e` 进程拥有独立的内存后端与 `temp_dir()/hyz-things-e2e-flashcards-<pid>/` 目录，因此不同端口上的 harness 互不共享状态。
+- 为每个并行分片启动一对独立端口，并复用同一 bundle。需要真实申论样卷 fixture 的 spec（`shenlun.spec.ts` 中的真实题库/上传用例）必须在启动时显式带上 `HYZ_THINGS_E2E_SHENLUN_UPLOAD_FIXTURE=1`；`playwright.config.ts` 只为自己拉起的 server 设置该变量，`HYZ_THINGS_E2E_REUSE_SERVER=1` 不会补上：
+  ```sh
+  cd apps/rust/things
+  HYZ_THINGS_E2E_WEB_PORT=3192 HYZ_THINGS_E2E_CONTROL_PORT=3193 \
+  HYZ_THINGS_E2E_SHENLUN_UPLOAD_FIXTURE=1 \
+  HYZ_THINGS_E2E_REUSE_FRONTEND_BUNDLE=1 bash tools/start-e2e-server.sh
+  ```
+- 分片运行时显式附着到对应 harness，并启用测试级分片；`workers` 仍保持 `1`：
+  ```sh
+  HYZ_THINGS_E2E_WEB_PORT=3192 HYZ_THINGS_E2E_CONTROL_PORT=3193 \
+  HYZ_THINGS_E2E_REUSE_FRONTEND_BUNDLE=1 HYZ_THINGS_E2E_REUSE_SERVER=1 \
+  HYZ_THINGS_E2E_TEST_SHARD=1 \
+  ./node_modules/.bin/playwright test <spec...> --shard=2/2 --reporter=line
+  ```
+- **不要让两个 Playwright 进程同时附着到同一个 harness**：`resetHarness` 与内存状态会互相覆盖。同一 harness 可以串行复用；并行分片必须各自启动后端。本地分片数量不受 CI 的 2 片上限限制，可按 spec、`--grep` 或 `--shard=i/n` 继续细分；`--list` 用于核对实际选中数量。
+- `resetHarness`（`PUT /reset`）只重置内存门户状态、摄像头会话与上传观测，**不清空题库数据**（收藏、作答、AI 记录、练习会话）。同一 harness 内多个 spec 或分片共享题库 SQLite；会改动收藏等题库状态的用例必须回到观测到的初始状态，需要干净题库时显式调用 `PUT /reset-question-bank`。
+- 改动 `src/web` 或 `e2e` 下的文件后，bundle 缓存校验会判定 `frontend inputs changed`；启动新 harness 前先重新执行 `apps/rust/things/tools/build-frontend-bundle.sh`，已在运行的 harness 继续使用旧 bundle。
+- 这是 CI 的等价做法：CI 每个 matrix shard 启动独立后端、共享已验证 bundle，并用 `HYZ_THINGS_E2E_TEST_SHARD=1` 平衡大 spec；本地可用同样结构更快定位失败。
 
 ## 构建，验证以及测试入口
 

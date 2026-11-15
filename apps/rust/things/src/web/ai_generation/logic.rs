@@ -1,5 +1,4 @@
 //! Independent logic drills use server-owned answers and deadlines.
-use super::material_scroll::{use_training_scroll_pair, MaterialScrollButton};
 use super::*;
 use gloo_timers::callback::Interval;
 use hyz_things::domain::data_analysis::RelatedCardSnapshot;
@@ -98,7 +97,7 @@ fn logic_scroll_pane(props: &LogicScrollPaneProps) -> Html {
                 </div>
                 <article ref={question_scroll} onscroll={on_scroll.clone()}
                     class="min-h-0 flex-1 overflow-y-auto overscroll-contain touch-pan-y px-4 pb-8 sm:px-6"
-                    data-testid={format!("{prefix}-question-scroll")}>
+                    data-testid={format!("{prefix}-question-scroll")} data-ink-pane="material">
                     {props.question.clone()}
                 </article>
                 </section>
@@ -122,7 +121,7 @@ fn logic_scroll_pane(props: &LogicScrollPaneProps) -> Html {
                 </div>
                 <article ref={answer_scroll} onscroll={on_scroll}
                     class="min-h-0 flex-1 overflow-y-auto overscroll-contain touch-pan-y px-4 pb-8 sm:px-6"
-                    data-testid={format!("{prefix}-answer-scroll")}>
+                    data-testid={format!("{prefix}-answer-scroll")} data-ink-pane="answer">
                     {props.answers.clone()}
                 </article>
                 </section>
@@ -574,6 +573,13 @@ pub(crate) fn logic_judgment_training(props: &LogicJudgmentProps) -> Html {
         let action = action.clone();
         Callback::from(move |_| action.emit(command.clone()))
     };
+    let edit_prompt = {
+        let prompt = prompt.clone();
+        Callback::from(move |event: InputEvent| {
+            let target: web_sys::HtmlTextAreaElement = event.target_unchecked_into();
+            prompt.set(target.value());
+        })
+    };
     let alert = html! { if let Some(message) = error.as_ref() { <p class="text-error break-words" role="alert">{message}</p> } };
     if let Some(active) = run.as_ref() {
         let paused = active.paused_remaining_ms.is_some();
@@ -822,18 +828,17 @@ pub(crate) fn logic_judgment_training(props: &LogicJudgmentProps) -> Html {
                             <p class="text-xs text-base-content/60">{format!("当前有效卡片：{} 张",state.eligible_cards)}</p>
                         }
                     </div>
-                    <details class="rounded-box border border-base-content/15 bg-base-100/50 p-3" data-testid={format!("{prefix}-user-prompt")}>
-                        <summary class="cursor-pointer select-none font-semibold">{"出题要求"}<span class="ml-2 text-xs font-normal text-base-content/60">{"点击编辑"}</span></summary>
-                        <div class="mt-3 space-y-3">
-                            <p class="text-xs text-base-content/60">{"仅调整难度与命题偏好，系统仍固定题型范围及 Codex 自检约束。"}</p>
-                            <label for="logic-prompt" class="text-sm">{"补充偏好（保留题型范围与 Codex 自检要求）"}</label>
-                            <textarea id="logic-prompt" class="textarea textarea-bordered w-full min-h-48 font-mono text-base leading-6" maxlength="8000" value={(*prompt).clone()} oninput={{let prompt=prompt.clone(); Callback::from(move |e: InputEvent| {let target:web_sys::HtmlTextAreaElement=e.target_unchecked_into();prompt.set(target.value());})}}/>
-                            <div class="flex flex-wrap justify-end gap-2">
-                                <button class="btn btn-outline btn-sm" disabled={*busy} onclick={invoke(LogicAction::ResetPrompt)}>{"恢复默认"}</button>
-                                <button class="btn btn-primary btn-sm" disabled={*busy} onclick={invoke(LogicAction::Prompt)}>{"保存用户提示"}</button>
-                            </div>
-                        </div>
-                    </details>
+                    <GenerationPromptSettings prefix={prefix}
+                        textarea_id={Some(AttrValue::from("logic-prompt"))}
+                        text={(*prompt).clone()} status_label="点击编辑"
+                        busy={*busy} editor_disabled={*busy}
+                        save_disabled={*busy} reset_disabled={*busy}
+                        save_label="保存用户提示" busy_label="保存用户提示" reset_label="恢复默认"
+                        on_input={edit_prompt} on_save={invoke(LogicAction::Prompt)}
+                        on_reset={invoke(LogicAction::ResetPrompt)}>
+                        <p class="text-xs text-base-content/60">{"仅调整难度与命题偏好，系统仍固定题型范围及 Codex 自检约束。"}</p>
+                        <label for="logic-prompt" class="text-sm">{"补充偏好（保留题型范围与 Codex 自检要求）"}</label>
+                    </GenerationPromptSettings>
                     if job.is_some() {
                         <div class="rounded-box bg-base-200 p-3 text-sm" role="status" data-testid={format!("{prefix}-progress")}>{if progress.is_empty() {"正在恢复出题任务…".to_owned()} else {(*progress).clone()}}</div>
                     }

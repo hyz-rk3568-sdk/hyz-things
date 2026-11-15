@@ -194,9 +194,7 @@ pub(super) async fn ocr_events(
                     connection.snapshot = connection
                         .service
                         .ocr_run_snapshot(&connection.question_id, &connection.run_id);
-                    if connection.snapshot.is_none() {
-                        return None;
-                    }
+                    connection.snapshot.as_ref()?;
                 }
                 Some(Ok(push)) => {
                     if push.question_id != connection.question_id
@@ -209,9 +207,7 @@ pub(super) async fn ocr_events(
                         connection.snapshot = connection
                             .service
                             .ocr_run_snapshot(&connection.question_id, &connection.run_id);
-                        if connection.snapshot.is_none() {
-                            return None;
-                        }
+                        connection.snapshot.as_ref()?;
                         continue;
                     }
                     connection.seq = push.event.seq;

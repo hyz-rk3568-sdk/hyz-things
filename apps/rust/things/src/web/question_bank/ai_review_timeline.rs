@@ -2,27 +2,6 @@ use super::ai_review_stream::{StreamEvent, StreamSnapshot};
 use super::*;
 use hyz_things::domain::question_bank::AiReviewMessage;
 
-/// Shared command/tool rendering for saved AI analysis and ephemeral question
-/// generation. Keep typography, indentation and output layout identical.
-pub(super) fn tool_execution_item(
-    label: &str,
-    command: &str,
-    output: &str,
-    test_prefix: &str,
-) -> Html {
-    html! {
-        <section data-testid={format!("{test_prefix}-tool")} class="min-w-0 max-w-full text-xs leading-4 text-base-content/60">
-            <p>{label.to_owned()}</p>
-            if !command.is_empty() {
-                <pre class="mt-1 min-w-0 max-w-full whitespace-pre-wrap break-all" data-testid={format!("{test_prefix}-command")}>{command.to_owned()}</pre>
-            }
-            if !output.is_empty() {
-                <pre class="mt-1 min-w-0 max-w-full whitespace-pre-wrap break-all" data-testid={format!("{test_prefix}-output")}>{output.to_owned()}</pre>
-            }
-        </section>
-    }
-}
-
 #[derive(Clone, PartialEq, serde::Deserialize)]
 struct HistoryRun {
     run_id: String,
@@ -85,7 +64,7 @@ fn run_activity(props: &RunActivityProps) -> Html {
             let in_flight = in_flight.clone();
             spawn_local(async move {
                 loop {
-                    let url = super::question_bank_practice::ai_scope_url(
+                    let url = super::ai_review_api::ai_scope_url(
                         &endpoint,
                         &format!("/runs/{run_id}/events"),
                         scope,
@@ -277,7 +256,7 @@ pub(super) fn ai_review_activity(props: &AiReviewActivityProps) -> Html {
                     let mut cursor = 0i64;
                     let mut all = Vec::new();
                     loop {
-                        let url = super::question_bank_practice::ai_scope_url(
+                        let url = super::ai_review_api::ai_scope_url(
                             &endpoint,
                             "/runs",
                             scope,
@@ -345,7 +324,7 @@ pub(super) fn ai_review_activity(props: &AiReviewActivityProps) -> Html {
             <div key={format!("message-{}-{message_index}", message.id)} class={if message.role == "user" {"rounded-xl bg-primary/10 p-3"} else {"py-2"}} data-testid="question-bank-ai-message">
                 <div class="mb-2 text-xs font-semibold text-base-content/60">{if message.role == "user" {"你的追问"} else {"AI 解析"}}</div>
                 if message.role == "assistant" { <AiReply content={message.content.clone()}/> }
-                else { <div class="study-markdown text-base leading-7">{super::study_markdown::render_question_bank_user_markdown(&message.content)}</div> }
+                else { <div class="study-markdown text-base leading-7">{render_question_bank_user_markdown(&message.content)}</div> }
             </div>
         });
     }

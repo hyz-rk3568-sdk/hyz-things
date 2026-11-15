@@ -4,12 +4,12 @@ use web_sys::{Event, EventTarget, MouseEvent, PointerEvent};
 use yew::prelude::*;
 
 #[derive(Clone, Copy, Default, PartialEq)]
-pub(super) struct ScrollEdges {
-    pub(super) can_scroll_up: bool,
-    pub(super) can_scroll_down: bool,
+pub(crate) struct ScrollEdges {
+    pub(crate) can_scroll_up: bool,
+    pub(crate) can_scroll_down: bool,
 }
 
-pub(super) fn scroll_edges(element: &web_sys::HtmlElement) -> ScrollEdges {
+pub(crate) fn scroll_edges(element: &web_sys::HtmlElement) -> ScrollEdges {
     let max_scroll = (element.scroll_height() - element.client_height()).max(0);
     let scroll_top = element.scroll_top().clamp(0, max_scroll);
     ScrollEdges {
@@ -18,17 +18,17 @@ pub(super) fn scroll_edges(element: &web_sys::HtmlElement) -> ScrollEdges {
     }
 }
 
-pub(super) struct TrainingScrollPair {
-    pub(super) first: NodeRef,
-    pub(super) second: NodeRef,
-    pub(super) first_edges: UseStateHandle<ScrollEdges>,
-    pub(super) second_edges: UseStateHandle<ScrollEdges>,
-    pub(super) refresh: Callback<()>,
-    pub(super) on_scroll: Callback<Event>,
+pub(crate) struct TrainingScrollPair {
+    pub(crate) first: NodeRef,
+    pub(crate) second: NodeRef,
+    pub(crate) first_edges: UseStateHandle<ScrollEdges>,
+    pub(crate) second_edges: UseStateHandle<ScrollEdges>,
+    pub(crate) refresh: Callback<()>,
+    pub(crate) on_scroll: Callback<Event>,
 }
 
 #[hook]
-pub(super) fn use_training_scroll_pair() -> TrainingScrollPair {
+pub(crate) fn use_training_scroll_pair() -> TrainingScrollPair {
     let first = use_node_ref();
     let second = use_node_ref();
     let first_edges = use_state_eq(ScrollEdges::default);
@@ -124,17 +124,17 @@ fn advance_material_line(passage: &NodeRef, up: bool) -> bool {
 }
 
 #[derive(Properties, PartialEq)]
-pub(super) struct MaterialScrollButtonProps {
-    pub(super) passage: NodeRef,
-    pub(super) up: bool,
-    pub(super) disabled: bool,
-    pub(super) question_index: usize,
+pub(crate) struct MaterialScrollButtonProps {
+    pub(crate) passage: NodeRef,
+    pub(crate) up: bool,
+    pub(crate) disabled: bool,
+    pub(crate) question_index: usize,
     #[prop_or("材料")]
-    pub(super) target: &'static str,
+    pub(crate) target: &'static str,
 }
 
 #[function_component(MaterialScrollButton)]
-pub(super) fn material_scroll_button(props: &MaterialScrollButtonProps) -> Html {
+pub(crate) fn material_scroll_button(props: &MaterialScrollButtonProps) -> Html {
     let hold = use_mut_ref(MaterialScrollHold::default);
     let button = use_node_ref();
     {

@@ -200,7 +200,7 @@ test("transparent calculation ink overlays the question, supports history and re
   await toggle.click();
   await expect(canvas).toBeVisible();
   await expect(toggle).toHaveAttribute("aria-label", "关闭草稿");
-  await expect(toggle).toHaveText("✎");
+  await expect(toggle.locator("svg")).toBeVisible();
   await expect(scratchpad.getByTestId("calculation-scratchpad-toolbar")).toBeVisible();
   await expect(scratchpad.getByTestId("calculation-scratchpad-close")).toHaveCount(0);
   await expect(scratchpad.getByLabel("铅笔已选中")).toHaveCount(0);

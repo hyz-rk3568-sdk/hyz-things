@@ -1,140 +1,21 @@
 import { expect, test } from '@playwright/test';
 import { loginAsAdmin, resetHarness, harnessOrigin } from './fixtures';
+import {
+  drawScratchStroke, installFakeOcrEventSource, installShenlunRoutes, openShenlun, scratchpadHasInk,
+  scratchpadHasStoredInk, shenlunCatalog as catalog, shenlunNextQuestionId as nextQuestionId,
+  shenlunPaperId as paperId, shenlunPaperView as paperView, shenlunQuestionId as questionId,
+  shenlunSourceAnswer, watchRetiredShenlunWrites,
+} from './helpers/shenlun';
 
 // 申论只测本模块的 Question Bank 复盘式工作区；不运行全量 E2E。
 test.beforeEach(async ({ request }) => {
   await resetHarness(request);
 });
 
-const paperId = '019a3d8c-7f23-7b6e-927d-3c951851d3a6';
-const questionId = '019a3d8e-1b32-7a60-9c83-f34217a6e250';
-const nextQuestionId = '019a3d8e-1b32-7a60-9c83-f34217a6e251';
-const catalog = [{
-  id: paperId, title: '申论真题端到端样卷', year: 2025, region: '国考', variant: '地市级',
-  subject: 'shenlun', role: 'primary', kind: 'exam',
-  collection_id: null, collection_title: null, questions: 2,
-}];
-const paperView = {
-  ...catalog[0],
-  materials: [{ id: 'material-1', name: '给定资料 1', markdown: '推进基层治理，需要明确责任。' }],
-  questions: [
-    {
-      id: questionId, number: 1, stem: '请概括基层治理的要求。', options_markdown: '',
-      materials: ['material-1'], module: null, category: null, topics: [],
-      answer_type: 'subjective', question_type: 'summary', grading_mode: 'ai', max_score: 20,
-    },
-    {
-      id: nextQuestionId, number: 2, stem: '请提出优化基层服务的对策。', options_markdown: '',
-      materials: ['material-1'], module: null, category: null, topics: [],
-      answer_type: 'subjective', question_type: 'measures', grading_mode: 'ai', max_score: 20,
-    },
-  ],
-};
-type Attempt = {
-  id: string; paper_id: string; question_id: string; source_hash: string;
-  text: string; source_kind: string; status: 'draft' | 'submitted'; revision: number;
-  created_at_ms: number; updated_at_ms: number; submitted_at_ms: number | null;
-  reference_viewed_at_ms: number | null; after_reference: boolean;
-};
-
-function draftAttempt(id: string, qid = questionId): Attempt {
-  return {
-    id, paper_id: paperId, question_id: qid, source_hash: 'source-shenlun-v1', text: '',
-    source_kind: 'typed', status: 'draft', revision: 0, created_at_ms: 1000,
-    updated_at_ms: 1000, submitted_at_ms: null,
-    reference_viewed_at_ms: null, after_reference: false,
-  };
-}
-async function openShenlun(page: import('@playwright/test').Page) {
-  await page.goto('/#/study/training');
-  await page.getByTestId('training-mode-shenlun').click();
-  await expect(page.getByTestId('shenlun-catalog')).toBeVisible();
-  await page.getByTestId('question-bank-paper-option').click();
-  await page.getByTestId('shenlun-start-review').click();
-  await expect(page.getByTestId('shenlun-workspace')).toBeVisible();
-}
-
-async function scratchpadHasInk(page: import('@playwright/test').Page) {
-  return page.getByTestId('calculation-scratchpad-canvas').evaluate(element => {
-    const canvas = element as HTMLCanvasElement;
-    const pixels = canvas.getContext('2d')!.getImageData(0, 0, canvas.width, canvas.height).data;
-    for (let index = 3; index < pixels.length; index += 4) {
-      if (pixels[index] !== 0) return true;
-    }
-    return false;
-  });
-}
-
-async function scratchpadHasStoredInk(page: import('@playwright/test').Page, scope: string) {
-  return page.evaluate(scope => new Promise<boolean>(resolve => {
-    const request = indexedDB.open('hyz-study-ink');
-    request.onerror = () => resolve(false);
-    request.onsuccess = () => {
-      const database = request.result;
-      if (!database.objectStoreNames.contains('drafts')) {
-        database.close();
-        resolve(false);
-        return;
-      }
-      const transaction = database.transaction('drafts', 'readonly');
-      const read = transaction.objectStore('drafts').get(scope);
-      read.onerror = () => resolve(false);
-      read.onsuccess = () => {
-        const history = read.result?.history;
-        resolve(typeof history === 'string' && JSON.parse(history).length > 0);
-        database.close();
-      };
-    };
-  }), scope);
-}
-
-async function drawScratchStroke(page: import('@playwright/test').Page, paneTestId: string) {
-  const bounds = await page.getByTestId(paneTestId).boundingBox();
-  expect(bounds).not.toBeNull();
-  await page.mouse.move(bounds!.x + 24, bounds!.y + 24);
-  await page.mouse.down();
-  await page.mouse.move(bounds!.x + 68, bounds!.y + 46, { steps: 4 });
-  await page.mouse.up();
-  await expect.poll(() => scratchpadHasInk(page)).toBe(true);
-}
-
-async function installFakeOcrEventSource(page: import('@playwright/test').Page) {
-  await page.addInitScript(() => {
-    const sources: Array<{ url: string; source: any }> = [];
-    class FakeEventSource extends EventTarget {
-      onmessage: ((event: MessageEvent) => void) | null = null;
-      onerror: ((event: Event) => void) | null = null;
-      readyState = 1;
-      constructor(public url: string) {
-        super();
-        if (url.includes('/ocr/') && url.endsWith('/events')) sources.push({ url, source: this });
-      }
-      close() { this.readyState = 2; }
-      emit(name: string, data: string) {
-        const event = new MessageEvent(name, { data });
-        this.dispatchEvent(event);
-        if (name === 'message') this.onmessage?.(event);
-      }
-    }
-    (window as any).__shenlunOcrSources = sources;
-    (window as any).__emitShenlunOcr = (runId: string, name: string, data: unknown) => {
-      const entry = sources.find(({ url }) => url.endsWith(`/ocr/${runId}/events`));
-      if (!entry) throw new Error(`Missing OCR EventSource for ${runId}`);
-      entry.source.emit(name, JSON.stringify(data));
-    };
-    Object.defineProperty(window, 'EventSource', { configurable: true, value: FakeEventSource });
-  });
-}
-
 test('申论复盘启用共享草稿区并支持在材料与题目上书写', async ({ page }) => {
   await loginAsAdmin(page);
-  await page.route('**/api/v1/question-bank/shenlun/**', async route => {
-    const { pathname } = new URL(route.request().url());
-    if (pathname.endsWith('/shenlun/papers')) return route.fulfill({ json: catalog });
-    if (pathname.endsWith('/shenlun/papers/' + paperId)) return route.fulfill({ json: paperView });
-    if (pathname.endsWith('/shenlun/questions/' + questionId + '/source-answer'))
-      return route.fulfill({ json: { text: '参考答案。', provenance: '题库来源（非官方）', source_hash: 'source-v1' } });
-    throw new Error('Unexpected Shenlun request: ' + route.request().method() + ' ' + pathname);
+  await installShenlunRoutes(page, {
+    sourceAnswers: { [questionId]: shenlunSourceAnswer('参考答案。') },
   });
   await openShenlun(page);
   await page.getByTestId('shenlun-mode-source').click();
@@ -157,13 +38,8 @@ test('申论复盘启用共享草稿区并支持在材料与题目上书写', as
 
 test('申论草稿按题保存，切题后恢复对应笔迹', async ({ page }) => {
   await loginAsAdmin(page);
-  await page.route('**/api/v1/question-bank/shenlun/**', async route => {
-    const { pathname } = new URL(route.request().url());
-    if (pathname.endsWith('/shenlun/papers')) return route.fulfill({ json: catalog });
-    if (pathname.endsWith('/shenlun/papers/' + paperId)) return route.fulfill({ json: paperView });
-    if (pathname.endsWith('/source-answer'))
-      return route.fulfill({ json: { text: '参考答案。', provenance: '题库来源（非官方）', source_hash: 'source-v1' } });
-    throw new Error('Unexpected Shenlun request: ' + route.request().method() + ' ' + pathname);
+  await installShenlunRoutes(page, {
+    sourceAnswers: { [questionId]: shenlunSourceAnswer('参考答案。') },
   });
   await openShenlun(page);
   await page.getByTestId('shenlun-mode-source').click();
@@ -223,12 +99,7 @@ test('申论题目工具栏复用无文字图标并保留 Flashcard 创建入口
       return route.fulfill({ json: { question_id: questionId, status: 'idle', error: null, messages: [] } });
     return route.fulfill({ status: 404, json: {} });
   });
-  await page.route('**/api/v1/question-bank/shenlun/**', async route => {
-    const { pathname } = new URL(route.request().url());
-    if (pathname.endsWith('/shenlun/papers')) return route.fulfill({ json: catalog });
-    if (pathname.endsWith('/shenlun/papers/' + paperId)) return route.fulfill({ json: paperView });
-    throw new Error('Unexpected 申论 request: ' + route.request().method() + ' ' + pathname);
-  });
+  await installShenlunRoutes(page);
   await openShenlun(page);
   await expect(page.getByRole('group', { name: '收藏与 Flashcard 操作' })).toBeVisible();
 
@@ -337,14 +208,11 @@ test('申论题通过真实 Flashcard 预览接口显示并创建卡片', async 
 test('申论选题复用 Question Bank 选择器、操作与切换记忆', async ({ page }) => {
   await loginAsAdmin(page);
   let paperListRequests = 0;
-  await page.route('**/api/v1/question-bank/shenlun/**', async route => {
-    const { pathname } = new URL(route.request().url());
-    if (pathname.endsWith('/shenlun/papers')) {
-      paperListRequests += 1;
-      return route.fulfill({ json: catalog });
-    }
-    if (pathname.endsWith('/shenlun/papers/' + paperId)) return route.fulfill({ json: paperView });
-    throw new Error('Unexpected Shenlun request: ' + route.request().method() + ' ' + pathname);
+  await installShenlunRoutes(page, {
+    onRequest: async (_route, pathname, method) => {
+      if (pathname.endsWith('/shenlun/papers') && method === 'GET') paperListRequests += 1;
+      return false;
+    },
   });
   await page.goto('/#/study/training');
   await page.getByTestId('training-mode-shenlun').click();
@@ -365,36 +233,13 @@ test('申论选题复用 Question Bank 选择器、操作与切换记忆', async
 });
 
 test('申论原卷复用地区年份目录和统一答题卡，不出现独立题号/交卷/二稿', async ({ page }) => {
-  const attempts = new Map<string, Attempt[]>();
   await loginAsAdmin(page);
-  await page.route('**/api/v1/question-bank/shenlun/**', async route => {
-    const { pathname, searchParams } = new URL(route.request().url());
-    const method = route.request().method();
-    if (pathname.endsWith('/shenlun/papers') && method === 'GET')
-      return route.fulfill({ json: catalog });
-    if (pathname.endsWith('/shenlun/papers/' + paperId) && method === 'GET')
-      return route.fulfill({ json: paperView });
-    if (pathname.endsWith('/shenlun/questions/' + questionId + '/source-answer') && method === 'GET')
-      return route.fulfill({ json: {
-        text: '来源参考答案：压实基层责任。', provenance: '题库来源（非官方）',
-        source_hash: 'source-shenlun-v1',
-      } });
-    if (pathname.endsWith('/shenlun/questions/' + nextQuestionId + '/source-answer') && method === 'GET')
-      return route.fulfill({ json: {
-        text: '来源参考答案：完善基层服务。', provenance: '题库来源（非官方）',
-        source_hash: 'source-shenlun-v1',
-      } });
-    if (pathname.endsWith('/shenlun/attempts') && method === 'GET')
-      return route.fulfill({ json: attempts.get(searchParams.get('question_id') ?? '') ?? [] });
-    if (pathname.endsWith('/shenlun/attempts') && method === 'POST') {
-      const req = route.request().postDataJSON();
-      const created = draftAttempt(req.request_id, req.question_id);
-      attempts.set(req.question_id, [created]);
-      return route.fulfill({ status: 201, json: created });
-    }
-    if (pathname.endsWith('/jobs') && method === 'GET')
-      return route.fulfill({ json: [] });
-    throw new Error('Unexpected 申论 request: ' + method + ' ' + pathname);
+  const retiredWrites = watchRetiredShenlunWrites(page);
+  await installShenlunRoutes(page, {
+    sourceAnswers: {
+      [questionId]: shenlunSourceAnswer('来源参考答案：压实基层责任。'),
+      [nextQuestionId]: shenlunSourceAnswer('来源参考答案：完善基层服务。'),
+    },
   });
   await page.goto('/#/study/training');
   await page.getByTestId('training-mode-shenlun').click();
@@ -403,8 +248,8 @@ test('申论原卷复用地区年份目录和统一答题卡，不出现独立�
   await page.getByTestId('shenlun-start-review').click();
   await expect(page.getByTestId('shenlun-materials')).toContainText('推进基层治理');
   await expect(page.getByTestId('shenlun-question')).toContainText('请概括基层治理');
-  // Reviewing a paper must not create a hidden grading attempt.
-  expect(attempts.size).toBe(0);
+  // Reviewing a paper must not call the retired attempt/job prototypes.
+  expect(retiredWrites).toEqual([]);
   await expect(page.getByTestId('question-bank-practice-navigation')).toBeVisible();
   await expect(page.getByTestId('shenlun-workspace').locator('[data-testid="shenlun-split"]')).toBeVisible();
   await expect(page.getByTestId('shenlun-more')).toBeVisible();
@@ -427,11 +272,7 @@ test('申论原卷复用地区年份目录和统一答题卡，不出现独立�
 
 test('申论选题布局在桌面与手机视口都保留可见的开始操作', async ({ page }) => {
   await loginAsAdmin(page);
-  await page.route('**/api/v1/question-bank/shenlun/**', async route => {
-    const { pathname } = new URL(route.request().url());
-    if (pathname.endsWith('/shenlun/papers')) return route.fulfill({ json: catalog });
-    throw new Error('Unexpected Shenlun request: ' + route.request().method() + ' ' + pathname);
-  });
+  await installShenlunRoutes(page);
   await page.setViewportSize({ width: 1366, height: 900 });
   await page.goto('/#/study/training');
   await page.getByTestId('training-mode-shenlun').click();
@@ -453,28 +294,24 @@ test('申论选题布局在桌面与手机视口都保留可见的开始操作',
 
 test('申论切题后保留当前 OCR 与来源答案模式', async ({ page }) => {
   await loginAsAdmin(page);
-  await page.route('**/api/v1/question-bank/shenlun/**', async route => {
-    const { pathname } = new URL(route.request().url());
-    if (pathname.endsWith('/shenlun/papers')) return route.fulfill({ json: catalog });
-    if (pathname.endsWith('/shenlun/papers/' + paperId)) return route.fulfill({ json: paperView });
-    if (pathname.endsWith('/shenlun/questions/' + questionId + '/source-answer'))
-      return route.fulfill({ json: { text: '参考答案', provenance: '题库来源（非官方）', source_hash: 'source-v1' } });
-    if (pathname.endsWith('/shenlun/questions/' + nextQuestionId + '/source-answer'))
-      return route.fulfill({ json: { text: '参考答案二', provenance: '题库来源（非官方）', source_hash: 'source-v1' } });
-    throw new Error('Unexpected Shenlun request: ' + route.request().method() + ' ' + pathname);
+  await installShenlunRoutes(page, {
+    sourceAnswers: {
+      [questionId]: shenlunSourceAnswer('参考答案'),
+      [nextQuestionId]: shenlunSourceAnswer('参考答案二'),
+    },
   });
   await openShenlun(page);
   await page.getByTestId('shenlun-mode-ocr').click();
   await expect(page.getByTestId('shenlun-mode-ocr')).toHaveAttribute('aria-pressed', 'true');
   await page.getByTestId('training-answer-sheet-toggle').click();
   await page.getByTestId('question-bank-practice-number').nth(1).click();
-  await expect(page.getByTestId('shenlun-question')).toContainText('请提出优化基层服务');
+  await expect(page.getByTestId('shenlun-question-heading')).toContainText('原卷第 2 题');
   await expect(page.getByTestId('shenlun-mode-ocr')).toHaveAttribute('aria-pressed', 'true');
   await expect(page.getByTestId('shenlun-ai-panel')).toBeVisible();
   await page.getByTestId('shenlun-mode-source').click();
   await page.getByTestId('training-answer-sheet-toggle').click();
   await page.getByTestId('question-bank-practice-number').nth(0).click();
-  await expect(page.getByTestId('shenlun-question')).toContainText('请概括基层治理');
+  await expect(page.getByTestId('shenlun-question-heading')).toContainText('原卷第 1 题');
   await expect(page.getByTestId('shenlun-mode-source')).toHaveAttribute('aria-pressed', 'true');
   await expect(page.getByTestId('shenlun-source-answer')).toBeVisible();
 });
@@ -820,7 +657,6 @@ test('申论解析和批改分别使用独立会话、草稿与删除状态', as
   };
   const requests = new Map<string, any>();
   let nextMessageId = 1;
-  let legacyGradeJobs = 0;
   const makeReceipt = (scope: Scope, requestId: string, intent: string) => {
     const info = {
       request_id: requestId, run_id: `${scope}-${requestId}`, intent, status: 'complete',
@@ -896,19 +732,8 @@ test('申论解析和批改分别使用独立会话、草稿与删除状态', as
     }
     return route.fulfill({ status: 404, json: {} });
   });
-  await page.route('**/api/v1/question-bank/shenlun/**', async route => {
-    const { pathname } = new URL(route.request().url());
-    const method = route.request().method();
-    if (pathname.endsWith('/shenlun/papers') && method === 'GET')
-      return route.fulfill({ json: catalog });
-    if (pathname.endsWith('/shenlun/papers/' + paperId) && method === 'GET')
-      return route.fulfill({ json: paperView });
-    if (pathname.includes('/jobs') && method === 'POST') {
-      legacyGradeJobs++;
-      return route.fulfill({ json: {} });
-    }
-    throw new Error('Unexpected 申论 request: ' + method + ' ' + pathname);
-  });
+  const retiredWrites = watchRetiredShenlunWrites(page);
+  await installShenlunRoutes(page);
 
   await openShenlun(page);
   const input = page.getByTestId('question-bank-ai-instruction');
@@ -976,7 +801,7 @@ test('申论解析和批改分别使用独立会话、草稿与删除状态', as
   expect(streamScopes).toEqual(expect.arrayContaining(['analysis', 'grading']));
   expect(observed.requestStatuses).toEqual(expect.arrayContaining(['analysis', 'grading']));
   expect(observed.requestIds).not.toContain(legacyRequestId);
-  expect(legacyGradeJobs).toBe(0);
+  expect(retiredWrites).toEqual([]);
   const analysisInput = page.getByTestId('question-bank-ai-input');
   await analysisInput.fill('追问如何落地');
   await page.getByTestId('question-bank-ai-send').click();
@@ -1009,14 +834,8 @@ for (const viewport of [
   test(`申论复盘与专项训练布局对齐并适配 ${viewport.width}×${viewport.height}`, async ({ page }, testInfo) => {
     await page.setViewportSize(viewport);
     await loginAsAdmin(page);
-    await page.route('**/api/v1/question-bank/shenlun/**', async route => {
-      const { pathname } = new URL(route.request().url());
-      if (pathname.endsWith('/shenlun/papers')) return route.fulfill({ json: catalog });
-      if (pathname.endsWith('/shenlun/papers/' + paperId)) return route.fulfill({ json: paperView });
-      if (pathname.endsWith('/shenlun/questions/' + questionId + '/source-answer')) return route.fulfill({ json: {
-        text: '来源参考答案：压实基层责任。', provenance: '题库来源（非官方）', source_hash: 'source-shenlun-v1',
-      } });
-      throw new Error('Unexpected 申论 request: ' + route.request().method() + ' ' + pathname);
+    await installShenlunRoutes(page, {
+      sourceAnswers: { [questionId]: shenlunSourceAnswer('来源参考答案：压实基层责任。') },
     });
     await page.route(`**/api/v1/question-bank/practice/favorites/${questionId}`, route =>
       route.fulfill({ json: { question_id: questionId, favorite: false } }));
@@ -1127,21 +946,18 @@ test('OCR 只创建临时 Codex 转写并直接渲染 Markdown，不创建作答
     };
     uploadedRequest = uploadRequest;
   });
-  await page.route('**/api/v1/question-bank/shenlun/**', async route => {
-    const { pathname } = new URL(route.request().url());
-    const method = route.request().method();
-    if (pathname.endsWith('/shenlun/papers') && method === 'GET')
-      return route.fulfill({ json: catalog });
-    if (pathname.endsWith('/shenlun/papers/' + paperId) && method === 'GET')
-      return route.fulfill({ json: paperView });
-    if (pathname.endsWith('/shenlun/questions/' + questionId + '/ocr') && method === 'POST') {
-      const req = route.request().postDataJSON();
-      expect(req.attachments).toEqual([attachmentId]);
-      ocrCount++;
-      return route.fulfill({ status: 202, json: { run_id: 'legacy-ocr-run' } });
-    }
-    if (method !== 'GET') legacyWrites++;
-    throw new Error('Unexpected temporary OCR request: ' + method + ' ' + pathname);
+  await installShenlunRoutes(page, {
+    onRequest: async (route, pathname, method) => {
+      if (pathname.endsWith('/shenlun/questions/' + questionId + '/ocr') && method === 'POST') {
+        const req = route.request().postDataJSON();
+        expect(req.attachments).toEqual([attachmentId]);
+        ocrCount++;
+        await route.fulfill({ status: 202, json: { run_id: 'legacy-ocr-run' } });
+        return true;
+      }
+      if (method !== 'GET') legacyWrites++;
+      return false;
+    },
   });
   await openShenlun(page);
   await page.getByTestId('shenlun-mode-ocr').click();
@@ -1225,12 +1041,7 @@ test('申论解析和批改复用工作区外观并呈现各自提示语', async
     } });
     return route.fulfill({ status: 404, json: {} });
   });
-  await page.route('**/api/v1/question-bank/shenlun/**', async route => {
-    const path = new URL(route.request().url()).pathname;
-    if (path.endsWith('/shenlun/papers')) return route.fulfill({ json: catalog });
-    if (path.endsWith('/shenlun/papers/' + paperId)) return route.fulfill({ json: paperView });
-    throw new Error('Unexpected 申论 request: ' + path);
-  });
+  await installShenlunRoutes(page);
   await openShenlun(page);
   await expect(page.getByTestId('question-bank-ai-review')).toBeVisible();
   await expect(page.getByTestId('question-bank-ai-requirements-compose')).toBeVisible();

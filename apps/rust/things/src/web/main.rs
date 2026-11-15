@@ -10,9 +10,12 @@ mod protected_control;
 mod resources;
 mod ui;
 
+mod ai_generation;
 mod hooks;
 mod pages;
+mod question_bank;
 
+use ai_generation::*;
 use api::*;
 use app::*;
 use components::*;
@@ -21,6 +24,7 @@ use media::*;
 use navigation::*;
 use pages::*;
 use protected_control::*;
+use question_bank::*;
 use resources::*;
 
 use std::{
