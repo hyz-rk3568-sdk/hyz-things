@@ -151,6 +151,8 @@ apps/rust/things/src/
 - `e2e/shenlun.spec.ts` 约 **859 行**；反复出现 `loginAsAdmin`、`page.route('**/api/v1/question-bank/shenlun/**', ...)`、试卷目录及来源答案模拟。开头仍有旧 `Attempt`、`draftAttempt` 模型，实际流程不再创建它。
 - `e2e/question-bank.spec.ts` 约 **2,338 行**，混合题库练习、AI 对话/SSE、附件、Markdown 布局、断线重试、移动端交互等大量不同业务场景。应按测试**行为领域**分组；已有其他独立 question-bank spec，不复制相同覆盖。
 - `e2e/favorite-flashcard.spec.ts` 约 **935 行**，包含收藏/Flashcard 主流程及大量 AI、手写板交叉验证；可复用部分题库 AI Mock/导航 helper，但不能把收藏专属断言迁丢。
+- `e2e/comprehensive.spec.ts` 约 **1,358 行 / 24 个用例**，覆盖 AI 出题（资料分析）的准备、恢复、暂停续答、用户出题要求，以及 Ink/IndexedDB/PWA 安全区等横切行为；生成流程与手写/布局断言混在同一文件。
+- `e2e/logic-judgment.spec.ts` 约 **664 行 / 20 个用例**，覆盖 AI 出题（判断推理与数量关系）的生成、交卷、复盘、计时恢复和手写命中；与综合训练共享“生成试卷 → 进入训练 → 停走恢复”的同类 setup。
 - `e2e/support.ts` 约 **127 行**，主要是通用手势/计时辅助；**不应**将题库专用的所有复杂模拟塞进这个通用文件。若提取 helper，放在 `e2e/helpers/question-bank.ts` 或邻近小模块，fixture 数据与请求行为分开。
 - 文件行数本身不是缺陷：重点是**删除过期测试模型、减少重复初始化与 Mock、保留测试独立性和失败定位**。行数减少不是验收唯一指标。
 
@@ -159,7 +161,7 @@ apps/rust/things/src/
 - 申论复用原卷目录、统一答题卡、题目切换与分栏；不存在独立交卷/二稿入口。
 - 每题手写保存、切题恢复、收藏与 Flashcard。
 - 解析和批改使用独立 `analysis/grading` 会话、草稿、历史、追问及删除状态。
-- OCR 是一次性图片转写，结果为 Markdown，显示工具输出，无转写确认或 legacy write。
+- OCR 在当前复盘内保留多次转写结果并流式显示工具进度；结果只保存在内存，不创建作答或确认，退出复盘后清除，也不发生 legacy write。
 - 多视口布局、固定 Composer、内部滚动与题库共享工作区的外观一致性。
 
 **在实现阶段 A—D 期间，按改动持续回归，不等到最后**
@@ -175,6 +177,8 @@ apps/rust/things/src/
 1. **删除遗留**：移除 `Attempt`、`draftAttempt`、旧 `/shenlun/attempts` 和 Job 成功模拟及无意义的假状态；对被废弃的写接口使用 `route.abort()` / 显式 throw 或请求监听计数，确保发生请求就使测试失败，而不是默默成功。
 2. **收敛重复 setup**：把申论试卷目录、纸张题目、来源参考答案的基础 fixture 与常用 `openShenlun` / `installShenlunRoutes` 收敛为小型辅助。支持各测试覆盖个别响应和延迟场景，不创建一个需要几十个选项的万能 Mock 服务。
 3. **按行为组织套件**：题库练习、共享 AI（流与请求生命周期）、申论、收藏 Flashcard、手写及布局等各有清楚的归属；可以将 `question-bank.spec.ts` 的 AI 大段拆进 `question-bank-ai.spec.ts`，但首先排查与现有 `question-bank-*.spec.ts` 重复的测试。切忌只拆文件不消除重复逻辑。
+   - 专项训练中的 AI 出题页面一并纳入：`comprehensive.spec.ts`（资料分析）与 `logic-judgment.spec.ts`（判断推理、数量关系）。优先抽出共用的“状态/出题要求/准备任务/历史”与“未计时试卷进入训练”fixture，并按“生成与恢复”“答题与交卷”“手写与布局”拆分大文件；各科目差异化的 payload 和断言留在对应 spec，不建立万能 Mock。
+   - 拆分或抽 helper 后同步更新 `e2e/support.ts` 的能力套件清单与 `tools/check-e2e-suites.py` 的计数，确保 CI 实际执行新文件。
 4. **保留不同测试层次**：真实 HTTP 上传/鉴权/CSRF 与数据库集成测试继续跑真实路径；Mock 用于稳定重现异步/竞态/错误，不可用 Mock 全绿替代真实路径验证。不要把需要验证的响应模型全部硬编码到 helper 里掩盖协议变化。
 5. **保持核心断言**：各科目选题/切题、AI `analysis/grading` 隔离、SSE 重连、请求幂等/冲突、独立草稿、Ink IndexedDB 恢复、OCR Markdown 与工具输出、来源答案、收藏和 Flashcard、WebKit 几何；不要为减少 case 数量而删除边界/失败路径覆盖。
 6. **维护测试执行选择器**：若拆分 `question-bank.spec.ts` 等 suite，同步更新 `tools/select-related-e2e.sh`、CI 指定 spec 与受影响的测试命令。检查新 spec 在 CI 下实际被选中执行，而不是只有本地可以运行。
@@ -225,7 +229,9 @@ PR #128 在关键测试与最终 CI 通过以前保持 Draft；A—E 的实现�
 - B：可书写容器增加 `data-ink-pane="material"|"answer"`；`scratchpad.rs` 改用 `pane_element` 按语义属性定位，并跳过零尺寸的隐藏工作区；原 `data-testid` 保留。
 - C：题库前端迁入 `web/question_bank/`（`practice`、`shenlun`、`collection_review`、`manage`、`setup`、`ocr_panel`、`source_answer_panel`）；`QuestionAiReview` 拆为 `ai_review`、`ai_review_api`、`ai_review_recovery`、`ai_review_stream`、`ai_review_timeline`、`ai_composer`、`ai_reply`；通用 `question_header_actions` 与 `tool_execution` 移入 `web/components/`。
 - D：删除 `ShenlunJobRequest`、`ShenlunJob`、`ConfirmShenlunTranscription`、`CreateShenlunAttempt`、`SaveShenlunDraft`、`ShenlunAttempt`、SSE 之外的旧批改校验与 Attempt/Job 读写路径；`shenlun_attempts` 历史表保留，学习统计继续只读兼容，并新增 `learning_statistics_read_legacy_shenlun_attempts_without_attempt_writes` 覆盖。
-- E：新增 `e2e/helpers/question-bank.ts` 与 `e2e/helpers/shenlun.ts` 收敛登录、选题、开始练习、AI 请求桩与申论 fixture；AI 用例拆入 `e2e/question-bank-ai.spec.ts`；`question-bank.spec.ts` 2,337 行降至约 1,074 行；删除旧 `/shenlun/attempts`、`/jobs` 成功 Mock，改为负向断言；同步 `tools/check-e2e-suites.py`、`tools/select-related-e2e.sh` 与 `AGENTS.md` 的本地并行分片说明。
+- E：新增 `e2e/helpers/question-bank.ts` 与 `e2e/helpers/shenlun.ts` 收敛登录、选题、开始练习、AI 请求桩、申论 fixture 与 OCR EventSource；AI 用例拆入 `e2e/question-bank-ai.spec.ts`；`question-bank.spec.ts` 2,337 行降至约 1,074 行；删除旧 `/shenlun/attempts`、`/jobs` 成功 Mock，改为负向断言；同步 `tools/check-e2e-suites.py`、`tools/select-related-e2e.sh` 与 `AGENTS.md` 的本地并行分片说明。
+- E 追加：专项训练中的 AI 出题套件（`comprehensive.spec.ts` 资料分析、`logic-judgment.spec.ts` 判断推理与数量关系）纳入瘦身范围。数量关系由 `logic_judgment.rs` 的 `quantitative` 参数共用同一生成/作答工作区，因此与判断推理共用 `logic-judgment.spec.ts`；它与综合训练只共享“生成任务 → 进入训练 → 停走恢复”的 fixture 模式，题型 payload 和复盘断言保留在各自 spec。
+- 合并 `origin/main` 的申论 OCR 流式保留功能（`2baec77b`、`28156ab7`）时，保留其内存态多次转写、工具进度与“OCR 模式隐藏题干”的产品行为；Stage D 仅退役数据库 Attempt/Job 原型，两者不冲突。同步修正 main 中三处与新行为不一致的断言（OCR 模式题干、删除可用性跨模式保留、铅笔 SVG 图标）。
 
 **本次实际执行**
 
@@ -238,10 +244,10 @@ PR #128 在关键测试与最终 CI 通过以前保持 Draft；A—E 的实现�
 | `tools/check-e2e-suites.py` | 通过：177 个声明用例 / 176 个可运行用例 |
 | `tools/test-portal-ci.py` | 9/9 通过 |
 | `make check-static`、`git diff --check` | 通过 |
-| `e2e/shenlun.spec.ts` | 16/16 通过（harness 启动时带 `HYZ_THINGS_E2E_SHENLUN_UPLOAD_FIXTURE=1`） |
-| `e2e/question-bank.spec.ts` + `e2e/question-bank-theme.spec.ts` | 35/35 通过 |
-| `e2e/question-bank-ai.spec.ts` | 37/37 通过 |
-| `e2e/question-bank-reference.spec.ts` + theme | 22/22 通过 |
+| `e2e/shenlun.spec.ts` | 21/21 通过（含 main 的 OCR 流式保留用例；harness 启动时带 `HYZ_THINGS_E2E_SHENLUN_UPLOAD_FIXTURE=1`） |
+| `e2e/question-bank.spec.ts` + `e2e/question-bank-ai.spec.ts` + reference + theme | 92/92 通过 |
+| `e2e/comprehensive.spec.ts` + `e2e/flashcards.spec.ts` | 43/43 通过 |
+| `e2e/logic-judgment.spec.ts` | 19/19 通过（含数量关系生成与手写用例） |
 
 **未验证**
 

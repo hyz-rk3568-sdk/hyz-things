@@ -501,12 +501,9 @@ pub(crate) fn question_bank_question_header(props: &QuestionBankQuestionHeaderPr
                     }
                     <QuestionInkControls />
                 } else {
-                    {props.leading.clone()}{props.tabs.clone()}
+                    {props.leading.clone()}{props.tabs.clone()}{props.trailing.clone()}
                 }
                 <QuestionInkToggle />
-                if !scratch_open {
-                    {props.trailing.clone()}
-                }
             </div>
         </div>
     }

@@ -9,7 +9,7 @@ pub(crate) fn tool_execution_item(
     test_prefix: &str,
 ) -> Html {
     html! {
-        <section data-testid={format!("{test_prefix}-tool")} class="min-w-0 max-w-full">
+        <section data-testid={format!("{test_prefix}-tool")} class="min-w-0 max-w-full text-xs leading-4 text-base-content/60">
             <p>{label.to_owned()}</p>
             if !command.is_empty() {
                 <pre class="mt-1 min-w-0 max-w-full whitespace-pre-wrap break-all" data-testid={format!("{test_prefix}-command")}>{command.to_owned()}</pre>

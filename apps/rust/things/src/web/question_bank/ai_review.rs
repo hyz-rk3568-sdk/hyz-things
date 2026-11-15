@@ -33,16 +33,24 @@ pub(crate) struct QuestionAiReviewProps {
 pub(crate) fn question_ai_review(props: &QuestionAiReviewProps) -> Html {
     let state = use_state(|| None::<AiReviewState>);
     let history_generation = use_state(|| 0u64);
+    let history_has_runs = use_state(|| None::<bool>);
     {
-        let can_delete = state
+        let state_has_content = state
             .as_ref()
             .as_ref()
             .is_some_and(|value| value.status != "idle" || !value.messages.is_empty());
+        let can_delete = history_has_runs.unwrap_or(false) || state_has_content;
+        let availability_known = history_has_runs.is_some() || state_has_content;
         let notify = props.on_delete_availability.clone();
-        use_effect_with(can_delete, move |available| {
-            notify.emit(*available);
-            || ()
-        });
+        use_effect_with(
+            (availability_known, can_delete),
+            move |(known, available)| {
+                if *known {
+                    notify.emit(*available);
+                }
+                || ()
+            },
+        );
     }
     let diagram_root = use_node_ref();
     let failure = use_state(|| None::<String>);
@@ -643,6 +651,7 @@ pub(crate) fn question_ai_review(props: &QuestionAiReviewProps) -> Html {
     let on_delete = {
         let state = state.clone();
         let history_generation = history_generation.clone();
+        let history_has_runs = history_has_runs.clone();
         let request_id = request_id.clone();
         let request_info = request_info.clone();
         let request_not_found = request_not_found.clone();
@@ -665,6 +674,7 @@ pub(crate) fn question_ai_review(props: &QuestionAiReviewProps) -> Html {
             delete_error.set(None);
             let state = state.clone();
             let history_generation = history_generation.clone();
+            let history_has_runs = history_has_runs.clone();
             let request_id = request_id.clone();
             let request_info = request_info.clone();
             let request_not_found = request_not_found.clone();
@@ -694,6 +704,7 @@ pub(crate) fn question_ai_review(props: &QuestionAiReviewProps) -> Html {
                 match result {
                     Ok(value) => {
                         state.set(Some(value));
+                        history_has_runs.set(Some(false));
                         history_generation.set(history_generation.wrapping_add(1));
                         ai_draft_write(&request_key, "");
                         request_id.set(None);
@@ -944,7 +955,11 @@ pub(crate) fn question_ai_review(props: &QuestionAiReviewProps) -> Html {
                 endpoint={endpoint.clone()}
                 scope={scope}
                 stream={if current.as_ref().is_some_and(|value| value.status == "idle") {None} else {(*stream).clone()}}
-                messages={current.as_ref().map(|value| value.messages.clone()).unwrap_or_default()}/>
+                messages={current.as_ref().map(|value| value.messages.clone()).unwrap_or_default()}
+                on_history_availability={Callback::from({
+                    let history_has_runs = history_has_runs.clone();
+                    move |available| history_has_runs.set(Some(available))
+                })}/>
             if let Some(active) = stream.as_ref().as_ref() {
                 if active.status == "running" && !active.text.is_empty() {
                     <div class="py-2" data-testid="question-bank-ai-stream-text">

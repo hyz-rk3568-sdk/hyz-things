@@ -1,29 +1,37 @@
-//! Ephemeral 申论 OCR: one-shot Codex Markdown transcription with the same
-//! composer and tool rendering as Question Bank AI.
-//! 申论 OCR 是临时 Codex Markdown 回答；批改、解析与追问复用 QuestionAiReview。
+//! Ephemeral 申论 OCR: streamed Codex Markdown retained in memory for the active review.
 use super::*;
 
-#[derive(Properties, PartialEq)]
-pub(super) struct ShenlunAiPanelProps {
+#[derive(Clone, PartialEq, serde::Deserialize)]
+pub(super) struct OcrEvent {
+    pub(super) version: u8,
+    pub(super) run_id: String,
+    pub(super) seq: u64,
+    pub(super) kind: String,
+    pub(super) payload: serde_json::Value,
+}
+
+#[derive(Clone, PartialEq, serde::Deserialize)]
+pub(super) struct OcrRunSnapshot {
+    pub(super) version: u8,
     pub(super) question_id: String,
-    pub(super) csrf: String,
+    pub(super) run_id: String,
+    pub(super) seq: u64,
+    pub(super) status: String,
+    pub(super) progress: Vec<OcrEvent>,
+    pub(super) markdown: Option<String>,
+    pub(super) error: Option<String>,
 }
 
-#[derive(serde::Serialize)]
-struct OcrRequest {
-    attachments: Vec<String>,
-}
-
-#[derive(Clone, PartialEq, serde::Deserialize)]
-struct OcrEvent {
-    kind: String,
-    payload: serde_json::Value,
-}
-
-#[derive(Clone, PartialEq, serde::Deserialize)]
-struct OcrResponse {
-    markdown: String,
-    events: Vec<OcrEvent>,
+#[derive(Clone, PartialEq)]
+pub(super) struct OcrAttempt {
+    pub(super) local_id: u64,
+    pub(super) run_id: Option<String>,
+    pub(super) images: Vec<PendingImage>,
+    pub(super) status: String,
+    pub(super) seq: u64,
+    pub(super) events: Vec<OcrEvent>,
+    pub(super) markdown: Option<String>,
+    pub(super) error: Option<String>,
 }
 
 /// Use the same command/tool item renderer as the Question Bank AI review.
@@ -95,56 +103,82 @@ fn ocr_tools(events: &[OcrEvent]) -> Vec<(String, String, String, String)> {
     tools
 }
 
+#[derive(Properties, PartialEq)]
+struct OcrToolActivityProps {
+    attempt: OcrAttempt,
+}
+
+#[function_component(OcrToolActivity)]
+fn ocr_tool_activity(props: &OcrToolActivityProps) -> Html {
+    let opened = use_state(|| false);
+    let tools = ocr_tools(&props.attempt.events);
+    let summary = tools
+        .last()
+        .map(|tool| {
+            if tool.2.is_empty() {
+                tool.1.clone()
+            } else {
+                tool.2.clone()
+            }
+        })
+        .unwrap_or_else(|| {
+            if props.attempt.status == "running" || props.attempt.status == "starting" {
+                "正在连接 OCR 服务…".into()
+            } else {
+                String::new()
+            }
+        });
+    html! {
+        <section class="min-w-0 max-w-full py-1" data-testid="shenlun-ocr-tool-activity">
+            <button type="button" class="flex w-full min-w-0 items-start gap-2 text-left text-xs text-base-content/60 hover:text-base-content"
+                aria-expanded={opened.to_string()}
+                onclick={Callback::from({let opened=opened.clone();move |_|opened.set(!*opened)})}>
+                <span class="shrink-0 whitespace-nowrap">{if *opened {"⌄ "} else {"› "}}{"工具调用"}</span>
+                <span data-testid="shenlun-ocr-tool-activity-summary" class="question-bank-ai-progress-summary flex-1">
+                    {summary}
+                </span>
+            </button>
+            if *opened {
+                <div class="mt-2 min-w-0 max-w-full space-y-3 border-l border-base-content/15 pl-3">
+                    {for tools.iter().map(|(_, label, command, output)| {
+                        tool_execution_item(
+                            label, command, output, "shenlun-ocr"
+                        )
+                    })}
+                </div>
+            }
+        </section>
+    }
+}
+
+#[derive(Properties, PartialEq)]
+pub(super) struct ShenlunAiPanelProps {
+    pub(super) question_id: String,
+    pub(super) csrf: String,
+    pub(super) attempts: Vec<OcrAttempt>,
+    pub(super) on_start: Callback<Vec<PendingImage>>,
+}
+
 #[function_component(ShenlunAiPanel)]
 pub(super) fn shenlun_ai_panel(props: &ShenlunAiPanelProps) -> Html {
-    let busy = use_state(|| false);
-    let error = use_state(|| None::<String>);
-    let result = use_state(|| None::<OcrResponse>);
     let images = use_state(Vec::<PendingImage>::new);
     let uploading = use_state(|| false);
     let ocr_input_ref = use_node_ref();
+    let busy = props
+        .attempts
+        .iter()
+        .any(|attempt| matches!(attempt.status.as_str(), "starting" | "running"));
     let start_ocr = {
         let images = images.clone();
-        let busy = busy.clone();
-        let error = error.clone();
-        let result = result.clone();
-        let uploading = uploading.clone();
-        let csrf = props.csrf.clone();
-        let question_id = props.question_id.clone();
+        let on_start = props.on_start.clone();
         Callback::from(move |_| {
-            if *busy || *uploading || images.is_empty() {
+            if images.is_empty() {
                 return;
             }
-            busy.set(true);
-            error.set(None);
-            result.set(None);
-            let body = OcrRequest {
-                attachments: images.iter().map(|image| image.id.clone()).collect(),
-            };
-            let endpoint = format!("/api/v1/question-bank/shenlun/questions/{question_id}/ocr");
-            let busy = busy.clone();
-            let error = error.clone();
-            let result = result.clone();
-            let images = images.clone();
-            let csrf = csrf.clone();
-            spawn_local(async move {
-                match post_json_response::<_, OcrResponse>(&endpoint, &csrf, &body, "手写图片转写")
-                    .await
-                {
-                    Ok(response) => {
-                        result.set(Some(response));
-                        images.set(Vec::new());
-                    }
-                    Err(message) => error.set(Some(message)),
-                }
-                busy.set(false);
-            });
+            on_start.emit((*images).clone());
+            images.set(Vec::new());
         })
     };
-    let tools = (*result)
-        .as_ref()
-        .map(|response| ocr_tools(&response.events))
-        .unwrap_or_default();
     let image_endpoint = super::ai_review_api::ai_scope_url(
         &format!(
             "/api/v1/question-bank/practice/questions/{}/ai",
@@ -159,31 +193,49 @@ pub(super) fn shenlun_ai_panel(props: &ShenlunAiPanelProps) -> Html {
             <div class="shrink-0 space-y-1 px-3 py-2">
                 <h3 class="font-semibold">{"手写图片 OCR"}</h3>
                 <p class="text-sm text-base-content/60">
-                    {"临时 Codex 识别：直接返回 Markdown 原文，不创建批改记录、不要求确认，也不会自动评分。"}
+                    {"临时 Codex 识别：结果只保存在当前复盘内存中；退出复盘后清除，不创建批改记录、不要求确认，也不会自动评分。"}
                 </p>
             </div>
             <div class="min-h-0 flex-1 space-y-3 overflow-y-auto overscroll-contain px-3 py-2" data-testid="shenlun-ocr-results">
-                if let Some(response) = (*result).as_ref() {
-                    if !tools.is_empty() {
-                        <section class="py-1" data-testid="shenlun-ocr-tool-activity">
-                            <p class="text-xs text-base-content/60">{"工具调用 · 本次临时转写"}</p>
-                            <div class="mt-2 space-y-3 border-l border-base-content/15 pl-3 text-xs text-base-content/60">
-                                {for tools.iter().map(|(_, label, command, output)| {
-                                    tool_execution_item(
-                                        label, command, output, "shenlun-ocr"
-                                    )
-                                })}
+                if props.attempts.is_empty() {
+                    <p class="text-sm text-base-content/50">{"本次复盘还没有 OCR 转写记录。"}</p>
+                }
+                {for props.attempts.iter().map(|attempt| html! {
+                    <article key={attempt.local_id} class="space-y-2 rounded-box border border-base-content/10 p-3"
+                        data-testid="shenlun-ocr-submitted">
+                        <div class="flex justify-end">
+                            <div class="max-w-[85%] space-y-2 rounded-2xl bg-primary/10 p-2">
+                                <div class="flex flex-wrap justify-end gap-2">
+                                    {for attempt.images.iter().map(|image| html! {
+                                        if let Some(preview) = &image.preview {
+                                            <img class="h-20 max-w-full rounded-md object-cover" src={(**preview).clone()} alt={image.name.clone()}/>
+                                        } else {
+                                            <span class="rounded-md border border-base-content/15 px-3 py-2 text-xs">{image.name.clone()}</span>
+                                        }
+                                    })}
+                                </div>
+                                <p class="text-right text-xs text-base-content/60">{match attempt.status.as_str() {
+                                    "starting" | "running" => "正在转写…",
+                                    "complete" => "转写完成",
+                                    "failed" => "转写失败",
+                                    _ => "已提交",
+                                }}</p>
                             </div>
-                        </section>
-                    }
-                    <article class="study-markdown space-y-2 rounded-box border border-base-content/10 p-3"
-                        data-testid="shenlun-ocr-markdown">
-                        {render_question_bank_user_markdown(&response.markdown)}
+                        </div>
+                        if !attempt.events.is_empty() || matches!(attempt.status.as_str(), "starting" | "running") {
+                            <OcrToolActivity attempt={attempt.clone()}/>
+                        }
+                        if let Some(markdown) = attempt.markdown.as_ref() {
+                            <article class="study-markdown space-y-2 rounded-box border border-base-content/10 p-3"
+                                data-testid="shenlun-ocr-markdown">
+                                {render_question_bank_user_markdown(markdown)}
+                            </article>
+                        }
+                        if let Some(message) = attempt.error.as_ref() {
+                            <p role="alert" class="text-sm text-error">{message.clone()}</p>
+                        }
                     </article>
-                }
-                if let Some(message) = (*error).as_ref() {
-                    <p role="alert" class="text-sm text-error">{message.clone()}</p>
-                }
+                })}
             </div>
             <div class="shrink-0 border-t border-base-content/10 bg-base-100 px-2 py-2">
                 {ai_composer(AiComposer {
@@ -196,14 +248,14 @@ pub(super) fn shenlun_ai_panel(props: &ShenlunAiPanelProps) -> Html {
                     max_length: 0,
                     read_only: true,
                     placeholder: "仅上传手写图片，不支持文字输入…",
-                    button_label: if *busy {"正在识别…"} else {"转写为 Markdown"},
+                    button_label: if busy {"正在识别…"} else {"转写为 Markdown"},
                     is_stop: false,
-                    disabled: *busy || *uploading || images.is_empty(),
+                    disabled: busy || *uploading || images.is_empty(),
                     endpoint: image_endpoint,
                     csrf: props.csrf.clone(),
                     attachments: images.clone(),
                     uploading: uploading.clone(),
-                    picker_disabled: *busy || *uploading,
+                    picker_disabled: busy || *uploading,
                     picker_testid: "shenlun-ocr-images",
                     oninput: Callback::noop(),
                     onkeydown: Callback::noop(),

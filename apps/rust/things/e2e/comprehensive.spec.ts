@@ -785,7 +785,7 @@ test("iPad comprehensive 20-question flow with answer save and submit", async ({
   await expect(toggle).toHaveAttribute("aria-label", "开启草稿");
   await toggle.click();
   await expect(toggle).toHaveAttribute("aria-label", "关闭草稿");
-  await expect(toggle).toHaveText("✎");
+  await expect(toggle.locator("svg")).toBeVisible();
   const controls=surface.getByTestId("calculation-scratchpad-controls");
   await expect(surface.getByTestId("calculation-scratchpad-toolbar")).toBeVisible();
   await expect(surface.getByTestId("calculation-scratchpad-close")).toHaveCount(0);

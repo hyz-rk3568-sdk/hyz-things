@@ -1,9 +1,9 @@
 import { expect, test } from '@playwright/test';
 import { loginAsAdmin, resetHarness, harnessOrigin } from './fixtures';
 import {
-  drawScratchStroke, installShenlunRoutes, openShenlun, scratchpadHasInk,
-  scratchpadHasStoredInk, shenlunNextQuestionId as nextQuestionId,
-  shenlunPaperId as paperId, shenlunQuestionId as questionId,
+  drawScratchStroke, installFakeOcrEventSource, installShenlunRoutes, openShenlun, scratchpadHasInk,
+  scratchpadHasStoredInk, shenlunCatalog as catalog, shenlunNextQuestionId as nextQuestionId,
+  shenlunPaperId as paperId, shenlunPaperView as paperView, shenlunQuestionId as questionId,
   shenlunSourceAnswer, watchRetiredShenlunWrites,
 } from './helpers/shenlun';
 
@@ -120,6 +120,35 @@ test('申论题目工具栏复用无文字图标并保留 Flashcard 创建入口
     await expect(button.locator('svg')).toHaveCount(1);
     await expect(button).not.toContainText(label);
   }
+  const pen = page.getByTestId('calculation-scratchpad-toggle');
+  const moreBox = await page.getByTestId('shenlun-more').boundingBox();
+  const penBox = await pen.boundingBox();
+  const paneBox = await page.getByTestId('shenlun-question').boundingBox();
+  expect(penBox).not.toBeNull();
+  expect(moreBox).not.toBeNull();
+  expect(paneBox).not.toBeNull();
+  expect(penBox!.x).toBeGreaterThanOrEqual(moreBox!.x + moreBox!.width);
+  expect(penBox!.x + penBox!.width).toBeGreaterThanOrEqual(paneBox!.x + paneBox!.width - 16);
+  await pen.click();
+  const clearBox = await page.getByTestId('calculation-scratchpad-clear').boundingBox();
+  const expandedPenBox = await pen.boundingBox();
+  expect(clearBox).not.toBeNull();
+  expect(expandedPenBox!.x).toBeGreaterThan(clearBox!.x);
+  await pen.click();
+
+  await page.setViewportSize({ width: 390, height: 844 });
+  const mobilePenBox = await pen.boundingBox();
+  const mobileMoreBox = await page.getByTestId('shenlun-more').boundingBox();
+  const mobilePaneBox = await page.getByTestId('shenlun-question').boundingBox();
+  expect(mobilePenBox!.x).toBeGreaterThanOrEqual(mobileMoreBox!.x + mobileMoreBox!.width);
+  expect(mobilePenBox!.x + mobilePenBox!.width).toBeLessThanOrEqual(390);
+  expect(mobilePenBox!.x + mobilePenBox!.width).toBeGreaterThanOrEqual(mobilePaneBox!.x + mobilePaneBox!.width - 16);
+  await pen.click();
+  const mobileClearBox = await page.getByTestId('calculation-scratchpad-clear').boundingBox();
+  const expandedMobilePenBox = await pen.boundingBox();
+  expect(expandedMobilePenBox!.x).toBeGreaterThan(mobileClearBox!.x);
+  await pen.click();
+  await page.setViewportSize({ width: 1280, height: 800 });
 
   await page.getByTestId('shenlun-create-flashcard').click();
   const card = page.getByTestId('favorite-flashcard-card');
@@ -276,15 +305,322 @@ test('申论切题后保留当前 OCR 与来源答案模式', async ({ page }) =
   await expect(page.getByTestId('shenlun-mode-ocr')).toHaveAttribute('aria-pressed', 'true');
   await page.getByTestId('training-answer-sheet-toggle').click();
   await page.getByTestId('question-bank-practice-number').nth(1).click();
-  await expect(page.getByTestId('shenlun-question')).toContainText('请提出优化基层服务');
+  await expect(page.getByTestId('shenlun-question-heading')).toContainText('原卷第 2 题');
   await expect(page.getByTestId('shenlun-mode-ocr')).toHaveAttribute('aria-pressed', 'true');
   await expect(page.getByTestId('shenlun-ai-panel')).toBeVisible();
   await page.getByTestId('shenlun-mode-source').click();
   await page.getByTestId('training-answer-sheet-toggle').click();
   await page.getByTestId('question-bank-practice-number').nth(0).click();
-  await expect(page.getByTestId('shenlun-question')).toContainText('请概括基层治理');
+  await expect(page.getByTestId('shenlun-question-heading')).toContainText('原卷第 1 题');
   await expect(page.getByTestId('shenlun-mode-source')).toHaveAttribute('aria-pressed', 'true');
   await expect(page.getByTestId('shenlun-source-answer')).toBeVisible();
+});
+
+test('未生成申论 AI 对话时不提供删除操作', async ({ page }) => {
+  await loginAsAdmin(page);
+  let deleted = false;
+  await page.route('**/api/v1/question-bank/practice/questions/*/ai**', async route => {
+    const request = route.request();
+    const path = new URL(request.url()).pathname;
+    if (path.endsWith('/runs'))
+      return route.fulfill({ json: { items: [], next_after: null, has_more: false } });
+    if (path.endsWith('/events'))
+      return route.fulfill({ status: 200, contentType: 'text/event-stream', body: '' });
+    if (path.endsWith('/ai') && request.method() === 'GET')
+      return route.fulfill({ json: { question_id: questionId, status: 'idle', error: null, messages: [] } });
+    if (path.endsWith('/ai') && request.method() === 'DELETE') {
+      deleted = true;
+      return route.fulfill({ json: { question_id: questionId, status: 'idle', error: null, messages: [] } });
+    }
+    return route.fulfill({ status: 404, json: {} });
+  });
+  await page.route('**/api/v1/question-bank/shenlun/**', async route => {
+    const { pathname } = new URL(route.request().url());
+    if (pathname.endsWith('/shenlun/papers')) return route.fulfill({ json: catalog });
+    if (pathname.endsWith('/shenlun/papers/' + paperId)) return route.fulfill({ json: paperView });
+    throw new Error('Unexpected Shenlun request: ' + route.request().method() + ' ' + pathname);
+  });
+  await openShenlun(page);
+  await expect(page.getByTestId('question-bank-ai-status')).toContainText('未生成');
+  await page.getByTestId('shenlun-more').click();
+  await expect(page.getByText('暂无可用操作')).toBeVisible();
+  await expect(page.getByTestId('shenlun-delete-current')).toHaveCount(0);
+  expect(deleted).toBe(false);
+});
+
+test('申论第 2 题解析与批改的删除状态彼此独立且切换时保留', async ({ page }) => {
+  await loginAsAdmin(page);
+  const runId = '00000000-0000-4000-8000-000000000001';
+  const historyScopes: string[] = [];
+  let holdAnalysisReload = false;
+  let analysisReloadStarted = false;
+  let releaseAnalysisReload: () => void;
+  const analysisReloadGate = new Promise<void>(resolve => {
+    releaseAnalysisReload = () => resolve();
+  });
+  await page.route('**/api/v1/question-bank/practice/questions/*/ai**', async route => {
+    const requestUrl = new URL(route.request().url());
+    const path = requestUrl.pathname;
+    const pathParts = path.split('/');
+    const aiPathIndex = pathParts.lastIndexOf('ai');
+    const scopedQuestionId = pathParts[aiPathIndex - 1] ?? '';
+    const scope = requestUrl.searchParams.get('scope') ?? 'analysis';
+    if (path.endsWith('/runs')) {
+      historyScopes.push(`${scopedQuestionId}:${scope}`);
+      if (holdAnalysisReload && scopedQuestionId === nextQuestionId && scope === 'analysis') {
+        analysisReloadStarted = true;
+        await analysisReloadGate;
+      }
+      const items = scopedQuestionId === nextQuestionId && scope === 'analysis'
+        ? [{ run_id: runId, status: 'complete', assistant_message_id: null }]
+        : [];
+      return route.fulfill({ json: { items, next_after: null, has_more: false } });
+    }
+    if (path.includes('/runs/'))
+      return route.fulfill({ json: { items: [], next_after: null, has_more: false } });
+    if (path.endsWith('/events'))
+      return route.fulfill({ status: 200, contentType: 'text/event-stream', body: '' });
+    if (path.endsWith('/ai') && route.request().method() === 'GET') {
+      if (holdAnalysisReload && scopedQuestionId === nextQuestionId && scope === 'analysis') {
+        analysisReloadStarted = true;
+        await analysisReloadGate;
+      }
+      return route.fulfill({ json: { question_id: scopedQuestionId, status: 'idle', error: null, messages: [] } });
+    }
+    return route.fulfill({ status: 404, json: {} });
+  });
+  await page.route('**/api/v1/question-bank/shenlun/**', async route => {
+    const { pathname } = new URL(route.request().url());
+    if (pathname.endsWith('/shenlun/papers')) return route.fulfill({ json: catalog });
+    if (pathname.endsWith('/shenlun/papers/' + paperId)) return route.fulfill({ json: paperView });
+    throw new Error('Unexpected Shenlun request: ' + route.request().method() + ' ' + pathname);
+  });
+  await openShenlun(page);
+  await page.getByTestId('training-answer-sheet-toggle').click();
+  await page.getByTestId('question-bank-practice-number').nth(1).click();
+  await expect(page.getByTestId('shenlun-question-heading')).toContainText('原卷第 2 题');
+  await expect.poll(() => historyScopes).toContain(`${nextQuestionId}:analysis`);
+  await expect(page.getByTestId('question-bank-ai-progress')).toContainText('第 1 轮 · 已完成');
+  await page.getByTestId('shenlun-more').click();
+  await expect(page.getByTestId('shenlun-delete-current')).toBeVisible();
+  await page.getByTestId('shenlun-more').click();
+  await page.getByTestId('shenlun-mode-ai').click();
+  await page.getByTestId('shenlun-more').click();
+  await expect(page.getByTestId('shenlun-delete-current')).toBeVisible();
+  await page.getByTestId('shenlun-more').click();
+
+  await page.getByTestId('shenlun-mode-grade').click();
+  await expect.poll(() => historyScopes).toContain(`${nextQuestionId}:grading`);
+  await page.getByTestId('shenlun-more').click();
+  await expect(page.getByText('暂无可用操作')).toBeVisible();
+  await page.getByTestId('shenlun-more').click();
+
+  holdAnalysisReload = true;
+  await page.getByTestId('shenlun-mode-ai').click();
+  try {
+    await expect.poll(() => analysisReloadStarted).toBe(true);
+    await page.evaluate(() => new Promise<void>(resolve =>
+      requestAnimationFrame(() => requestAnimationFrame(resolve))));
+    await page.getByTestId('shenlun-more').click();
+    await expect(page.getByTestId('shenlun-delete-current')).toBeVisible();
+  } finally {
+    releaseAnalysisReload();
+  }
+  await expect(page.getByTestId('question-bank-ai-progress')).toContainText('第 1 轮 · 已完成');
+});
+
+test('申论当前完成状态的解析仍提供删除操作', async ({ page }) => {
+  await loginAsAdmin(page);
+  await page.route('**/api/v1/question-bank/practice/questions/*/ai**', async route => {
+    const path = new URL(route.request().url()).pathname;
+    if (path.endsWith('/runs'))
+      return route.fulfill({ json: { items: [], next_after: null, has_more: false } });
+    if (path.endsWith('/events'))
+      return route.fulfill({ status: 200, contentType: 'text/event-stream', body: '' });
+    if (path.endsWith('/ai'))
+      return route.fulfill({ json: {
+        question_id: questionId, status: 'complete', error: null,
+        messages: [{ id: 1, role: 'assistant', content: '已经生成的申论解析正文。', created_at: 1 }],
+      } });
+    return route.fulfill({ status: 404, json: {} });
+  });
+  await page.route('**/api/v1/question-bank/shenlun/**', async route => {
+    const { pathname } = new URL(route.request().url());
+    if (pathname.endsWith('/shenlun/papers')) return route.fulfill({ json: catalog });
+    if (pathname.endsWith('/shenlun/papers/' + paperId)) return route.fulfill({ json: paperView });
+    throw new Error('Unexpected Shenlun request: ' + route.request().method() + ' ' + pathname);
+  });
+  await openShenlun(page);
+  await expect(page.getByTestId('question-bank-ai-message')).toContainText('已经生成的申论解析正文');
+  await page.getByTestId('shenlun-more').click();
+  await expect(page.getByTestId('shenlun-delete-current')).toBeVisible();
+});
+
+test('申论材料、来源答案和 OCR 内容区都支持左右滑动切题', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await loginAsAdmin(page);
+  await page.route('**/api/v1/question-bank/practice/questions/*/ai**', async route => {
+    const path = new URL(route.request().url()).pathname;
+    if (path.endsWith('/runs'))
+      return route.fulfill({ json: { items: [], next_after: null, has_more: false } });
+    if (path.endsWith('/events'))
+      return route.fulfill({ status: 200, contentType: 'text/event-stream', body: '' });
+    if (path.endsWith('/ai'))
+      return route.fulfill({ json: { question_id: questionId, status: 'idle', error: null, messages: [] } });
+    return route.fulfill({ status: 404, json: {} });
+  });
+  await page.route('**/api/v1/question-bank/shenlun/**', async route => {
+    const { pathname } = new URL(route.request().url());
+    if (pathname.endsWith('/shenlun/papers')) return route.fulfill({ json: catalog });
+    if (pathname.endsWith('/shenlun/papers/' + paperId)) return route.fulfill({ json: paperView });
+    if (pathname.endsWith('/shenlun/questions/' + questionId + '/source-answer'))
+      return route.fulfill({ json: { text: '第一题参考答案。', provenance: '题库来源', source_hash: 'source-v1' } });
+    if (pathname.endsWith('/shenlun/questions/' + nextQuestionId + '/source-answer'))
+      return route.fulfill({ json: { text: '第二题参考答案。', provenance: '题库来源', source_hash: 'source-v1' } });
+    throw new Error('Unexpected Shenlun request: ' + route.request().method() + ' ' + pathname);
+  });
+  await openShenlun(page);
+  const swipe = async (testId: string, direction: 'next' | 'previous') => {
+    await page.getByTestId(testId).evaluate((target, next) => {
+      const [start, end] = next === 'next' ? [500, 250] : [250, 500];
+      const emit = (type: string, x: number) => target.dispatchEvent(new PointerEvent(type, {
+        bubbles: true, pointerType: 'touch', pointerId: 63, isPrimary: true, clientX: x, clientY: 260,
+      }));
+      emit('pointerdown', start);
+      emit('pointermove', end);
+      emit('pointerup', end);
+    }, direction);
+  };
+  await page.getByTestId('shenlun-mode-source').click();
+  await expect(page.getByTestId('shenlun-source-answer')).toContainText('第一题参考答案');
+  await swipe('shenlun-material-scroll', 'next');
+  await expect(page.getByTestId('shenlun-question-heading')).toContainText('原卷第 2 题');
+  await expect(page.getByTestId('shenlun-mode-source')).toHaveAttribute('aria-pressed', 'true');
+  await expect(page.getByTestId('shenlun-source-answer')).toContainText('第二题参考答案');
+  await swipe('shenlun-source-scroll', 'previous');
+  await expect(page.getByTestId('shenlun-question-heading')).toContainText('原卷第 1 题');
+  await page.getByTestId('shenlun-mode-ocr').click();
+  await swipe('shenlun-ocr-results', 'next');
+  await expect(page.getByTestId('shenlun-question-heading')).toContainText('原卷第 2 题');
+  await page.getByTestId('shenlun-ocr-input').evaluate((target) => {
+    const emit = (type: string, x: number) => target.dispatchEvent(new PointerEvent(type, {
+      bubbles: true, pointerType: 'touch', pointerId: 64, isPrimary: true, clientX: x, clientY: 260,
+    }));
+    emit('pointerdown', 500);
+    emit('pointermove', 250);
+    emit('pointerup', 250);
+  });
+  await expect(page.getByTestId('shenlun-question-heading')).toContainText('原卷第 2 题');
+});
+
+test('申论 OCR 即时回显图片、流式显示工具进度，并在复盘期间保留多次结果', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await installFakeOcrEventSource(page);
+  await loginAsAdmin(page);
+  await page.route('**/api/v1/question-bank/practice/questions/*/ai**', async route => {
+    const { pathname } = new URL(route.request().url());
+    if (pathname.endsWith('/attachments')) return route.fulfill({ json: { id: `attachment-${Date.now()}` } });
+    if (pathname.endsWith('/runs')) return route.fulfill({ json: { items: [], next_after: null, has_more: false } });
+    if (pathname.endsWith('/events')) return route.fulfill({ status: 200, contentType: 'text/event-stream', body: '' });
+    if (pathname.endsWith('/ai')) return route.fulfill({ json: { question_id: questionId, status: 'idle', error: null, messages: [] } });
+    return route.fulfill({ status: 404, json: {} });
+  });
+  let ocrStarts = 0;
+  await page.route('**/api/v1/question-bank/shenlun/**', async route => {
+    const { pathname } = new URL(route.request().url());
+    if (pathname.endsWith('/shenlun/papers')) return route.fulfill({ json: catalog });
+    if (pathname.endsWith('/shenlun/papers/' + paperId)) return route.fulfill({ json: paperView });
+    if (pathname.endsWith('/ocr') && route.request().method() === 'POST') {
+      ocrStarts += 1;
+      return route.fulfill({ status: 202, json: { run_id: `ocr-run-${ocrStarts}` } });
+    }
+    throw new Error('Unexpected Shenlun request: ' + route.request().method() + ' ' + pathname);
+  });
+  await openShenlun(page);
+  await page.getByTestId('shenlun-mode-ocr').click();
+  await expect(page.getByTestId('shenlun-ocr-pane')).toBeVisible();
+  await expect(page.getByTestId('shenlun-split')).toBeVisible();
+  await expect(page.getByTestId('shenlun-materials')).toBeVisible();
+  await expect(page.getByTestId('shenlun-question')).toBeVisible();
+  await expect(page.getByTestId('shenlun-ocr-question-context')).toHaveCount(0);
+  await page.setViewportSize({ width: 1280, height: 800 });
+  const materialBounds = await page.getByTestId('shenlun-materials').boundingBox();
+  const questionBounds = await page.getByTestId('shenlun-question').boundingBox();
+  expect(materialBounds).not.toBeNull();
+  expect(questionBounds).not.toBeNull();
+  expect(materialBounds!.x + materialBounds!.width).toBeLessThan(questionBounds!.x);
+  await page.setViewportSize({ width: 390, height: 844 });
+
+  const submitOcr = async (expectedRun: string, expectedText: string) => {
+    const file = page.getByTestId('shenlun-ocr-images').locator('input[type=file]');
+    await file.setInputFiles({
+      name: `${expectedRun}.png`, mimeType: 'image/png',
+      buffer: Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/pWQAAAAASUVORK5CYII=', 'base64'),
+    });
+    await expect(page.getByTestId('shenlun-ocr-composer').locator('img')).toBeVisible();
+    await page.getByTestId('shenlun-transcribe-start').click();
+    const submitted = page.getByTestId('shenlun-ocr-submitted').last();
+    await expect(submitted).toBeVisible();
+    await expect(submitted.locator('img')).toBeVisible();
+    await expect(submitted).toContainText('正在转写');
+    await expect.poll(() => page.evaluate(() => (window as any).__shenlunOcrSources.length)).toBe(ocrStarts);
+    const emit = async (name: string, payload: unknown) => {
+      await page.evaluate(({ runId, name, payload }) => {
+        (window as any).__emitShenlunOcr(runId, name, payload);
+      }, { runId: expectedRun, name, payload });
+    };
+    await emit('snapshot', {
+      version: 1, question_id: questionId, run_id: expectedRun, seq: 0,
+      status: 'running', progress: [], markdown: null, error: null,
+    });
+    await page.waitForTimeout(0);
+    const activity = submitted.getByTestId('shenlun-ocr-tool-activity');
+    const summary = activity.getByTestId('shenlun-ocr-tool-activity-summary');
+    await expect(activity).toBeVisible();
+    await emit('message', {
+      version: 1, run_id: expectedRun, seq: 1, kind: 'tool_started',
+      payload: { item_id: `${expectedRun}-tool`, tool: '图片识别', details: { command: '正在识别手写图片' } },
+    });
+    await expect(summary).toContainText('正在识别手写图片');
+    await emit('message', {
+      version: 1, run_id: expectedRun, seq: 2, kind: 'tool_progress',
+      payload: { item_id: `${expectedRun}-tool`, tool: '图片识别', message: '已读取图片并开始识别' },
+    });
+    await expect(activity.getByRole('button')).toHaveAttribute('aria-expanded', 'false');
+    await expect(page.getByTestId('shenlun-ocr-tool')).toHaveCount(0);
+    await activity.getByRole('button').click();
+    await expect(activity.getByRole('button')).toHaveAttribute('aria-expanded', 'true');
+    const expandedOutput = activity.getByTestId('shenlun-ocr-output');
+    await expect(expandedOutput).toContainText('已读取图片并开始识别');
+    expect(await expandedOutput.evaluate(element => getComputedStyle(element).fontSize)).toBe('12px');
+    await emit('message', {
+      version: 1, run_id: expectedRun, seq: 3, kind: 'run_finished', payload: { markdown: expectedText },
+    });
+    await expect(submitted.getByTestId('shenlun-ocr-markdown')).toContainText(expectedText);
+  };
+
+  await submitOcr('ocr-run-1', '第一次转写结果');
+  await page.getByTestId('shenlun-mode-ai').click();
+  await expect(page.getByTestId('question-bank-ai-review')).toBeVisible();
+  await page.getByTestId('shenlun-mode-ocr').click();
+  await expect(page.getByTestId('shenlun-ocr-markdown')).toContainText('第一次转写结果');
+  await page.getByTestId('training-answer-sheet-toggle').click();
+  await page.getByTestId('question-bank-practice-number').nth(1).click();
+  await expect(page.getByTestId('shenlun-question-heading')).toContainText('原卷第 2 题');
+  await page.getByTestId('training-answer-sheet-toggle').click();
+  await page.getByTestId('question-bank-practice-number').nth(0).click();
+  await expect(page.getByTestId('shenlun-ocr-markdown')).toContainText('第一次转写结果');
+  await submitOcr('ocr-run-2', '第二次转写结果');
+  await expect(page.getByTestId('shenlun-ocr-markdown')).toHaveCount(2);
+  await expect(page.getByTestId('shenlun-ocr-markdown').nth(0)).toContainText('第一次转写结果');
+  await expect(page.getByTestId('shenlun-ocr-markdown').nth(1)).toContainText('第二次转写结果');
+
+  await page.getByRole('button', { name: '← 返回选题' }).click();
+  await expect(page.getByTestId('shenlun-catalog')).toBeVisible();
+  await page.getByTestId('question-bank-paper-option').click();
+  await page.getByTestId('shenlun-start-review').click();
+  await page.getByTestId('shenlun-mode-ocr').click();
+  await expect(page.getByTestId('shenlun-ocr-markdown')).toHaveCount(0);
 });
 
 test('申论解析和批改分别使用独立会话、草稿与删除状态', async ({ page }) => {
@@ -466,8 +802,21 @@ test('申论解析和批改分别使用独立会话、草稿与删除状态', as
   expect(observed.requestStatuses).toEqual(expect.arrayContaining(['analysis', 'grading']));
   expect(observed.requestIds).not.toContain(legacyRequestId);
   expect(retiredWrites).toEqual([]);
+  const analysisInput = page.getByTestId('question-bank-ai-input');
+  await analysisInput.fill('追问如何落地');
+  await page.getByTestId('question-bank-ai-send').click();
+  await expect.poll(() => observed.followUps.some(({ scope, message }) =>
+    scope === 'analysis' && message === '追问如何落地')).toBe(true);
+  await expect(page.getByTestId('question-bank-ai-messages')).toContainText('解析追问独立回答');
   await page.getByTestId('shenlun-more').click();
   await expect(page.getByTestId('shenlun-delete-current')).toBeVisible();
+  await page.getByTestId('shenlun-delete-current').click();
+  await page.getByTestId('question-bank-ai-delete-confirm').click();
+  await expect.poll(() => observed.deletes).toEqual(['grading', 'analysis']);
+  await expect(page.getByTestId('question-bank-ai-messages')).not.toContainText('解析独立会话正文');
+  await page.getByTestId('shenlun-more').click();
+  await expect(page.getByText('暂无可用操作')).toBeVisible();
+  await expect(page.getByTestId('shenlun-delete-current')).toHaveCount(0);
   await page.getByTestId('training-answer-sheet-toggle').click();
   await page.getByTestId('question-bank-practice-number').nth(1).click();
   await expect(page.getByTestId('shenlun-question')).toContainText('请提出优化基层服务');
@@ -565,6 +914,7 @@ for (const viewport of [
 }
 
 test('OCR 只创建临时 Codex 转写并直接渲染 Markdown，不创建作答或确认', async ({ page, request }) => {
+  await installFakeOcrEventSource(page);
   await loginAsAdmin(page);
   let attachmentId = '';
   let ocrCount = 0;
@@ -580,6 +930,11 @@ test('OCR 只创建临时 Codex 转写并直接渲染 Markdown，不创建作答
     return ((await response.json()) as { csrf_token: string }).csrf_token;
   });
   const imageBytes = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9W3Z7b0AAAAASUVORK5CYII=', 'base64');
+  const streamedMarkdown = [
+    '## 第 1 页',
+    '手写的一句话，保留原文。',
+    ...Array.from({ length: 32 }, (_, index) => `识别结果第 ${index + 1} 段，持续在结果区内部滚动。`),
+  ].join('\n\n');
   page.on('request', uploadRequest => {
     const url = new URL(uploadRequest.url());
     if (url.pathname !== `/api/v1/question-bank/practice/questions/${questionId}/ai/attachments`) return;
@@ -597,21 +952,7 @@ test('OCR 只创建临时 Codex 转写并直接渲染 Markdown，不创建作答
         const req = route.request().postDataJSON();
         expect(req.attachments).toEqual([attachmentId]);
         ocrCount++;
-        const markdown = [
-          '## 第 1 页',
-          '手写的一句话，保留原文。',
-          ...Array.from({ length: 32 }, (_, index) => `识别结果第 ${index + 1} 段，持续在结果区内部滚动。`),
-        ].join('\n\n');
-        await route.fulfill({ json: {
-          markdown,
-          events: [
-            { kind: 'tool_started', payload: { item_id: 'ocr-tool-1', tool: 'shell',
-              details: { command: 'local-image-ocr' } } },
-            { kind: 'command_output_delta', payload: { item_id: 'ocr-tool-1', text: 'OCR 图像识别输出' } },
-            { kind: 'tool_finished', payload: { item_id: 'ocr-tool-1', tool: 'shell', status: 'completed',
-              details: {} } },
-          ],
-        } });
+        await route.fulfill({ status: 202, json: { run_id: 'legacy-ocr-run' } });
         return true;
       }
       if (method !== 'GET') legacyWrites++;
@@ -628,7 +969,7 @@ test('OCR 只创建临时 Codex 转写并直接渲染 Markdown，不创建作答
   await page.getByTestId('shenlun-ocr-images').locator('input[type="file"]').setInputFiles({
     name: 'answer.png', mimeType: 'image/png', buffer: imageBytes,
   });
-  await expect(page.getByTestId('shenlun-ocr-images').getByRole('img', { name: 'answer.png' })).toBeVisible();
+  await expect(page.getByTestId('shenlun-ocr-composer').getByRole('img', { name: 'answer.png' })).toBeVisible();
   await expect(page.getByTestId('shenlun-transcribe-start')).toBeEnabled();
   await expect.poll(() => uploadedScope).toBe('ocr');
   expect(uploadObservation?.contentType).toBe('image/png');
@@ -642,12 +983,27 @@ test('OCR 只创建临时 Codex 转写并直接渲染 Markdown，不创建作答
   expect(relayResponse.ok()).toBeTruthy();
   expect(await relayResponse.json()).toEqual({ media_type: 'image/png', bytes: Array.from(imageBytes) });
   await page.getByTestId('shenlun-transcribe-start').click();
+  const submitted = page.getByTestId('shenlun-ocr-submitted');
+  await expect(submitted.locator('img')).toBeVisible();
+  await expect(submitted).toContainText('正在转写');
+  await expect.poll(() => page.evaluate(() => (window as any).__shenlunOcrSources.length)).toBe(1);
+  await page.evaluate(({ runId, qid, markdown }) => {
+    const emit = (name: string, value: unknown) => (window as any).__emitShenlunOcr(runId, name, value);
+    emit('snapshot', { version: 1, question_id: qid, run_id: runId, seq: 0, status: 'running', progress: [], markdown: null, error: null });
+    emit('message', { version: 1, run_id: runId, seq: 1, kind: 'tool_started', payload: { item_id: 'ocr-tool-1', tool: 'shell', details: { command: 'local-image-ocr' } } });
+    emit('message', { version: 1, run_id: runId, seq: 2, kind: 'command_output_delta', payload: { item_id: 'ocr-tool-1', text: 'OCR 图像识别输出' } });
+    emit('message', { version: 1, run_id: runId, seq: 3, kind: 'tool_finished', payload: { item_id: 'ocr-tool-1', tool: 'shell', status: 'completed', details: {} } });
+    emit('message', { version: 1, run_id: runId, seq: 4, kind: 'run_finished', payload: { markdown } });
+  }, { runId: 'legacy-ocr-run', qid: questionId, markdown: streamedMarkdown });
   await expect(page.getByTestId('shenlun-ocr-markdown')).toContainText('手写的一句话，保留原文');
   await expect(page.getByTestId('shenlun-ocr-markdown').locator('h2')).toContainText('第 1 页');
-  await expect(page.getByTestId('shenlun-ocr-tool-activity')).toContainText('工具调用');
+  const activity = page.getByTestId('shenlun-ocr-tool-activity');
+  await expect(activity).toContainText('工具调用');
+  await expect(activity.getByRole('button')).toHaveAttribute('aria-expanded', 'false');
+  await activity.getByRole('button').click();
   await expect(page.getByTestId('shenlun-ocr-tool')).toContainText('shell');
   await expect(page.getByTestId('shenlun-ocr-output')).toContainText('OCR 图像识别输出');
-  await expect(page.getByTestId('shenlun-ocr-images').getByRole('img', { name: 'answer.png' })).toHaveCount(0);
+  await expect(page.getByTestId('shenlun-ocr-composer').getByRole('img', { name: 'answer.png' })).toHaveCount(0);
   const results = page.getByTestId('shenlun-ocr-results');
   const panelBox = await page.getByTestId('shenlun-ai-panel').boundingBox();
   const composer = page.getByTestId('shenlun-ocr-composer');

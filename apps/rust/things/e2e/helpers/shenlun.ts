@@ -153,3 +153,33 @@ export async function drawScratchStroke(page: Page, paneTestId: string) {
   await page.mouse.up();
   await expect.poll(() => scratchpadHasInk(page)).toBe(true);
 }
+
+// Drives the OCR EventSource deterministically: tests capture each stream and
+// emit snapshot/message events without depending on the native OCR service.
+export async function installFakeOcrEventSource(page: Page) {
+  await page.addInitScript(() => {
+    const sources: Array<{ url: string; source: any }> = [];
+    class FakeEventSource extends EventTarget {
+      onmessage: ((event: MessageEvent) => void) | null = null;
+      onerror: ((event: Event) => void) | null = null;
+      readyState = 1;
+      constructor(public url: string) {
+        super();
+        if (url.includes('/ocr/') && url.endsWith('/events')) sources.push({ url, source: this });
+      }
+      close() { this.readyState = 2; }
+      emit(name: string, data: string) {
+        const event = new MessageEvent(name, { data });
+        this.dispatchEvent(event);
+        if (name === 'message') this.onmessage?.(event);
+      }
+    }
+    (window as any).__shenlunOcrSources = sources;
+    (window as any).__emitShenlunOcr = (runId: string, name: string, data: unknown) => {
+      const entry = sources.find(({ url }) => url.endsWith(`/ocr/${runId}/events`));
+      if (!entry) throw new Error(`Missing OCR EventSource for ${runId}`);
+      entry.source.emit(name, JSON.stringify(data));
+    };
+    Object.defineProperty(window, 'EventSource', { configurable: true, value: FakeEventSource });
+  });
+}

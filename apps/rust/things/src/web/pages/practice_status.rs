@@ -156,9 +156,9 @@ pub(crate) fn codex_limit_bars() -> Html {
         let percent = window.map(|item| item.remaining_percent.min(100));
         let width = percent.unwrap_or(0);
         let color = if width <= 20 && percent.is_some() {
-            "bg-error"
+            "text-error"
         } else {
-            "bg-primary"
+            "text-primary"
         };
         html! {
             <div data-testid={testid}>
@@ -166,7 +166,10 @@ pub(crate) fn codex_limit_bars() -> Html {
                     <span>{label}</span><span class="tabular-nums">{percent.map(|n|format!("{n}%")).unwrap_or_else(||"—".into())}</span>
                 </div>
                 <div class="training-progress-track mt-0.5 overflow-hidden rounded-full bg-base-content/10">
-                    <div class={classes!("h-full", "rounded-full", color)} style={format!("width:{width}%")}></div>
+                    <svg class={classes!("block", "h-full", "w-full", color)} viewBox="0 0 100 6"
+                        preserveAspectRatio="none" aria-hidden="true">
+                        <rect x="0" y="0" width={width.to_string()} height="6" rx="3" fill="currentColor"/>
+                    </svg>
                 </div>
             </div>
         }

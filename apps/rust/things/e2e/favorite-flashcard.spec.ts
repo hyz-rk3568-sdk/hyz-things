@@ -395,6 +395,12 @@ test('review keeps the scratchpad pen fixed at the far right', async ({ page }) 
   await toggle.click();
   await expect(toggle).toHaveAttribute('aria-label', '关闭草稿');
   expect(Math.abs((await toggle.boundingBox())!.x - penBox!.x)).toBeLessThanOrEqual(1);
+  const clear = review.getByTestId('calculation-scratchpad-clear');
+  await expect(clear).toBeVisible();
+  const clearBox = await clear.boundingBox();
+  const expandedPenBox = await toggle.boundingBox();
+  expect(expandedPenBox!.x).toBeGreaterThan(clearBox!.x);
+  expect(expandedPenBox!.x + expandedPenBox!.width).toBeGreaterThanOrEqual(paneBox!.x + paneBox!.width - 16);
   await expect(review.getByRole('group', { name: '题目与解析滚动' })).toBeVisible();
   const canvas = review.getByTestId('calculation-scratchpad-canvas');
   await expect(canvas).toBeVisible();
