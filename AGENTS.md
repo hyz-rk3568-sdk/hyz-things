@@ -187,6 +187,7 @@ composition root in its own Cargo package:
 - `resetHarness`（`PUT /reset`）只重置内存门户状态、摄像头会话与上传观测，**不清空题库数据**（收藏、作答、AI 记录、练习会话）。同一 harness 内多个 spec 或分片共享题库 SQLite；会改动收藏等题库状态的用例必须回到观测到的初始状态，需要干净题库时显式调用 `PUT /reset-question-bank`。
 - 改动 `src/web` 或 `e2e` 下的文件后，bundle 缓存校验会判定 `frontend inputs changed`；启动新 harness 前先重新执行 `apps/rust/things/tools/build-frontend-bundle.sh`，已在运行的 harness 继续使用旧 bundle。
 - 这是 CI 的等价做法：CI 每个 matrix shard 启动独立后端、共享已验证 bundle，并用 `HYZ_THINGS_E2E_TEST_SHARD=1` 平衡大 spec；本地可用同样结构更快定位失败。
+- 启动多个 harnees 的目的是为了让测试总时间最短，需要均匀拆分
 
 ## 构建，验证以及测试入口
 
