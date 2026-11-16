@@ -17,6 +17,17 @@ class Paper:
     end: int
 
 
+@dataclass(frozen=True)
+class AnswerPage:
+    kind: str
+    num: int
+    pdf: str
+    page: int
+    explain_start: int | None = None
+    explain_end: int | None = None
+    section: str | None = None
+
+
 def _compile(pattern: str, field_name: str) -> re.Pattern:
     try:
         return re.compile(pattern)
@@ -30,6 +41,22 @@ def _require(mapping: Mapping, key: str, kind: type, where: str):
         raise ValueError(f"missing {key} in {where}")
     if not isinstance(value, kind) or isinstance(value, bool):
         raise ValueError(f"{key} in {where} has the wrong type")
+    return value
+
+
+def _parse_schema(value) -> str:
+    if value is None:
+        return "hyz-paper/v1"
+    if value not in ("hyz-paper/v1", "hyz-paper/v2"):
+        raise ValueError(f"unsupported schema: {value!r}")
+    return value
+
+
+def _parse_subject(value) -> str:
+    if value is None:
+        return "xingce"
+    if not isinstance(value, str) or value not in ("xingce", "shenlun"):
+        raise ValueError(f"unsupported subject: {value!r}")
     return value
 
 
@@ -63,8 +90,17 @@ class Profile:
     papers: tuple[Paper, ...]
     expected: Mapping[str, int]
     overrides: Mapping[str, Mapping[int, Mapping[int, dict]]]
+    question_starts: Mapping[int, int] = field(default_factory=dict)
     book: str | None = None
     answers: str | None = None
+    answers_required: bool = True
+    answer_pages: tuple[AnswerPage, ...] = ()
+    schema: str = "hyz-paper/v1"
+    subject: str = "xingce"
+    ocr_enabled: bool = False
+    ocr_dpi: int = 220
+    ocr_badge: str = r"练习题\s*(\d+)\s*套"
+    ocr_replacements: tuple[tuple[str, str], ...] = ()
     title_re: re.Pattern = field(init=False, compare=False)
 
     def __post_init__(self) -> None:
@@ -88,6 +124,11 @@ class Profile:
         if any(marker in stripped for marker in self.noise_texts):
             return True
         return any(pattern.fullmatch(stripped) for pattern in self.noise_patterns)
+
+    def correct(self, value: str) -> str:
+        for wrong, right in self.ocr_replacements:
+            value = value.replace(wrong, right)
+        return value
 
     def override(self, kind: str, num: int, number: int) -> dict:
         by_paper = self.overrides.get(kind, {})
@@ -124,10 +165,12 @@ class Profile:
         patterns = data.get("patterns") or {}
         noise = data.get("noise") or {}
         answer_key = data.get("answer_key") or {}
+        ocr = data.get("ocr") or {}
         for label, value in (
             ("patterns", patterns),
             ("noise", noise),
             ("answer_key", answer_key),
+            ("ocr", ocr),
         ):
             if not isinstance(value, dict):
                 raise ValueError(f"{label} must be an object")
@@ -146,6 +189,18 @@ class Profile:
             raise ValueError("noise.patterns must be a list of strings")
         if _require(data, "questions_per_material", int, "profile") < 1:
             raise ValueError("questions_per_material must be positive")
+        ocr_dpi = ocr.get("dpi", 220)
+        if not isinstance(ocr_dpi, int) or not 100 <= ocr_dpi <= 400:
+            raise ValueError("ocr.dpi must be an integer between 100 and 400")
+        replacements = ocr.get("replacements") or {}
+        if not isinstance(replacements, dict) or not all(
+            isinstance(k, str) and isinstance(v, str) for k, v in replacements.items()
+        ):
+            raise ValueError("ocr.replacements must map strings to strings")
+        badge = ocr.get("badge", r"练习题\s*(\d+)\s*套")
+        if not isinstance(badge, str) or not badge:
+            raise ValueError("ocr.badge must be a non-empty regex")
+        _compile(badge, "ocr badge")
         heading_map = answer_key.get("heading_map") or {}
         if not isinstance(heading_map, dict) or not all(
             isinstance(k, str) and isinstance(v, str) for k, v in heading_map.items()
@@ -187,6 +242,47 @@ class Profile:
                         raise ValueError("override patches must be objects")
                     overrides[kind][int(num)][int(number)] = patch
 
+        question_starts = {}
+        for page, number in (data.get("question_starts") or {}).items():
+            if not str(page).isdigit() or not isinstance(number, int) or number < 1:
+                raise ValueError(
+                    "question_starts must map page numbers to question numbers"
+                )
+            question_starts[int(page)] = number
+
+        answer_pages = []
+        for index, item in enumerate(data.get("answer_pages") or []):
+            if not isinstance(item, dict):
+                raise ValueError(f"answer_pages[{index}] must be an object")
+            explain_start = item.get("explain_start")
+            explain_end = item.get("explain_end")
+            section = item.get("section")
+            if section is not None and (
+                not isinstance(section, str) or not section.strip()
+            ):
+                raise ValueError(
+                    f"section in answer_pages[{index}] must be a non-empty string"
+                )
+            for name, value in (
+                ("explain_start", explain_start),
+                ("explain_end", explain_end),
+            ):
+                if value is not None and (not isinstance(value, int) or value < 1):
+                    raise ValueError(
+                        f"{name} in answer_pages[{index}] must be a positive integer"
+                    )
+            answer_pages.append(
+                AnswerPage(
+                    _require(item, "kind", str, f"answer_pages[{index}]"),
+                    _require(item, "num", int, f"answer_pages[{index}]"),
+                    _require(item, "pdf", str, f"answer_pages[{index}]"),
+                    _require(item, "page", int, f"answer_pages[{index}]"),
+                    explain_start,
+                    explain_end,
+                    section.strip() if section else None,
+                )
+            )
+
         answer_heading = _compile(
             _require(answer_key, "heading", str, "answer_key"), "answer heading"
         )
@@ -208,6 +304,8 @@ class Profile:
             module=data["module"],
             role=data["role"],
             paper_kind=data["paper_kind"],
+            schema=_parse_schema(data.get("schema")),
+            subject=_parse_subject(data.get("subject")),
             option_labels=option_labels,
             questions_per_material=_require(data, "questions_per_material", int, "profile"),
             body_margin=float(data.get("body_margin", 65)),
@@ -233,6 +331,13 @@ class Profile:
             papers=tuple(papers),
             expected=dict(expected),
             overrides=overrides,
+            question_starts=question_starts,
             book=data.get("book"),
             answers=data.get("answers"),
+            answers_required=bool(data.get("answers_required", True)),
+            answer_pages=tuple(answer_pages),
+            ocr_enabled=bool(ocr.get("enabled", False)),
+            ocr_dpi=ocr_dpi,
+            ocr_badge=badge,
+            ocr_replacements=tuple(sorted(replacements.items())),
         )

@@ -598,8 +598,84 @@ def order_tokens(tokens, profile: Profile) -> list[dict]:
                 ):
                     token["sy"] = other["bbox"][1] - 2
                     break
-    tokens.sort(key=lambda item: (item["page"], round(item["sy"]), item["x"]))
-    return tokens
+    if not any(token.get("ocr") for token in tokens):
+        tokens.sort(key=lambda item: (item["page"], round(item["sy"]), item["x"]))
+        return tokens
+    return _order_option_runs(_ocr_lines(tokens), profile)
+
+
+def _ocr_lines(tokens) -> list[dict]:
+    """Group OCR tokens into visual lines and read each line left to right.
+
+    Baselines drift across a scanned line (up to ~7 points of skew) and across
+    the two columns of an option row, so baseline proximity misfiles blocks.
+    Vertical overlap identifies the line that a block belongs to.
+    """
+    lines = []
+    page = None
+    for token in sorted(tokens, key=lambda item: (item["page"], item["bbox"][1])):
+        if token["kind"] != "text":
+            lines.append({"top": token["bbox"][1], "bottom": token["bbox"][3], "tokens": [token]})
+            continue
+        if token["page"] != page:
+            page = token["page"]
+        top, bottom = token["bbox"][1], token["bbox"][3]
+        matched = False
+        for line in reversed(lines):
+            if line["tokens"][0]["page"] != page:
+                break
+            overlap = min(bottom, line["bottom"]) - max(top, line["top"])
+            shorter = min(bottom - top, line["bottom"] - line["top"])
+            if shorter > 0 and overlap >= 0.5 * shorter:
+                line["tokens"].append(token)
+                line["top"] = min(line["top"], top)
+                line["bottom"] = max(line["bottom"], bottom)
+                matched = True
+                break
+        if not matched:
+            lines.append({"top": top, "bottom": bottom, "tokens": [token]})
+    ordered = []
+    for line in lines:
+        ordered.extend(sorted(line["tokens"], key=lambda item: item["x"]))
+    return ordered
+
+
+def _order_option_runs(tokens, profile: Profile) -> list[dict]:
+    """Read a block of option lines in label order.
+
+    OCR baselines of the two columns drift by up to ~7 points, which is enough
+    to sort B before A and D before C. Inside a run of option lines the labels
+    themselves give the reading order.
+    """
+    labels = profile.option_labels
+
+    def rank(token) -> int | None:
+        if token["kind"] != "text":
+            return None
+        match = profile.option_re.match(token["text"])
+        if not match or match.group(1) not in labels:
+            return None
+        return labels.index(match.group(1))
+
+    result = []
+    run = []
+
+    def flush():
+        if len(run) > 1:
+            run.sort(key=lambda token: rank(token))
+        result.extend(run)
+        run.clear()
+
+    for token in tokens:
+        if rank(token) is None:
+            flush()
+            result.append(token)
+            continue
+        if run and run[-1]["page"] != token["page"]:
+            flush()
+        run.append(token)
+    flush()
+    return result
 
 
 def detect_papers(document, profile: Profile):
@@ -628,11 +704,14 @@ def detect_papers(document, profile: Profile):
     return detected
 
 
-def build(spec, document, profile: Profile) -> dict:
+def build(spec, document, profile: Profile, page_token_source=None) -> dict:
     kind, num, start, end = spec
     tokens = []
     for page_no in range(start - 1, end):
-        tokens.extend(page_tokens(document[page_no], document, page_no, profile))
+        if page_token_source is not None:
+            tokens.extend(page_token_source(page_no + 1))
+        else:
+            tokens.extend(page_tokens(document[page_no], document, page_no, profile))
     tokens = order_tokens(tokens, profile)
     questions = []
     materials = []
@@ -653,6 +732,18 @@ def build(spec, document, profile: Profile) -> dict:
                 current, in_options, last_option = None, False, None
                 continue
             if profile.ask_re.match(value):
+                continue
+            # Some scanned pages lost their question number in typesetting; the
+            # profile names the page that starts the next question.
+            forced = profile.question_starts.get(token["page"])
+            if forced is not None and forced == len(questions) + 1:
+                current = {
+                    "number": forced,
+                    "stem": [{"kind": "text", "text": value, "x": token["x"]}],
+                    "options": [],
+                }
+                questions.append(current)
+                in_options, last_option = False, None
                 continue
             question_match = profile.question_re.match(value)
             if (
@@ -724,8 +815,15 @@ def build(spec, document, profile: Profile) -> dict:
             # plain body text
             if current is not None:
                 if in_options and last_option is not None:
+                    # OCR cuts an option at a word gap; a text-layer line break
+                    # can fall inside a word.
                     last_option["blocks"].append(
-                        {"kind": "text", "text": value, "x": token["x"]}
+                        {
+                            "kind": "text",
+                            "text": value,
+                            "x": token["x"],
+                            "ocr": token.get("ocr", False),
+                        }
                     )
                 else:
                     current["stem"].append(
