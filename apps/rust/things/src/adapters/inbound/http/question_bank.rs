@@ -1189,6 +1189,46 @@ pub(super) async fn practice_browse(
     }
 }
 
+#[derive(serde::Deserialize)]
+pub(super) struct ShenlunFavoritesQuery {
+    year_min: Option<i32>,
+    year_max: Option<i32>,
+    regions: Option<String>,
+    exclude_regions: Option<bool>,
+}
+
+pub(super) async fn shenlun_favorites(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    service: Service,
+    axum::extract::Query(query): axum::extract::Query<ShenlunFavoritesQuery>,
+) -> Response {
+    if let Err(response) = authorize_sensitive_read(&state, &headers).await {
+        return response;
+    }
+    let app = match available(service) {
+        Ok(app) => app,
+        Err(e) => return bank_error(e),
+    };
+    let filters = ModulePracticeFilters {
+        year_min: query.year_min,
+        year_max: query.year_max,
+        regions: query
+            .regions
+            .unwrap_or_default()
+            .split(',')
+            .filter(|value| !value.is_empty())
+            .map(str::to_owned)
+            .collect(),
+        exclude_regions: query.exclude_regions.unwrap_or(false),
+        count: None,
+    };
+    match app.shenlun_favorites(&filters).await {
+        Ok(value) => Json(value).into_response(),
+        Err(error) => bank_error(error),
+    }
+}
+
 pub(super) async fn practice_history(
     State(state): State<AppState>,
     headers: HeaderMap,

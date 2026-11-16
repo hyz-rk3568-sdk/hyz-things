@@ -61,12 +61,63 @@ export const shenlunSourceAnswer = (text: string, sourceHash = 'source-shenlun-v
   source_hash: sourceHash,
 });
 
+export type ShenlunFavoriteItem = {
+  question_id: string;
+  paper_id: string;
+  paper_title: string;
+  year: number;
+  region: string;
+  number: number;
+  module: string | null;
+  category: string | null;
+};
+
+export type ShenlunCard = {
+  id: string;
+  source_question_id: string | null;
+  source_file: string;
+  source_order: number;
+  deck_path: string;
+  front_markdown: string;
+  back_markdown: string;
+  tags: string[];
+  active: boolean;
+  due_at_ms: number | null;
+  last_reviewed_at_ms: number | null;
+  state: 'new' | 'learning' | 'review' | 'relearning';
+  review_count: number;
+  lapse_count: number;
+  is_new: boolean;
+};
+
 export type ShenlunRouteOptions = {
   sourceAnswers?: Record<string, ReturnType<typeof shenlunSourceAnswer>>;
+  favorites?: ShenlunFavoriteItem[];
+  cards?: ShenlunCard[];
   // Return true when the override fulfilled the request. Returning false lets
   // the shared fixture handle papers, paper views and source answers.
   onRequest?: (route: Route, pathname: string, method: string) => Promise<boolean>;
 };
+
+export function shenlunCard(overrides: Partial<ShenlunCard> & Pick<ShenlunCard, 'id'>): ShenlunCard {
+  return {
+    source_question_id: shenlunQuestionId,
+    source_file: '真题练习/申论/归纳概括/错题/cards.md',
+    source_order: 0,
+    deck_path: '真题练习/申论/归纳概括/错题',
+    front_markdown: '卡片正面',
+    back_markdown: '卡片背面',
+    tags: [],
+    active: true,
+    due_at_ms: null,
+    last_reviewed_at_ms: null,
+    state: 'new',
+    review_count: 0,
+    lapse_count: 0,
+    is_new: true,
+    ...overrides,
+  };
+}
 
 export async function installShenlunRoutes(page: Page, options: ShenlunRouteOptions = {}) {
   await page.route('**/api/v1/question-bank/shenlun/**', async route => {
@@ -79,6 +130,9 @@ export async function installShenlunRoutes(page: Page, options: ShenlunRouteOpti
     if (pathname.endsWith('/shenlun/papers/' + shenlunPaperId) && method === 'GET') {
       return route.fulfill({ json: shenlunPaperView });
     }
+    if (pathname.endsWith('/shenlun/favorites') && method === 'GET') {
+      return route.fulfill({ json: options.favorites ?? [] });
+    }
     const source = pathname.match(/\/shenlun\/questions\/([^/]+)\/source-answer$/);
     if (source && method === 'GET') {
       const answer = options.sourceAnswers?.[source[1]];
@@ -88,6 +142,8 @@ export async function installShenlunRoutes(page: Page, options: ShenlunRouteOpti
     // Retired attempt/job/confirmation prototypes have no success path.
     throw new Error(`Unexpected Shenlun request: ${method} ${pathname}`);
   });
+  await page.route('**/api/v1/study/cards**', route =>
+    route.fulfill({ json: { cards: options.cards ?? [] } }));
 }
 
 export async function openShenlun(page: Page) {

@@ -723,6 +723,8 @@ pub(crate) struct FavoriteFlashcardWorkspaceProps {
     pub(crate) question_id: String,
     pub(crate) preview: FavoritePreview,
     pub(crate) csrf: String,
+    #[prop_or_default]
+    pub(crate) initial_card_id: Option<String>,
     pub(crate) on_close: Callback<()>,
     pub(crate) on_changed: Callback<()>,
 }
@@ -731,10 +733,23 @@ pub(crate) struct FavoriteFlashcardWorkspaceProps {
 pub(crate) fn favorite_flashcard_workspace(props: &FavoriteFlashcardWorkspaceProps) -> Html {
     let selected = use_state(|| {
         props
-            .preview
-            .existing
-            .first()
-            .map(|card| card.card_id.clone())
+            .initial_card_id
+            .as_ref()
+            .filter(|id| {
+                props
+                    .preview
+                    .existing
+                    .iter()
+                    .any(|card| card.card_id.as_str() == id.as_str())
+            })
+            .cloned()
+            .or_else(|| {
+                props
+                    .preview
+                    .existing
+                    .first()
+                    .map(|card| card.card_id.clone())
+            })
     });
     let current = props
         .preview

@@ -267,7 +267,9 @@ for (const width of [1180, 390]) {
     await review.getByTestId('collection-review-create-flashcard').click();
     const panel = page.getByTestId('favorite-flashcard-panel');
     await expect(panel).toBeVisible();
-    await expect(review.getByTestId('collection-review-split')).toHaveCount(0);
+    await expect(review.getByTestId('collection-review-split')).toBeVisible();
+    await expect(review.getByTestId('collection-review-flashcard-pane')).toBeVisible();
+    await expect(review.getByTestId('collection-review-material-pane')).toBeVisible();
     const card = panel.getByTestId('favorite-flashcard-card');
     await expect(card.getByLabel('背面')).toHaveValue('');
     await card.getByTestId('favorite-flashcard-user-mode').click();

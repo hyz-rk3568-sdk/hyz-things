@@ -765,6 +765,10 @@ fn app_with_assets(
             on(MethodFilter::GET, shenlun::reference),
         )
         .route(
+            "/api/v1/question-bank/shenlun/favorites",
+            on(MethodFilter::GET, question_bank::shenlun_favorites),
+        )
+        .route(
             "/api/v1/question-bank/papers/{id}/modules",
             on(MethodFilter::GET, question_bank::modules),
         )

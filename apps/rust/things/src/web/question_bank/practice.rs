@@ -1,10 +1,11 @@
 //! Browse original papers and categories; share one workspace for practice and review.
 use super::*;
+use hyz_things::domain::flashcards::FlashcardSummary;
 use hyz_things::domain::question_bank::{
     primary_module, AiReviewState, CreatePracticeRequest, DrillCollection, FavoriteState,
     ModulePracticeFilters, PaperSummary, PracticeBrowseItem, PracticeCatalog, PracticeMode,
-    PracticeQuestion, PracticeReview, PracticeSession, PracticeWorkspace, SavePracticeAnswer,
-    SetFavorite, SetPracticePaused,
+    PracticeQuestion, PracticeQuestionDetail, PracticeReview, PracticeSession, PracticeWorkspace,
+    SavePracticeAnswer, SetFavorite, SetPracticePaused,
 };
 
 #[wasm_bindgen::prelude::wasm_bindgen(module = "/src/web/review_scroll.js")]
@@ -29,6 +30,31 @@ struct ReviewScrollMemory {
 #[derive(serde::Deserialize)]
 struct DataVersion {
     version: String,
+}
+
+const DEFAULT_XINGCE_MODULES: [&str; 5] = [
+    "数量关系",
+    "资料分析",
+    "判断推理",
+    "言语理解与表达",
+    "常识判断",
+];
+
+/// Card decks live under `真题练习/<module>` or `用户整理/<module>`; only
+/// 行测 module decks belong to this collection.
+fn xingce_card_module(deck_path: &str, modules: &[String]) -> Option<String> {
+    let mut parts = deck_path.split('/');
+    let (Some("真题练习" | "用户整理"), Some(module)) = (parts.next(), parts.next()) else {
+        return None;
+    };
+    if module == "申论" {
+        return None;
+    }
+    if modules.iter().any(|name| name == module) {
+        Some(module.to_owned())
+    } else {
+        Some("其他".into())
+    }
 }
 
 fn module_filter_labels(filters: &ModulePracticeFilters) -> [String; 3] {
@@ -227,6 +253,8 @@ struct CollectionReviewTarget {
     scope: PracticeMode,
     items: Vec<PracticeBrowseItem>,
     index: usize,
+    initial_card_id: Option<String>,
+    scope_label: Option<String>,
 }
 
 #[derive(Clone, PartialEq)]
@@ -771,6 +799,11 @@ pub(crate) fn question_bank_training(props: &QuestionBankTrainingProps) -> Html 
     let custom_years = use_state(|| false);
     let collection = use_state(|| None::<PracticeMode>);
     let collection_review = use_state(|| None::<CollectionReviewTarget>);
+    let cards_open = use_state(|| false);
+    let cards = use_state(|| None::<Vec<FlashcardSummary>>);
+    let cards_error = use_state(|| None::<String>);
+    let cards_retry = use_state(|| 0u32);
+    let cards_busy = use_state(|| false);
 
     let mode = use_state(|| props.entry_mode.clone());
     let workspace = use_state(|| None::<PracticeWorkspace>);
@@ -1015,6 +1048,68 @@ pub(crate) fn question_bank_training(props: &QuestionBankTrainingProps) -> Html 
             });
             move || current.set(false)
         });
+    }
+    let xingce_modules = {
+        let mut modules = (*catalog)
+            .as_ref()
+            .map(|catalog| {
+                catalog
+                    .modules
+                    .iter()
+                    .map(|module| module.name.clone())
+                    .collect::<Vec<_>>()
+            })
+            .unwrap_or_default();
+        for name in DEFAULT_XINGCE_MODULES {
+            if !modules.iter().any(|existing| existing == name) {
+                modules.push(name.to_owned());
+            }
+        }
+        modules
+    };
+    {
+        let cards = cards.clone();
+        let cards_error = cards_error.clone();
+        let modules = xingce_modules.clone();
+        use_effect_with(
+            (*cards_open, *cards_retry, modules.clone()),
+            move |(open, _, modules)| {
+                let alive = Rc::new(Cell::new(true));
+                let guard = alive.clone();
+                if *open {
+                    cards.set(None);
+                    cards_error.set(None);
+                    let modules = modules.clone();
+                    spawn_local(async move {
+                        let mut collected = Vec::new();
+                        let mut offset = 0_u32;
+                        let result = loop {
+                            let url = study_cards_url(None, offset);
+                            match fetch_json::<StudyCardsResponse>(&url, "我的卡片").await {
+                                Ok(response) => {
+                                    let page_len = response.cards.len();
+                                    collected.extend(response.cards.into_iter().filter(|card| {
+                                        xingce_card_module(&card.deck_path, &modules).is_some()
+                                    }));
+                                    offset = offset.saturating_add(200);
+                                    if page_len < 200 || offset >= 2_000 {
+                                        break Ok(());
+                                    }
+                                }
+                                Err(message) => break Err(message),
+                            }
+                        };
+                        if guard.get() {
+                            match result {
+                                Ok(()) => cards.set(Some(collected)),
+                                Err(message) => cards_error.set(Some(message)),
+                            }
+                        }
+                    });
+                }
+                move || alive.set(false)
+            },
+        );
     }
     {
         let current = workspace.as_ref().as_ref().map(|w| w.session.clone());
@@ -1819,12 +1914,35 @@ pub(crate) fn question_bank_training(props: &QuestionBankTrainingProps) -> Html 
                     can_scroll_up={question_edges.can_scroll_up}
                     can_scroll_down={question_edges.can_scroll_down}
                     question_index={item_index} target="题目" label="题目与解析滚动" />
-                    if selected_review.is_some() {
-                        if *ai_tab {
-                            <QuestionAiReview delete_signal={*ai_delete_signal} on_delete_availability={Callback::from({let value=ai_can_delete.clone();move |available|value.set(available)})} key={format!("{}:{}", current.session.id, item.item.question_id)} csrf={props.csrf.clone()} question_id={item.item.question_id.clone()} question_content={question_content.clone()} question_scroll={question_scroll.clone()} on_question_scroll={on_question_scrolling.clone()}/>
+                    if *flashcard_open {
+                        if let Some(preview) = &card_preview {
+                            <div class="min-h-0 flex-1 overflow-y-auto p-3" data-testid="question-bank-practice-flashcard-pane">
+                                <FavoriteFlashcardWorkspace key={item.item.question_id.clone()}
+                                    question_id={item.item.question_id.clone()}
+                                    preview={preview.clone()} csrf={props.csrf.clone()}
+                                    on_changed={flashcard_changed.clone()}
+                                    on_close={Callback::from({
+                                        let flashcard_open=flashcard_open.clone();
+                                        move |_|flashcard_open.set(false)
+                                    })}/>
+                            </div>
+                        } else if let Some(message) = &*flashcard_error {
+                            <div class="min-h-0 flex-1 overflow-y-auto p-4" data-testid="question-bank-practice-flashcard-error">
+                                <p role="alert" class="text-sm text-error">{message.clone()}</p>
+                                <button type="button" class="btn btn-outline btn-sm mt-2"
+                                    data-testid="question-bank-practice-flashcard-retry"
+                                    onclick={Callback::from({let flashcard_retry=flashcard_retry.clone();move |_|flashcard_retry.set(*flashcard_retry+1)})}>
+                                    {"重试加载闪卡"}
+                                </button>
+                            </div>
+                        } else {
+                            <p class="min-h-0 flex-1 p-4 text-sm opacity-60" role="status" data-testid="question-bank-practice-flashcard-loading">
+                                {"正在准备闪卡…"}
+                            </p>
                         }
-                    }
-                    if !*ai_tab || selected_review.is_none() {
+                    } else if selected_review.is_some() && *ai_tab {
+                        <QuestionAiReview delete_signal={*ai_delete_signal} on_delete_availability={Callback::from({let value=ai_can_delete.clone();move |available|value.set(available)})} key={format!("{}:{}", current.session.id, item.item.question_id)} csrf={props.csrf.clone()} question_id={item.item.question_id.clone()} question_content={question_content.clone()} question_scroll={question_scroll.clone()} on_question_scroll={on_question_scrolling.clone()}/>
+                    } else {
                         <div ref={question_scroll.clone()} onscroll={on_question_scrolling.clone()}
                             class="min-h-0 flex-1 overflow-y-auto overscroll-contain touch-pan-y p-4"
                             data-testid="question-bank-practice-question-scroll" data-ink-pane="answer">{question_content.clone()}</div>
@@ -2001,17 +2119,7 @@ pub(crate) fn question_bank_training(props: &QuestionBankTrainingProps) -> Html 
                             </div>
                         }
                         <div class="relative min-h-0 flex-1 overflow-hidden">
-                            if *flashcard_open {
-                                if let Some(preview) = &card_preview {
-                                    <div class="h-full" data-testid="question-bank-practice-flashcard-dialog">
-                                        <FavoriteFlashcardWorkspace key={item.item.question_id.clone()}
-                                            question_id={item.item.question_id.clone()}
-                                            preview={preview.clone()} csrf={props.csrf.clone()}
-                                            on_changed={flashcard_changed.clone()}
-                                            on_close={Callback::from({let flashcard_open=flashcard_open.clone();move |_|flashcard_open.set(false)})}/>
-                                    </div>
-                                }
-                            } else if paused {
+                            if paused {
                                 <div class="flex h-full items-center justify-center rounded-box bg-base-100" data-testid="question-bank-practice-paused">
                                     <div class="text-center space-y-4">
                                         <h2 class="text-xl font-bold">{"训练已暂停"}</h2>
@@ -2019,6 +2127,11 @@ pub(crate) fn question_bank_training(props: &QuestionBankTrainingProps) -> Html 
                                         <button class="btn btn-primary" onclick={Callback::from({let invoke=invoke.clone();move |_|invoke.emit(Action::Pause)})}>{"继续练习"}</button>
                                     </div>
                                 </div>
+                            } else if *flashcard_open {
+                                <TrainingSwipeSurface current={index.clone()} total={current.questions.len()}
+                                    navigation_allowed={Some(navigation_allowed)}>
+                                    {main}
+                                </TrainingSwipeSurface>
                             } else {
                                 <InkOverlay question_index={item_index} responsive={true} scroll_linked={true}
                                         persist_key={format!("question-bank-{}-{}",current.session.id,item.item.question_id)}>
@@ -2029,9 +2142,7 @@ pub(crate) fn question_bank_training(props: &QuestionBankTrainingProps) -> Html 
                                 </InkOverlay>
                             }
                         </div>
-                        if !*flashcard_open {
-                            {nav}
-                        }
+                        {nav}
                     </section>
                 };
             }
@@ -2246,34 +2357,92 @@ pub(crate) fn question_bank_training(props: &QuestionBankTrainingProps) -> Html 
         .take(100)
         .map(|item| (*item).clone())
         .collect::<Vec<_>>();
+    let card_groups = {
+        let mut groups = std::collections::BTreeMap::<String, Vec<&FlashcardSummary>>::new();
+        if let Some(list) = cards.as_ref().as_ref() {
+            for card in (*list).iter() {
+                if let Some(module) = xingce_card_module(&card.deck_path, &xingce_modules) {
+                    groups.entry(module).or_default().push(card);
+                }
+            }
+        }
+        groups
+    };
+    let card_count = cards.as_ref().map(Vec::len);
+    let open_card = {
+        let collection_review = collection_review.clone();
+        let cards_busy = cards_busy.clone();
+        let cards_error = cards_error.clone();
+        Callback::from(move |(card_id, question_id): (String, String)| {
+            if *cards_busy {
+                return;
+            }
+            cards_busy.set(true);
+            cards_error.set(None);
+            let collection_review = collection_review.clone();
+            let cards_busy = cards_busy.clone();
+            let cards_error = cards_error.clone();
+            spawn_local(async move {
+                let result = fetch_json::<PracticeQuestionDetail>(
+                    &format!("{ROOT}/practice/questions/{question_id}"),
+                    "卡片来源题",
+                )
+                .await;
+                match result {
+                    Ok(detail) => collection_review.set(Some(CollectionReviewTarget {
+                        scope: PracticeMode::Favorite,
+                        items: vec![detail.item],
+                        index: 0,
+                        initial_card_id: Some(card_id),
+                        scope_label: Some("卡片".into()),
+                    })),
+                    Err(message) => cards_error.set(Some(message)),
+                }
+                cards_busy.set(false);
+            });
+        })
+    };
     let filter_labels = module_filter_labels(&module_filters);
     let selection_scope = [selected_module.as_str(), selected_category.as_str()]
         .into_iter()
         .filter(|part| !part.is_empty())
         .collect::<Vec<_>>()
         .join(" · ");
-    let setup_heading = match collection.as_ref() {
-        Some(PracticeMode::Wrong) => "我的错题",
-        Some(PracticeMode::Favorite) => "我的收藏",
-        _ if *mode == PracticeMode::Paper => "套卷训练",
-        _ if *mode == PracticeMode::Drill => "专项练习",
-        _ => "模块训练",
+    let setup_heading = if *cards_open {
+        "我的卡片"
+    } else {
+        match collection.as_ref() {
+            Some(PracticeMode::Wrong) => "我的错题",
+            Some(PracticeMode::Favorite) => "我的收藏",
+            _ if *mode == PracticeMode::Paper => "套卷训练",
+            _ if *mode == PracticeMode::Drill => "专项练习",
+            _ => "模块训练",
+        }
     };
-    let setup_explanation = match collection.as_ref() {
-        Some(PracticeMode::Wrong) => {
-            format!("错题按现有模块与二级题型分类，共 {} 题", wrong_total)
+    let setup_explanation = if *cards_open {
+        format!(
+            "按模块查看已同步的卡片；点开卡片进入来源题复盘，并默认打开卡片编辑区{}",
+            card_count
+                .map(|count| format!("，共 {count} 张"))
+                .unwrap_or_default()
+        )
+    } else {
+        match collection.as_ref() {
+            Some(PracticeMode::Wrong) => {
+                format!("错题按现有模块与二级题型分类，共 {} 题", wrong_total)
+            }
+            Some(PracticeMode::Favorite) => {
+                format!("收藏按现有模块与二级题型分类，共 {} 题", favorite_total)
+            }
+            _ if *mode == PracticeMode::Paper => "选择完整原卷，按原始题号顺序作答".to_string(),
+            _ if *mode == PracticeMode::Drill => {
+                "选择合集与专题，按原始顺序作答；没有可靠答案的题只记录完成情况".to_string()
+            }
+            _ => format!(
+                "按一级模块与二级题型逐层筛选，每轮最多 {} 题",
+                module_filters.count.unwrap_or(20)
+            ),
         }
-        Some(PracticeMode::Favorite) => {
-            format!("收藏按现有模块与二级题型分类，共 {} 题", favorite_total)
-        }
-        _ if *mode == PracticeMode::Paper => "选择完整原卷，按原始题号顺序作答".to_string(),
-        _ if *mode == PracticeMode::Drill => {
-            "选择合集与专题，按原始顺序作答；没有可靠答案的题只记录完成情况".to_string()
-        }
-        _ => format!(
-            "按一级模块与二级题型逐层筛选，每轮最多 {} 题",
-            module_filters.count.unwrap_or(20)
-        ),
     };
     let action_summary = match collection.as_ref() {
         Some(PracticeMode::Wrong) => "错题复练",
@@ -2387,7 +2556,8 @@ pub(crate) fn question_bank_training(props: &QuestionBankTrainingProps) -> Html 
             }
     };
     html! {
-        <TrainingSetupLayout test_id="question-bank-practice-setup" wide={true} action={Some(start_action)}
+        <TrainingSetupLayout test_id="question-bank-practice-setup" wide={true}
+            action={(!*cards_open).then_some(start_action)}
             summary={action_summary}
             detail={action_detail}>
             <div class="question-bank-setup-content space-y-5">
@@ -2411,13 +2581,15 @@ pub(crate) fn question_bank_training(props: &QuestionBankTrainingProps) -> Html 
                     (Some(PracticeMode::Favorite),"我的收藏","question-bank-collection-favorite",Some(favorite_total)),
                 ].into_iter().map(|(target,label,id,count)| {
                     let collection=collection.clone();
+                    let cards_open=cards_open.clone();
                     let selected_module=selected_module.clone();
                     let selected_category=selected_category.clone();
-                    let selected=*collection==target;
+                    let selected=*collection==target && !*cards_open;
                     html! {<button type="button"
                         class={classes!("btn","btn-sm",if selected {"btn-primary"} else {"btn-outline"})}
                         data-testid={id} aria-pressed={selected.to_string()}
                         onclick={Callback::from(move |_|{
+                            cards_open.set(false);
                             collection.set(target.clone());
                             selected_module.set(String::new());
                             selected_category.set(String::new());
@@ -2428,10 +2600,30 @@ pub(crate) fn question_bank_training(props: &QuestionBankTrainingProps) -> Html 
                         }
                     </button>}
                 })}
+                <button type="button"
+                    class={classes!("btn","btn-sm",if *cards_open {"btn-primary"} else {"btn-outline"})}
+                    data-testid="question-bank-collection-cards" aria-pressed={(*cards_open).to_string()}
+                    onclick={Callback::from({
+                        let cards_open=cards_open.clone();
+                        let collection=collection.clone();
+                        let selected_module=selected_module.clone();
+                        let selected_category=selected_category.clone();
+                        move |_| {
+                            collection.set(None);
+                            selected_module.set(String::new());
+                            selected_category.set(String::new());
+                            cards_open.set(true);
+                        }
+                    })}>
+                    {"我的卡片"}
+                    if let Some(count)=card_count {
+                        <span class="question-bank-count" data-testid="question-bank-cards-count">{count}</span>
+                    }
+                </button>
             </div>
             }
-            if collection.is_none() { {resume_card} }
-            if collection.is_none() && *mode == PracticeMode::Drill {
+            if !*cards_open && collection.is_none() { {resume_card} }
+            if !*cards_open && collection.is_none() && *mode == PracticeMode::Drill {
                 <section class="space-y-3" data-testid="question-bank-drill-setup">
                     <div class="flex items-end justify-between gap-3">
                         <div>
@@ -2506,7 +2698,7 @@ pub(crate) fn question_bank_training(props: &QuestionBankTrainingProps) -> Html 
                     }
                 </section>
             }
-            if collection.is_none() && *mode == PracticeMode::Paper {
+            if !*cards_open && collection.is_none() && *mode == PracticeMode::Paper {
                 <section class="space-y-3" aria-label="选择原卷">
                     <div class="flex items-end justify-between gap-3">
                         <div>
@@ -2530,7 +2722,7 @@ pub(crate) fn question_bank_training(props: &QuestionBankTrainingProps) -> Html 
                         })}/>
                 </section>
             }
-            if collection.is_none() && *mode == PracticeMode::Module {
+            if !*cards_open && collection.is_none() && *mode == PracticeMode::Module {
                 <section class="space-y-3" data-testid="question-bank-cross-module-setup">
                     <div class="flex items-center justify-between gap-3">
                         <div>
@@ -2695,7 +2887,8 @@ pub(crate) fn question_bank_training(props: &QuestionBankTrainingProps) -> Html 
                                             let items=review_items.clone();
                                             let scope=review_scope.clone();
                                             move |_| collection_review.set(Some(CollectionReviewTarget{
-                                                scope:scope.clone(),items:items.clone(),index:position
+                                                scope:scope.clone(),items:items.clone(),index:position,
+                                                initial_card_id:None,scope_label:None
                                             }))
                                         };
                                         html! {
@@ -2711,9 +2904,82 @@ pub(crate) fn question_bank_training(props: &QuestionBankTrainingProps) -> Html 
                     </div>
                 </section>
             }
+            if *cards_open {
+                <section class="space-y-3" data-testid="question-bank-cards">
+                    <div class="flex items-end justify-between gap-3">
+                        <div>
+                            <h3 class="font-semibold">{"我的卡片"}</h3>
+                            <p class="text-xs text-base-content/60">{"按模块查看已同步卡片；点开卡片进入来源题复盘并默认打开编辑区。"}</p>
+                        </div>
+                        <span class="text-xs text-base-content/50" data-testid="question-bank-cards-total">
+                            {cards.as_ref().as_ref().map(|list| format!("{} 张", list.len())).unwrap_or_else(|| "加载中…".into())}
+                        </span>
+                    </div>
+                    if let Some(message)=(*cards_error).as_ref() {
+                        <div class="space-y-2" role="alert" data-testid="question-bank-cards-error">
+                            <p class="text-sm text-error">{message.clone()}</p>
+                            <button type="button" class="btn btn-outline btn-sm" data-testid="question-bank-cards-retry"
+                                onclick={Callback::from({let cards_retry=cards_retry.clone();move |_|cards_retry.set(*cards_retry+1)})}>
+                                {"重试加载"}
+                            </button>
+                        </div>
+                    } else if cards.is_none() {
+                        <p class="rounded-box bg-base-200 p-4 text-sm" role="status" data-testid="question-bank-cards-loading">
+                            {"正在加载卡片…"}
+                        </p>
+                    } else if card_groups.is_empty() {
+                        <p class="rounded-box bg-base-200 p-4 text-sm" data-testid="question-bank-cards-empty">
+                            {"还没有已同步的行测卡片。"}
+                        </p>
+                    } else {
+                        <div class="space-y-4">
+                            {for card_groups.iter().map(|(module,cards)| {
+                                html! {
+                                    <section class="space-y-2">
+                                        <div class="flex items-center justify-between gap-2">
+                                            <h4 class="text-sm font-semibold">{(*module).clone()}</h4>
+                                            <span class="text-xs text-base-content/50">{format!("{} 张",(*cards).len())}</span>
+                                        </div>
+                                        <div class="question-bank-results-list">
+                                            {for (*cards).iter().map(|card| {
+                                                let card_id=card.id.to_string();
+                                                let question_id=card.source_question_id.clone();
+                                                let disabled=question_id.is_none() || *cards_busy;
+                                                let on_open={
+                                                    let open=open_card.clone();
+                                                    let card_id=card_id.clone();
+                                                    Callback::from(move |_|{
+                                                        if let Some(question_id)=question_id.clone() {
+                                                            open.emit((card_id.clone(),question_id));
+                                                        }
+                                                    })
+                                                };
+                                                html! {
+                                                    <button type="button" class="question-bank-result-row w-full text-left"
+                                                        data-testid="question-bank-card-item" disabled={disabled} onclick={on_open}>
+                                                        <div class="min-w-0">
+                                                            <strong class="block truncate text-sm">{flashcard_list_title(&card.front_markdown)}</strong>
+                                                            <p class="mt-0.5 truncate text-xs text-base-content/50">{card.deck_path.clone()}</p>
+                                                        </div>
+                                                        if card.source_question_id.is_none() {
+                                                            <span class="text-xs text-base-content/50">{"手工卡片"}</span>
+                                                        }
+                                                    </button>
+                                                }
+                                            })}
+                                        </div>
+                                    </section>
+                                }
+                            })}
+                        </div>
+                    }
+                </section>
+            }
             if let Some(target) = &*collection_review {
                 <CollectionQuestionReview items={target.items.clone()} initial_index={target.index}
                     scope={target.scope.clone()} csrf={props.csrf.clone()}
+                    initial_card_id={target.initial_card_id.clone()}
+                    scope_label={target.scope_label.clone()}
                     on_back={Callback::from({
                         let collection_review=collection_review.clone();
                         move |_|collection_review.set(None)

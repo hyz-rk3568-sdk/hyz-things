@@ -595,6 +595,16 @@ impl QuestionBankApplication {
             .await
     }
 
+    /// Shenlun favorites are a read-only review list; they never start a timed
+    /// objective practice session.
+    pub async fn shenlun_favorites(
+        &self,
+        filters: &ModulePracticeFilters,
+    ) -> Result<Vec<PracticeBrowseItem>, BankError> {
+        validate_filters(filters)?;
+        self.repository.shenlun_favorites(filters).await
+    }
+
     pub async fn create_practice(
         &self,
         request: CreatePracticeRequest,

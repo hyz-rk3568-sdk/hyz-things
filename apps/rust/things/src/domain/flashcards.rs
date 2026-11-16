@@ -82,6 +82,8 @@ pub struct Flashcard {
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct FlashcardSummary {
     pub id: FlashcardId,
+    #[serde(default)]
+    pub source_question_id: Option<String>,
     pub source_file: String,
     pub source_order: u32,
     pub deck_path: String,
@@ -301,6 +303,7 @@ mod tests {
     fn card(deck_path: &str, tags: &[&str]) -> FlashcardSummary {
         FlashcardSummary {
             id: id(),
+            source_question_id: None,
             source_file: "deck/cards.md".to_owned(),
             source_order: 0,
             deck_path: deck_path.to_owned(),

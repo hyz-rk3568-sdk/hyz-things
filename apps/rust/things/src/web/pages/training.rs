@@ -1193,6 +1193,7 @@ mod tests {
     fn example_card(number: usize) -> FlashcardSummary {
         FlashcardSummary {
             id: FlashcardId::from_trusted(format!("card-{number}")),
+            source_question_id: None,
             source_file: "cards.md".into(),
             source_order: number as u32,
             deck_path: "资料分析".into(),

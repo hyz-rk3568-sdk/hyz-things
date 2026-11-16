@@ -2,10 +2,12 @@
 use super::ocr_panel::{OcrAttempt, OcrEvent, OcrRunSnapshot};
 use super::practice::{use_practice_favorite, QuestionBankQuestionHeader};
 use super::*;
+use hyz_things::domain::flashcards::FlashcardSummary;
 use hyz_things::domain::question_bank::{
-    FavoriteState, PaperSummary, PaperView, QuestionView, SetFavorite,
+    FavoriteState, PaperSummary, PaperView, PracticeBrowseItem, PracticeQuestionDetail,
+    QuestionView, SetFavorite,
 };
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 enum ShenlunMode {
@@ -13,6 +15,26 @@ enum ShenlunMode {
     Grading,
     Ocr,
     Source,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum ShenlunCollectionKind {
+    Favorites,
+    Cards,
+}
+
+fn shenlun_card_category(deck_path: &str) -> String {
+    let mut parts = deck_path.split('/');
+    match (parts.next(), parts.next(), parts.next()) {
+        (Some("用户整理" | "真题练习"), Some("申论"), Some(category)) => {
+            category.to_owned()
+        }
+        _ => "未分类".into(),
+    }
+}
+
+fn shenlun_cards_url(deck: &str) -> String {
+    study_cards_url(Some(deck), 0)
 }
 
 impl ShenlunMode {
@@ -308,6 +330,16 @@ pub(crate) fn question_bank_shenlun(props: &QuestionBankShenlunProps) -> Html {
     let flashcard_error = use_state(|| None::<String>);
     let flashcard_open = use_state(|| false);
     let flashcard_revision = use_state(|| 0_u32);
+    let collection_kind = use_state(|| None::<ShenlunCollectionKind>);
+    let favorites = use_state(|| None::<Vec<PracticeBrowseItem>>);
+    let favorites_error = use_state(|| None::<String>);
+    let favorites_retry = use_state(|| 0_u32);
+    let cards = use_state(|| None::<Vec<FlashcardSummary>>);
+    let cards_error = use_state(|| None::<String>);
+    let cards_retry = use_state(|| 0_u32);
+    let collection_busy = use_state(|| false);
+    let pending_card_id = use_state(|| None::<String>);
+    let initial_card_id = use_state(|| None::<String>);
     let ocr_attempts = use_state(OcrAttempts::new);
     let ocr_attempt_store = use_mut_ref(OcrAttempts::new);
     let ocr_next_id = use_mut_ref(|| 0_u64);
@@ -417,17 +449,26 @@ pub(crate) fn question_bank_shenlun(props: &QuestionBankShenlunProps) -> Html {
         let flashcard_preview = flashcard_preview.clone();
         let flashcard_error = flashcard_error.clone();
         let flashcard_open = flashcard_open.clone();
+        let pending_card_id = pending_card_id.clone();
         use_effect_with(
             (question_key.clone(), *flashcard_revision),
             move |(key, _)| {
                 let alive = Rc::new(Cell::new(true));
                 let guard = alive.clone();
+                let qid = key.as_ref().map(|(_, qid)| qid.clone());
+                // Opening from the card collection records the target card;
+                // keep the editor mounted until its preview arrives.
+                let keep_open = pending_card_id.is_some();
                 flashcard_preview.set(None);
                 flashcard_error.set(None);
-                flashcard_open.set(false);
-                if let Some((_, qid)) = key.clone() {
+                if !keep_open {
+                    flashcard_open.set(false);
+                }
+                if let Some(qid) = qid {
                     let flashcard_preview = flashcard_preview.clone();
                     let flashcard_error = flashcard_error.clone();
+                    let flashcard_open = flashcard_open.clone();
+                    let pending_card_id = pending_card_id.clone();
                     spawn_local(async move {
                         let result = fetch_json::<FavoritePreview>(
                             &format!(
@@ -438,8 +479,18 @@ pub(crate) fn question_bank_shenlun(props: &QuestionBankShenlunProps) -> Html {
                         .await;
                         if guard.get() {
                             match result {
-                                Ok(preview) => flashcard_preview.set(Some((qid, preview))),
-                                Err(message) => flashcard_error.set(Some(message)),
+                                Ok(preview) => {
+                                    flashcard_preview.set(Some((qid.clone(), preview)));
+                                    if pending_card_id.is_some() {
+                                        flashcard_open.set(true);
+                                        pending_card_id.set(None);
+                                    }
+                                }
+                                Err(message) => {
+                                    flashcard_error.set(Some(message));
+                                    flashcard_open.set(false);
+                                    pending_card_id.set(None);
+                                }
                             }
                         }
                     });
@@ -447,6 +498,86 @@ pub(crate) fn question_bank_shenlun(props: &QuestionBankShenlunProps) -> Html {
                 move || alive.set(false)
             },
         );
+    }
+
+    {
+        let favorites = favorites.clone();
+        let favorites_error = favorites_error.clone();
+        use_effect_with((*collection_kind, *favorites_retry), move |(kind, _)| {
+            let alive = Rc::new(Cell::new(true));
+            let guard = alive.clone();
+            if *kind == Some(ShenlunCollectionKind::Favorites) {
+                favorites.set(None);
+                favorites_error.set(None);
+                spawn_local(async move {
+                    let result = fetch_json::<Vec<PracticeBrowseItem>>(
+                        "/api/v1/question-bank/shenlun/favorites",
+                        "申论收藏",
+                    )
+                    .await;
+                    if guard.get() {
+                        match result {
+                            Ok(items) => favorites.set(Some(items)),
+                            Err(message) => favorites_error.set(Some(message)),
+                        }
+                    }
+                });
+            }
+            move || alive.set(false)
+        });
+    }
+    {
+        let cards = cards.clone();
+        let cards_error = cards_error.clone();
+        use_effect_with((*collection_kind, *cards_retry), move |(kind, _)| {
+            let alive = Rc::new(Cell::new(true));
+            let guard = alive.clone();
+            if *kind == Some(ShenlunCollectionKind::Cards) {
+                cards.set(None);
+                cards_error.set(None);
+                spawn_local(async move {
+                    let first = fetch_json::<StudyCardsResponse>(
+                        &shenlun_cards_url("用户整理/申论"),
+                        "申论卡片",
+                    )
+                    .await;
+                    let second = fetch_json::<StudyCardsResponse>(
+                        &shenlun_cards_url("真题练习/申论"),
+                        "申论卡片",
+                    )
+                    .await;
+                    match (first, second) {
+                        (Err(first), Err(_)) => {
+                            if guard.get() {
+                                cards_error.set(Some(first));
+                            }
+                        }
+                        (first, second) => {
+                            let mut merged = Vec::new();
+                            for result in [first, second] {
+                                if let Ok(response) = result {
+                                    merged.extend(response.cards);
+                                }
+                            }
+                            merged.sort_by(|left, right| {
+                                (left.deck_path.as_str(), left.source_order, left.id.as_str()).cmp(
+                                    &(
+                                        right.deck_path.as_str(),
+                                        right.source_order,
+                                        right.id.as_str(),
+                                    ),
+                                )
+                            });
+                            merged.dedup_by(|left, right| left.id == right.id);
+                            if guard.get() {
+                                cards.set(Some(merged));
+                            }
+                        }
+                    }
+                });
+            }
+            move || alive.set(false)
+        });
     }
 
     {
@@ -476,7 +607,7 @@ pub(crate) fn question_bank_shenlun(props: &QuestionBankShenlunProps) -> Html {
             move || alive.set(false)
         });
     }
-    let open = {
+    let open_target = {
         let busy = busy.clone();
         let paper = paper.clone();
         let selected = selected.clone();
@@ -484,38 +615,63 @@ pub(crate) fn question_bank_shenlun(props: &QuestionBankShenlunProps) -> Html {
         let error = error.clone();
         let availability = ai_delete_availability.clone();
         let immersive = props.on_immersive_change.clone();
-        Callback::from(move |id: String| {
-            if *busy {
-                return;
-            }
-            busy.set(true);
-            error.set(None);
-            let busy = busy.clone();
-            let paper = paper.clone();
-            let selected = selected.clone();
-            let mode = mode.clone();
-            let error = error.clone();
-            let availability = availability.clone();
-            let immersive = immersive.clone();
-            availability.set(HashMap::new());
-            spawn_local(async move {
-                match fetch_json::<PaperView>(
-                    &format!("/api/v1/question-bank/shenlun/papers/{id}"),
-                    "申论原卷",
-                )
-                .await
-                {
-                    Ok(value) => {
-                        selected.set(0);
-                        mode.set(ShenlunMode::Analysis);
-                        paper.set(Some(value));
-                        immersive.emit(true);
-                    }
-                    Err(message) => error.set(Some(message)),
+        let flashcard_open = flashcard_open.clone();
+        let flashcard_error = flashcard_error.clone();
+        let pending_card_id = pending_card_id.clone();
+        let initial_card_id = initial_card_id.clone();
+        Callback::from(
+            move |(id, question_id, card_id): (String, Option<String>, Option<String>)| {
+                if *busy {
+                    return;
                 }
-                busy.set(false);
-            });
-        })
+                busy.set(true);
+                error.set(None);
+                flashcard_error.set(None);
+                pending_card_id.set(card_id.clone());
+                initial_card_id.set(card_id.clone());
+                flashcard_open.set(card_id.is_some());
+                let busy = busy.clone();
+                let paper = paper.clone();
+                let selected = selected.clone();
+                let mode = mode.clone();
+                let error = error.clone();
+                let availability = availability.clone();
+                let immersive = immersive.clone();
+                let flashcard_open = flashcard_open.clone();
+                let pending_card_id = pending_card_id.clone();
+                availability.set(HashMap::new());
+                spawn_local(async move {
+                    match fetch_json::<PaperView>(
+                        &format!("/api/v1/question-bank/shenlun/papers/{id}"),
+                        "申论原卷",
+                    )
+                    .await
+                    {
+                        Ok(value) => {
+                            let index = question_id
+                                .as_deref()
+                                .and_then(|question_id| {
+                                    value
+                                        .questions
+                                        .iter()
+                                        .position(|question| question.id == question_id)
+                                })
+                                .unwrap_or(0);
+                            selected.set(index);
+                            mode.set(ShenlunMode::Analysis);
+                            paper.set(Some(value));
+                            immersive.emit(true);
+                        }
+                        Err(message) => {
+                            error.set(Some(message));
+                            flashcard_open.set(false);
+                            pending_card_id.set(None);
+                        }
+                    }
+                    busy.set(false);
+                });
+            },
+        )
     };
     let close = {
         let paper = paper.clone();
@@ -655,7 +811,13 @@ pub(crate) fn question_bank_shenlun(props: &QuestionBankShenlunProps) -> Html {
                 flashcard_manage_test_id="shenlun-manage-flashcard"
                 on_flashcard={Callback::from({
                     let flashcard_open=flashcard_open.clone();
-                    move |_|flashcard_open.set(true)
+                    let pending_card_id=pending_card_id.clone();
+                    let initial_card_id=initial_card_id.clone();
+                    move |_|{
+                        pending_card_id.set(None);
+                        initial_card_id.set(None);
+                        flashcard_open.set(true);
+                    }
                 })}/>
         };
         let can_delete = mode_value.ai_scope().is_some()
@@ -733,15 +895,32 @@ pub(crate) fn question_bank_shenlun(props: &QuestionBankShenlunProps) -> Html {
                             <FavoriteFlashcardWorkspace key={question_id.clone()}
                                 question_id={question_id.clone()} preview={preview.clone()}
                                 csrf={props.csrf.clone()}
+                                initial_card_id={(*initial_card_id).clone()}
                                 on_close={Callback::from({
                                     let flashcard_open=flashcard_open.clone();
-                                    move |_|flashcard_open.set(false)
+                                    let pending_card_id=pending_card_id.clone();
+                                    move |_| {
+                                        pending_card_id.set(None);
+                                        flashcard_open.set(false);
+                                    }
                                 })}
                                 on_changed={Callback::from({
                                     let flashcard_revision=flashcard_revision.clone();
-                                    move |_|flashcard_revision.set(flashcard_revision.wrapping_add(1))
+                                    let pending_card_id=pending_card_id.clone();
+                                    move |_| {
+                                        pending_card_id.set(None);
+                                        flashcard_revision.set(flashcard_revision.wrapping_add(1))
+                                    }
                                 })}/>
                         </div>
+                    } else if let Some(message)=(*flashcard_error).as_ref() {
+                        <div class="min-h-0 flex-1 overflow-y-auto p-4" data-testid="shenlun-flashcard-error">
+                            <p role="alert" class="text-sm text-error">{message.clone()}</p>
+                        </div>
+                    } else {
+                        <p class="min-h-0 flex-1 p-4 text-sm opacity-60" role="status" data-testid="shenlun-flashcard-loading">
+                            {"正在准备闪卡…"}
+                        </p>
                     }
                 } else if let Some(prompt_mode) = mode_value.prompt_mode() {
                     <QuestionAiReview key={format!("{}:{}",question_id,mode_value.key())}
@@ -835,11 +1014,11 @@ pub(crate) fn question_bank_shenlun(props: &QuestionBankShenlunProps) -> Html {
             .unwrap_or_else(|| "请选择一份申论原卷".into());
         let start_review = {
             let selected_paper = selected_paper.clone();
-            let open = open.clone();
+            let open_target = open_target.clone();
             Callback::from(move |_| {
                 let id = (*selected_paper).clone();
                 if !id.is_empty() {
-                    open.emit(id);
+                    open_target.emit((id, None, None));
                 }
             })
         };
@@ -853,6 +1032,81 @@ pub(crate) fn question_bank_shenlun(props: &QuestionBankShenlunProps) -> Html {
             let selected_paper = selected_paper.clone();
             Callback::from(move |id: String| selected_paper.set(id))
         };
+        let choose_collection = {
+            let collection_kind = collection_kind.clone();
+            Callback::from(move |kind: ShenlunCollectionKind| {
+                collection_kind.set(Some(kind));
+            })
+        };
+        let retry_favorites = {
+            let favorites_retry = favorites_retry.clone();
+            Callback::from(move |_| favorites_retry.set(favorites_retry.wrapping_add(1)))
+        };
+        let retry_cards = {
+            let cards_retry = cards_retry.clone();
+            Callback::from(move |_| cards_retry.set(cards_retry.wrapping_add(1)))
+        };
+        let open_favorite = {
+            let open_target = open_target.clone();
+            Callback::from(move |(paper_id, question_id): (String, String)| {
+                open_target.emit((paper_id, Some(question_id), None));
+            })
+        };
+        let open_card = {
+            let open_target = open_target.clone();
+            let collection_busy = collection_busy.clone();
+            let cards_error = cards_error.clone();
+            Callback::from(move |(card_id, question_id): (String, String)| {
+                if *collection_busy {
+                    return;
+                }
+                collection_busy.set(true);
+                cards_error.set(None);
+                let open_target = open_target.clone();
+                let collection_busy = collection_busy.clone();
+                let cards_error = cards_error.clone();
+                spawn_local(async move {
+                    let result = fetch_json::<PracticeQuestionDetail>(
+                        &format!("/api/v1/question-bank/practice/questions/{question_id}"),
+                        "申论卡片来源题",
+                    )
+                    .await;
+                    match result {
+                        Ok(detail) => open_target.emit((
+                            detail.item.paper_id,
+                            Some(question_id),
+                            Some(card_id),
+                        )),
+                        Err(message) => cards_error.set(Some(message)),
+                    }
+                    collection_busy.set(false);
+                });
+            })
+        };
+        let favorite_groups = {
+            let mut groups = BTreeMap::<String, Vec<PracticeBrowseItem>>::new();
+            for item in favorites.iter().flatten() {
+                let category = item
+                    .category
+                    .clone()
+                    .filter(|value| !value.is_empty())
+                    .unwrap_or_else(|| "未分类".into());
+                groups.entry(category).or_default().push(item.clone());
+            }
+            groups
+        };
+        let card_groups = {
+            let mut groups = BTreeMap::<String, Vec<FlashcardSummary>>::new();
+            for card in cards.iter().flatten() {
+                groups
+                    .entry(shenlun_card_category(&card.deck_path))
+                    .or_default()
+                    .push(card.clone());
+            }
+            groups
+        };
+        let favorite_count = favorites.as_ref().map(Vec::len);
+        let card_count = cards.as_ref().map(Vec::len);
         html! {
             <TrainingSetupLayout test_id="shenlun-catalog" wide={true}
                 action={Some(start_action)} summary="申论复盘" detail={action_detail}>
@@ -887,6 +1141,126 @@ pub(crate) fn question_bank_shenlun(props: &QuestionBankShenlunProps) -> Html {
                         } else {
                             <QuestionBankPaperPicker papers={available_papers}
                                 selected_id={(*selected_paper).clone()} on_select={select_paper}/>
+                        }
+                    </section>
+                    <section class="space-y-3" aria-label="申论收藏与卡片" data-testid="shenlun-collections">
+                        <div class="flex items-end justify-between gap-3">
+                            <div>
+                                <h3 class="font-semibold">{"我的收藏与卡片"}</h3>
+                                <p class="text-xs text-base-content/60">{"收藏按题目复盘；卡片默认打开对应 Flashcard 编辑区。"}</p>
+                            </div>
+                        </div>
+                        <div class="flex flex-wrap gap-2" role="group" aria-label="收藏与卡片视图">
+                            <button type="button" class="btn btn-sm btn-outline"
+                                data-testid="shenlun-collection-favorites"
+                                aria-pressed={(*collection_kind == Some(ShenlunCollectionKind::Favorites)).to_string()}
+                                onclick={Callback::from({let choose=choose_collection.clone();move |_|choose.emit(ShenlunCollectionKind::Favorites)})}>
+                                {format!("我的收藏{}", favorite_count.map(|count| format!(" {count}")).unwrap_or_default())}
+                            </button>
+                            <button type="button" class="btn btn-sm btn-outline"
+                                data-testid="shenlun-collection-cards"
+                                aria-pressed={(*collection_kind == Some(ShenlunCollectionKind::Cards)).to_string()}
+                                onclick={Callback::from({let choose=choose_collection.clone();move |_|choose.emit(ShenlunCollectionKind::Cards)})}>
+                                {format!("我的卡片{}", card_count.map(|count| format!(" {count}")).unwrap_or_default())}
+                            </button>
+                        </div>
+                        if *collection_kind == Some(ShenlunCollectionKind::Favorites) {
+                            if let Some(message)=(*favorites_error).as_ref() {
+                                <div class="space-y-2" role="alert" data-testid="shenlun-collection-favorites-error">
+                                    <p class="text-sm text-error">{message.clone()}</p>
+                                    <button type="button" class="btn btn-outline btn-sm" data-testid="shenlun-collection-favorites-retry" onclick={retry_favorites}>{"重试加载"}</button>
+                                </div>
+                            } else if favorites.is_none() {
+                                <p class="rounded-box bg-base-200 p-4 text-sm" role="status" data-testid="shenlun-collection-favorites-loading">{"正在加载申论收藏…"}</p>
+                            } else if favorite_groups.is_empty() {
+                                <p class="rounded-box bg-base-200 p-4 text-sm" data-testid="shenlun-collection-favorites-empty">{"还没有收藏的申论题目。"}</p>
+                            } else {
+                                <div class="space-y-4" data-testid="shenlun-collection-favorites-list">
+                                    {for favorite_groups.iter().map(|(category, items)| {
+                                        html! {
+                                            <div class="space-y-2">
+                                                <div class="flex items-center justify-between gap-2">
+                                                    <h4 class="text-sm font-semibold">{category.clone()}</h4>
+                                                    <span class="text-xs text-base-content/50">{format!("{} 题", items.len())}</span>
+                                                </div>
+                                                <div class="question-bank-results-list">
+                                                    {for items.iter().map(|item| {
+                                                        let on_open = {
+                                                            let open=open_favorite.clone();
+                                                            let paper_id=item.paper_id.clone();
+                                                            let question_id=item.question_id.clone();
+                                                            Callback::from(move |_|open.emit((paper_id.clone(),question_id.clone())))
+                                                        };
+                                                        html! {
+                                                            <button type="button" class="question-bank-result-row w-full text-left"
+                                                                data-testid="shenlun-collection-item" title={item.paper_title.clone()}
+                                                                onclick={on_open}>
+                                                                <div class="min-w-0">
+                                                                    <strong class="block truncate text-sm">{format!("{} {} · 第 {} 题",item.year,item.region,item.number)}</strong>
+                                                                    <p class="mt-0.5 truncate text-xs text-base-content/50">{item.paper_title.clone()}</p>
+                                                                </div>
+                                                            </button>
+                                                        }
+                                                    })}
+                                                </div>
+                                            </div>
+                                        }
+                                    })}
+                                </div>
+                            }
+                        } else if *collection_kind == Some(ShenlunCollectionKind::Cards) {
+                            if let Some(message)=(*cards_error).as_ref() {
+                                <div class="space-y-2" role="alert" data-testid="shenlun-collection-cards-error">
+                                    <p class="text-sm text-error">{message.clone()}</p>
+                                    <button type="button" class="btn btn-outline btn-sm" data-testid="shenlun-collection-cards-retry" onclick={retry_cards}>{"重试加载"}</button>
+                                </div>
+                            } else if cards.is_none() {
+                                <p class="rounded-box bg-base-200 p-4 text-sm" role="status" data-testid="shenlun-collection-cards-loading">{"正在加载申论卡片…"}</p>
+                            } else if card_groups.is_empty() {
+                                <p class="rounded-box bg-base-200 p-4 text-sm" data-testid="shenlun-collection-cards-empty">{"还没有申论卡片。"}</p>
+                            } else {
+                                <div class="space-y-4" data-testid="shenlun-collection-cards-list">
+                                    {for card_groups.iter().map(|(category, items)| {
+                                        html! {
+                                            <div class="space-y-2">
+                                                <div class="flex items-center justify-between gap-2">
+                                                    <h4 class="text-sm font-semibold">{category.clone()}</h4>
+                                                    <span class="text-xs text-base-content/50">{format!("{} 张", items.len())}</span>
+                                                </div>
+                                                <div class="question-bank-results-list">
+                                                    {for items.iter().map(|card| {
+                                                        let card_id=card.id.to_string();
+                                                        let question_id=card.source_question_id.clone();
+                                                        let disabled=question_id.is_none() || *collection_busy;
+                                                        let on_open={
+                                                            let open=open_card.clone();
+                                                            let card_id=card_id.clone();
+                                                            Callback::from(move |_|{
+                                                                if let Some(question_id)=question_id.clone() {
+                                                                    open.emit((card_id.clone(),question_id));
+                                                                }
+                                                            })
+                                                        };
+                                                        html! {
+                                                            <button type="button" class="question-bank-result-row w-full text-left"
+                                                                data-testid="shenlun-collection-card"
+                                                                disabled={disabled} onclick={on_open}>
+                                                                <div class="min-w-0">
+                                                                    <strong class="block truncate text-sm">{flashcard_list_title(&card.front_markdown)}</strong>
+                                                                    <p class="mt-0.5 truncate text-xs text-base-content/50">{card.deck_path.clone()}</p>
+                                                                </div>
+                                                                if card.source_question_id.is_none() {
+                                                                    <span class="text-xs text-base-content/50">{"手工卡片"}</span>
+                                                                }
+                                                            </button>
+                                                        }
+                                                    })}
+                                                </div>
+                                            </div>
+                                        }
+                                    })}
+                                </div>
+                            }
                         }
                     </section>
                 </div>

@@ -14,6 +14,13 @@ pub(crate) struct CollectionQuestionReviewProps {
     pub initial_index: usize,
     pub scope: PracticeMode,
     pub csrf: String,
+    /// Card collection entries open the same review with the editor showing
+    /// the selected card.
+    #[prop_or_default]
+    pub initial_card_id: Option<String>,
+    /// Collection name shown in the review header; defaults to the scope.
+    #[prop_or_default]
+    pub scope_label: Option<String>,
     pub on_back: Callback<()>,
     pub on_favorite_change: Callback<()>,
 }
@@ -38,7 +45,8 @@ pub(crate) fn collection_question_review(props: &CollectionQuestionReviewProps) 
     let preview = use_state(|| None::<FavoritePreview>);
     let preview_error = use_state(|| None::<String>);
     let preview_retry = use_state(|| 0u32);
-    let creating = use_state(|| false);
+    let creating = use_state(|| props.initial_card_id.is_some());
+    let index_effect_ready = use_mut_ref(|| false);
     let flashcard_changed = Callback::from({
         let preview_retry = preview_retry.clone();
         move |_| preview_retry.set((*preview_retry).wrapping_add(1))
@@ -132,8 +140,15 @@ pub(crate) fn collection_question_review(props: &CollectionQuestionReviewProps) 
         let material_scroll = material_scroll.clone();
         let question_scroll = question_scroll.clone();
         let creating = creating.clone();
+        let index_effect_ready = index_effect_ready.clone();
         use_effect_with(*index, move |_| {
-            creating.set(false);
+            // The first effect run only mounts the view; a card entry keeps
+            // its editor open until the reader switches question.
+            if *index_effect_ready.borrow() {
+                creating.set(false);
+            } else {
+                *index_effect_ready.borrow_mut() = true;
+            }
             for target in [&material_scroll, &question_scroll] {
                 if let Some(element) = target.cast::<HtmlElement>() {
                     element.set_scroll_top(0);
@@ -145,10 +160,17 @@ pub(crate) fn collection_question_review(props: &CollectionQuestionReviewProps) 
     let Some(item) = current_item else {
         return Html::default();
     };
-    let scope_label = if props.scope == PracticeMode::Favorite {
-        "收藏"
+    let scope_label = props.scope_label.clone().unwrap_or_else(|| {
+        if props.scope == PracticeMode::Favorite {
+            "收藏".into()
+        } else {
+            "错题".into()
+        }
+    });
+    let back_label = if props.scope_label.is_some() {
+        "返回复盘".to_string()
     } else {
-        "错题"
+        format!("返回{scope_label}")
     };
     let favorite_state = (*favorite.value).as_ref();
     let favorite_active = favorite_state.is_some_and(|state| state.favorite);
@@ -220,23 +242,7 @@ pub(crate) fn collection_question_review(props: &CollectionQuestionReviewProps) 
         let total = props.items.len();
         Callback::from(move |_| index.set((*index + 1).min(total.saturating_sub(1))))
     };
-    let main = if *creating {
-        if let Some(value) = &*preview {
-            html! {
-                <FavoriteFlashcardWorkspace question_id={item.question_id.clone()} preview={value.clone()}
-                    csrf={props.csrf.clone()} on_changed={flashcard_changed.clone()}
-                    on_close={Callback::from({
-                        let creating=creating.clone(); move |_|creating.set(false)
-                    })}/>
-            }
-        } else {
-            html! {
-                <div class="flex h-full items-center justify-center rounded-box bg-base-100" data-testid="collection-review-loading">
-                    <p class="opacity-60" role="status">{"正在准备闪卡…"}</p>
-                </div>
-            }
-        }
-    } else if let Some(current) = &*detail {
+    let main = if let Some(current) = &*detail {
         let shared = !current.materials.is_empty();
         let options = answer_options(&current.question.options_markdown);
         let material_pane = html! {
@@ -356,7 +362,32 @@ pub(crate) fn collection_question_review(props: &CollectionQuestionReviewProps) 
                     can_scroll_up={question_edges.can_scroll_up}
                     can_scroll_down={question_edges.can_scroll_down}
                     question_index={*index} target="题目" label="题目与解析滚动" />
-                if *ai_tab {
+                if *creating {
+                    if let Some(value) = &*preview {
+                        <div class="min-h-0 flex-1 overflow-y-auto p-3" data-testid="collection-review-flashcard-pane">
+                            <FavoriteFlashcardWorkspace question_id={item.question_id.clone()}
+                                preview={value.clone()} csrf={props.csrf.clone()}
+                                initial_card_id={props.initial_card_id.clone()}
+                                on_changed={flashcard_changed.clone()}
+                                on_close={Callback::from({
+                                    let creating=creating.clone(); move |_|creating.set(false)
+                                })}/>
+                        </div>
+                    } else if let Some(message) = &*preview_error {
+                        <div class="min-h-0 flex-1 overflow-y-auto p-4" data-testid="collection-review-flashcard-error">
+                            <p role="alert" class="text-sm text-error">{message.clone()}</p>
+                            <button type="button" class="btn btn-outline btn-sm mt-2"
+                                data-testid="collection-review-flashcard-retry"
+                                onclick={Callback::from({let preview_retry=preview_retry.clone();move |_|preview_retry.set(*preview_retry+1)})}>
+                                {"重试加载"}
+                            </button>
+                        </div>
+                    } else {
+                        <p class="min-h-0 flex-1 p-4 text-sm opacity-60" role="status" data-testid="collection-review-flashcard-loading">
+                            {"正在准备闪卡…"}
+                        </p>
+                    }
+                } else if *ai_tab {
                     <QuestionAiReview delete_signal={*ai_delete_signal} on_delete_availability={Callback::from({let value=ai_can_delete.clone();move |available|value.set(available)})} key={item.question_id.clone()} question_id={item.question_id.clone()} csrf={props.csrf.clone()} question_content={question_content.clone()} question_scroll={question_scroll.clone()} on_question_scroll={Callback::from({let refresh=refresh_question_edges.clone();move |_|refresh.emit(())})}/>
                 } else {
                     <div ref={question_scroll.clone()}
@@ -389,11 +420,11 @@ pub(crate) fn collection_question_review(props: &CollectionQuestionReviewProps) 
     };
     html! {
         <section class="question-bank-workspace training-workspace fixed inset-0 z-[80] flex h-dvh w-screen flex-col overflow-hidden bg-base-200 px-3 py-2"
-            data-testid="collection-review" aria-label={format!("{scope_label}题目复盘")}>
+            data-testid="collection-review" aria-label={format!("{scope_label}复盘")}>
             <header class="flex shrink-0 flex-wrap items-center justify-between gap-2 border-b border-base-content/10 pb-2">
                 <div class="flex min-w-0 items-center gap-3">
                     <button class="btn btn-ghost btn-sm" data-testid="collection-review-back" onclick={back}>
-                        {format!("← 返回{scope_label}")}
+                        {format!("← {back_label}")}
                     </button>
                     <div class="min-w-0">
                         <strong class="block truncate text-sm">{item.paper_title.clone()}</strong>

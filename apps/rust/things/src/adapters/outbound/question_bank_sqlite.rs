@@ -7,7 +7,8 @@ use crate::application::question_bank::{
 use crate::domain::question_bank::primary_module;
 use crate::domain::question_bank::{
     MaterialView, ModulePracticeFilters, PaperSummary, PracticeBrowseItem, PracticeCatalog,
-    PracticeCategory, PracticeMode, PracticeModule, PracticeSession,
+    PracticeCategory, PracticeMode, PracticeModule, PracticeSession, SUBJECT_SHENLUN,
+    SUBJECT_XINGCE,
 };
 use crate::domain::question_bank::{StudyPlan, StudyPlanItem};
 use async_trait::async_trait;
@@ -108,6 +109,91 @@ impl SqliteQuestionBankRepository {
         Ok(Self { pool })
     }
 }
+/// Subject is restricted to the two registered wire values; the resulting SQL
+/// fragment never carries caller-provided text.
+async fn browse_subject(
+    pool: &SqlitePool,
+    subject: &str,
+    mode: PracticeMode,
+    paper_id: Option<&str>,
+    module: Option<&str>,
+    category: Option<&str>,
+    filters: &ModulePracticeFilters,
+) -> Result<Vec<PracticeBrowseItem>, BankError> {
+    let subject = match subject {
+        SUBJECT_XINGCE | SUBJECT_SHENLUN => subject,
+        _ => return Err(BankError::Invalid),
+    };
+    let (source, condition) = match mode {
+        PracticeMode::Paper | PracticeMode::Module => ("questions q", "1=1"),
+        PracticeMode::Wrong => (
+            "question_progress progress JOIN questions q ON q.id=progress.question_id",
+            "progress.pending=1",
+        ),
+        PracticeMode::Favorite => (
+            "favorites saved JOIN questions q ON q.id=saved.question_id",
+            "saved.favorite=1",
+        ),
+        PracticeMode::PaperModule | PracticeMode::Drill => return Err(BankError::Invalid),
+    };
+    let kind_scope = match mode {
+        PracticeMode::Paper | PracticeMode::Module => "COALESCE(p.kind,'exam')='exam'",
+        _ => "COALESCE(p.kind,'exam') IN ('exam','drill')",
+    };
+    let gradable_scope = match mode {
+        PracticeMode::Paper | PracticeMode::Module => "q.gradable=1",
+        _ => "1=1",
+    };
+    let regions = serde_json::to_string(&filters.regions).map_err(|_| BankError::Storage)?;
+    let sql = format!(
+        "SELECT q.id,q.paper_id,json_extract(p.metadata,'$.summary.title'),\
+         CAST(json_extract(p.metadata,'$.summary.year') AS INTEGER),\
+         json_extract(p.metadata,'$.summary.region'),q.number,q.module,q.category \
+         FROM {source} JOIN papers p ON p.id=q.paper_id \
+         WHERE p.active=1 AND p.subject='{subject}' AND {kind_scope} AND json_extract(p.metadata,'$.summary.role')='primary' \
+         AND {gradable_scope} \
+         AND {condition} \
+         AND (? IS NULL OR q.paper_id=?) \
+         AND (? IS NULL OR q.module=?) \
+         AND (? IS NULL OR q.category=?) \
+         AND (? IS NULL OR CAST(json_extract(p.metadata,'$.summary.year') AS INTEGER)>=?) \
+         AND (? IS NULL OR CAST(json_extract(p.metadata,'$.summary.year') AS INTEGER)<=?) \
+         AND (?=0 OR (EXISTS (SELECT 1 FROM json_each(?) \
+              WHERE value=json_extract(p.metadata,'$.summary.region'))) != (?)) \
+         ORDER BY CAST(json_extract(p.metadata,'$.summary.year') AS INTEGER) DESC,p.id,q.number"
+    );
+    let rows = sqlx::query(&sql)
+        .bind(paper_id)
+        .bind(paper_id)
+        .bind(module)
+        .bind(module)
+        .bind(category)
+        .bind(category)
+        .bind(filters.year_min)
+        .bind(filters.year_min)
+        .bind(filters.year_max)
+        .bind(filters.year_max)
+        .bind(i64::from(!filters.regions.is_empty()))
+        .bind(regions)
+        .bind(i64::from(filters.exclude_regions))
+        .fetch_all(pool)
+        .await
+        .map_err(|_| BankError::Storage)?;
+    Ok(rows
+        .into_iter()
+        .map(|row| PracticeBrowseItem {
+            question_id: row.get(0),
+            paper_id: row.get(1),
+            paper_title: row.get(2),
+            year: row.get::<i64, _>(3) as i32,
+            region: row.get(4),
+            number: row.get::<i64, _>(5) as u32,
+            module: row.get(6),
+            category: row.get(7),
+        })
+        .collect())
+}
+
 #[async_trait]
 impl QuestionBankRepositoryPort for SqliteQuestionBankRepository {
     async fn data_revision(&self) -> Result<i64, BankError> {
@@ -1224,74 +1310,32 @@ impl QuestionBankRepositoryPort for SqliteQuestionBankRepository {
         category: Option<&str>,
         filters: &ModulePracticeFilters,
     ) -> Result<Vec<PracticeBrowseItem>, BankError> {
-        let (source, condition) = match mode {
-            PracticeMode::Paper | PracticeMode::Module => ("questions q", "1=1"),
-            PracticeMode::Wrong => (
-                "question_progress progress JOIN questions q ON q.id=progress.question_id",
-                "progress.pending=1",
-            ),
-            PracticeMode::Favorite => (
-                "favorites saved JOIN questions q ON q.id=saved.question_id",
-                "saved.favorite=1",
-            ),
-            PracticeMode::PaperModule | PracticeMode::Drill => return Err(BankError::Invalid),
-        };
-        let kind_scope = match mode {
-            PracticeMode::Paper | PracticeMode::Module => "COALESCE(p.kind,'exam')='exam'",
-            _ => "COALESCE(p.kind,'exam') IN ('exam','drill')",
-        };
-        let gradable_scope = match mode {
-            PracticeMode::Paper | PracticeMode::Module => "q.gradable=1",
-            _ => "1=1",
-        };
-        let regions = serde_json::to_string(&filters.regions).map_err(|_| BankError::Storage)?;
-        let sql = format!(
-            "SELECT q.id,q.paper_id,json_extract(p.metadata,'$.summary.title'),\
-             CAST(json_extract(p.metadata,'$.summary.year') AS INTEGER),\
-             json_extract(p.metadata,'$.summary.region'),q.number,q.module,q.category \
-             FROM {source} JOIN papers p ON p.id=q.paper_id \
-             WHERE p.active=1 AND p.subject='xingce' AND {kind_scope} AND json_extract(p.metadata,'$.summary.role')='primary' \
-             AND {gradable_scope} \
-             AND {condition} \
-             AND (? IS NULL OR q.paper_id=?) \
-             AND (? IS NULL OR q.module=?) \
-             AND (? IS NULL OR q.category=?) \
-             AND (? IS NULL OR CAST(json_extract(p.metadata,'$.summary.year') AS INTEGER)>=?) \
-             AND (? IS NULL OR CAST(json_extract(p.metadata,'$.summary.year') AS INTEGER)<=?) \
-             AND (?=0 OR (EXISTS (SELECT 1 FROM json_each(?) \
-                  WHERE value=json_extract(p.metadata,'$.summary.region'))) != (?)) \
-             ORDER BY CAST(json_extract(p.metadata,'$.summary.year') AS INTEGER) DESC,p.id,q.number"
-        );
-        let rows = sqlx::query(&sql)
-            .bind(paper_id)
-            .bind(paper_id)
-            .bind(module)
-            .bind(module)
-            .bind(category)
-            .bind(category)
-            .bind(filters.year_min)
-            .bind(filters.year_min)
-            .bind(filters.year_max)
-            .bind(filters.year_max)
-            .bind(i64::from(!filters.regions.is_empty()))
-            .bind(regions)
-            .bind(i64::from(filters.exclude_regions))
-            .fetch_all(&self.pool)
-            .await
-            .map_err(|_| BankError::Storage)?;
-        Ok(rows
-            .into_iter()
-            .map(|row| PracticeBrowseItem {
-                question_id: row.get(0),
-                paper_id: row.get(1),
-                paper_title: row.get(2),
-                year: row.get::<i64, _>(3) as i32,
-                region: row.get(4),
-                number: row.get::<i64, _>(5) as u32,
-                module: row.get(6),
-                category: row.get(7),
-            })
-            .collect())
+        browse_subject(
+            &self.pool,
+            SUBJECT_XINGCE,
+            mode,
+            paper_id,
+            module,
+            category,
+            filters,
+        )
+        .await
+    }
+
+    async fn shenlun_favorites(
+        &self,
+        filters: &ModulePracticeFilters,
+    ) -> Result<Vec<PracticeBrowseItem>, BankError> {
+        browse_subject(
+            &self.pool,
+            SUBJECT_SHENLUN,
+            PracticeMode::Favorite,
+            None,
+            None,
+            None,
+            filters,
+        )
+        .await
     }
 
     async fn practice_candidates(&self, mode: PracticeMode) -> Result<Vec<String>, BankError> {
@@ -1435,6 +1479,56 @@ mod migration_tests {
             repository.daily_answered_counts(0, i64::MAX).await.unwrap(),
             vec![("1970-01-01".to_owned(), 1)]
         );
+    }
+
+    #[tokio::test]
+    async fn shenlun_favorites_returns_only_favorited_subjective_questions() {
+        let pool = memory_pool().await;
+        initialize_schema(&pool).await.unwrap();
+        let repository = SqliteQuestionBankRepository { pool: pool.clone() };
+        for (id, subject, title) in [
+            ("paper-shenlun", "shenlun", "申论卷"),
+            ("paper-xingce", "xingce", "行测卷"),
+        ] {
+            sqlx::query(
+                "INSERT INTO papers(id,metadata,active,kind,subject) VALUES(?,?,1,'exam',?)",
+            )
+            .bind(id)
+            .bind(format!(
+                "{{\"summary\":{{\"title\":\"{title}\",\"year\":2025,\"region\":\"国考\",\"role\":\"primary\"}}}}"
+            ))
+            .bind(subject)
+            .execute(&pool)
+            .await
+            .unwrap();
+        }
+        for (id, paper) in [
+            ("question-shenlun", "paper-shenlun"),
+            ("question-xingce", "paper-xingce"),
+        ] {
+            sqlx::query(
+                "INSERT INTO questions(id,paper_id,number,source_hash,answer_type,category) VALUES(?,?,1,'hash','subjective','归纳概括')",
+            )
+            .bind(id)
+            .bind(paper)
+            .execute(&pool)
+            .await
+            .unwrap();
+            sqlx::query("INSERT INTO favorites(question_id,favorite) VALUES(?,1)")
+                .bind(id)
+                .execute(&pool)
+                .await
+                .unwrap();
+        }
+
+        let items = repository
+            .shenlun_favorites(&ModulePracticeFilters::default())
+            .await
+            .unwrap();
+        assert_eq!(items.len(), 1);
+        assert_eq!(items[0].question_id, "question-shenlun");
+        assert_eq!(items[0].paper_title, "申论卷");
+        assert_eq!(items[0].category.as_deref(), Some("归纳概括"));
     }
 
     #[tokio::test]

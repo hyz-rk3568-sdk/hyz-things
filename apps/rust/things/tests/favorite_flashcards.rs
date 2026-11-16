@@ -218,6 +218,7 @@ impl FlashcardRepositoryPort for Fake {
             .filter(|card| card.source_question_id.as_deref() == Some(question_id))
             .map(|card| FlashcardSummary {
                 id: card.id.clone(),
+                source_question_id: card.source_question_id.clone(),
                 source_file: card.source_file.clone(),
                 source_order: card.source_order,
                 deck_path: card.deck_path.clone(),
@@ -251,6 +252,7 @@ impl FlashcardRepositoryPort for Fake {
             .map(|card| ReviewTarget {
                 card: FlashcardSummary {
                     id: card.id.clone(),
+                    source_question_id: card.source_question_id.clone(),
                     source_file: card.source_file.clone(),
                     source_order: 0,
                     deck_path: card.deck_path.clone(),

@@ -264,7 +264,7 @@ impl FlashcardRepositoryPort for SqliteFlashcardRepository {
         question_id: &str,
     ) -> Result<Vec<FlashcardSummary>, FlashcardError> {
         let rows = sqlx::query(
-            "SELECT f.id, f.source_file, f.source_order, f.deck_path, f.front_markdown, f.back_markdown,\n                    f.active, s.due_at_ms, s.last_reviewed_at_ms, s.state, s.review_count, s.lapse_count\n             FROM flashcards f\n             LEFT JOIN flashcard_review_state s ON s.card_id = f.id\n             WHERE f.active = 1 AND f.source_question_id = ?\n             ORDER BY f.source_file, f.source_order, f.id",
+            "SELECT f.id, f.source_question_id, f.source_file, f.source_order, f.deck_path, f.front_markdown, f.back_markdown,\n                    f.active, s.due_at_ms, s.last_reviewed_at_ms, s.state, s.review_count, s.lapse_count\n             FROM flashcards f\n             LEFT JOIN flashcard_review_state s ON s.card_id = f.id\n             WHERE f.active = 1 AND f.source_question_id = ?\n             ORDER BY f.source_file, f.source_order, f.id",
         )
         .bind(question_id)
         .fetch_all(&self.pool)
@@ -390,7 +390,7 @@ impl SqliteFlashcardRepository {
         now_ms: u64,
     ) -> Result<Vec<FlashcardSummary>, FlashcardError> {
         let rows = sqlx::query(
-            "SELECT f.id, f.source_file, f.source_order, f.deck_path, f.front_markdown, f.back_markdown,\n                    f.active, s.due_at_ms, s.last_reviewed_at_ms, s.state, s.review_count, s.lapse_count\n             FROM flashcards f\n             LEFT JOIN flashcard_review_state s ON s.card_id = f.id\n             WHERE f.active = 1\n             ORDER BY f.source_file, f.source_order, f.id",
+            "SELECT f.id, f.source_question_id, f.source_file, f.source_order, f.deck_path, f.front_markdown, f.back_markdown,\n                    f.active, s.due_at_ms, s.last_reviewed_at_ms, s.state, s.review_count, s.lapse_count\n             FROM flashcards f\n             LEFT JOIN flashcard_review_state s ON s.card_id = f.id\n             WHERE f.active = 1\n             ORDER BY f.source_file, f.source_order, f.id",
         )
         .fetch_all(&self.pool)
         .await
@@ -411,7 +411,7 @@ impl SqliteFlashcardRepository {
         card_id: &FlashcardId,
     ) -> Result<Option<FlashcardSummary>, FlashcardError> {
         let row = sqlx::query(
-            "SELECT f.id, f.source_file, f.source_order, f.deck_path, f.front_markdown, f.back_markdown,\n                    f.active, s.due_at_ms, s.last_reviewed_at_ms, s.state, s.review_count, s.lapse_count\n             FROM flashcards f\n             LEFT JOIN flashcard_review_state s ON s.card_id = f.id\n             WHERE f.id = ?",
+            "SELECT f.id, f.source_question_id, f.source_file, f.source_order, f.deck_path, f.front_markdown, f.back_markdown,\n                    f.active, s.due_at_ms, s.last_reviewed_at_ms, s.state, s.review_count, s.lapse_count\n             FROM flashcards f\n             LEFT JOIN flashcard_review_state s ON s.card_id = f.id\n             WHERE f.id = ?",
         )
         .bind(card_id.as_str())
         .fetch_optional(&self.pool)
@@ -443,6 +443,9 @@ impl SqliteFlashcardRepository {
             .unwrap_or(ReviewStateKind::New);
         Ok(FlashcardSummary {
             id,
+            source_question_id: row
+                .try_get::<Option<String>, _>("source_question_id")
+                .map_err(storage_error)?,
             source_file: validate_db_source_file(
                 row.try_get::<String, _>("source_file")
                     .map_err(storage_error)?,

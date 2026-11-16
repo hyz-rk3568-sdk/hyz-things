@@ -3,8 +3,8 @@ import { loginAsAdmin, resetHarness, harnessOrigin } from './fixtures';
 import {
   drawScratchStroke, installFakeOcrEventSource, installShenlunRoutes, openShenlun, scratchpadHasInk,
   scratchpadHasStoredInk, shenlunCatalog as catalog, shenlunNextQuestionId as nextQuestionId,
-  shenlunPaperId as paperId, shenlunPaperView as paperView, shenlunQuestionId as questionId,
-  shenlunSourceAnswer, watchRetiredShenlunWrites,
+  shenlunCard, shenlunPaperId as paperId, shenlunPaperView as paperView,
+  shenlunQuestionId as questionId, shenlunSourceAnswer, watchRetiredShenlunWrites,
 } from './helpers/shenlun';
 
 // 申论只测本模块的 Question Bank 复盘式工作区；不运行全量 E2E。
@@ -203,6 +203,87 @@ test('申论题通过真实 Flashcard 预览接口显示并创建卡片', async 
   await editor.getByTestId('favorite-flashcard-confirm-delete').click();
   await expect(editor).toHaveCount(0);
   await expect(page.getByTestId('shenlun-create-flashcard')).toBeVisible();
+});
+
+test('申论收藏列表从复盘页打开题目而不进入卡片编辑区', async ({ page }) => {
+  await loginAsAdmin(page);
+  await page.route(`**/api/v1/question-bank/practice/questions/${questionId}/flashcard-preview`, route =>
+    route.fulfill({ json: {
+      eligible: true, reason: null, front: '请概括基层治理的要求。', correct_answer: [],
+      recommended_target: null, allowed_targets: [], requires_type_confirmation: false,
+      source_revision: 'shenlun-v1', existing: [],
+    } }));
+  await installShenlunRoutes(page, {
+    favorites: [{
+      question_id: questionId, paper_id: paperId, paper_title: '申论真题端到端样卷',
+      year: 2025, region: '国考', number: 1, module: null, category: '归纳概括',
+    }],
+  });
+  await page.goto('/#/study/training');
+  await page.getByTestId('training-mode-shenlun').click();
+  await expect(page.getByTestId('shenlun-collections')).toBeVisible();
+
+  await page.getByTestId('shenlun-collection-favorites').click();
+  const row = page.getByTestId('shenlun-collection-item');
+  await expect(row).toHaveCount(1);
+  await expect(row).toContainText('2025 国考 · 第 1 题');
+  await row.click();
+
+  await expect(page.getByTestId('shenlun-workspace')).toBeVisible();
+  await expect(page.getByTestId('shenlun-question')).toContainText('请概括基层治理的要求');
+  await expect(page.getByTestId('shenlun-material-scroll')).toBeVisible();
+  await expect(page.getByTestId('shenlun-flashcard-workspace')).toHaveCount(0);
+  await expect(page.getByTestId('favorite-flashcard-editor')).toHaveCount(0);
+});
+
+test('申论我的卡片从复盘页右栏打开对应 Flashcard 编辑区', async ({ page }) => {
+  await loginAsAdmin(page);
+  await page.route(`**/api/v1/question-bank/practice/questions/${questionId}/flashcard-preview`, route =>
+    route.fulfill({ json: {
+      eligible: true, reason: null, front: '请概括基层治理的要求。', correct_answer: [],
+      recommended_target: null, allowed_targets: [], requires_type_confirmation: false,
+      source_revision: 'shenlun-v1',
+      existing: [
+        { card_id: 'card-shenlun-1', deck_path: '真题练习/申论/归纳概括/错题',
+          source_file: '真题练习/申论/归纳概括/错题/cards.md',
+          front: '卡片一', back: '第一张卡片背面', mode: 'practice' },
+        { card_id: 'card-shenlun-2', deck_path: '真题练习/申论/归纳概括/错题',
+          source_file: '真题练习/申论/归纳概括/错题/cards.md',
+          front: '卡片二', back: '第二张卡片背面', mode: 'practice' },
+      ],
+    } }));
+  await page.route(`**/api/v1/question-bank/practice/questions/${questionId}`, route =>
+    route.fulfill({ json: {
+      item: {
+        question_id: questionId, paper_id: paperId, paper_title: '申论真题端到端样卷',
+        year: 2025, region: '国考', number: 1, module: null, category: '归纳概括',
+      },
+      question: {
+        id: questionId, number: 1, stem: '请概括基层治理的要求。', options_markdown: '',
+        materials: ['material-1'], module: null, category: null, topics: [],
+        answer_type: 'subjective', question_type: 'summary', grading_mode: 'ai', max_score: 20,
+      },
+      materials: [{ id: 'material-1', name: '给定资料 1', markdown: '推进基层治理，需要明确责任。' }],
+      correct_answer: [], explanation: '', correct_count: 0, wrong_count: 0,
+    } }));
+  await installShenlunRoutes(page, {
+    cards: [
+      shenlunCard({ id: 'card-shenlun-1', front_markdown: '卡片一', back_markdown: '第一张卡片背面' }),
+      shenlunCard({ id: 'card-shenlun-2', front_markdown: '卡片二', back_markdown: '第二张卡片背面' }),
+    ],
+  });
+  await page.goto('/#/study/training');
+  await page.getByTestId('training-mode-shenlun').click();
+  await page.getByTestId('shenlun-collection-cards').click();
+  const second = page.getByTestId('shenlun-collection-card').filter({ hasText: '卡片二' });
+  await expect(second).toBeVisible();
+  await second.click();
+
+  await expect(page.getByTestId('shenlun-workspace')).toBeVisible();
+  await expect(page.getByTestId('shenlun-question-heading')).toBeVisible();
+  await expect(page.getByTestId('shenlun-material-scroll')).toBeVisible();
+  await expect(page.getByTestId('shenlun-flashcard-workspace')).toBeVisible();
+  await expect(page.getByTestId('favorite-flashcard-editor-back')).toHaveValue('第二张卡片背面');
 });
 
 test('申论选题复用 Question Bank 选择器、操作与切换记忆', async ({ page }) => {

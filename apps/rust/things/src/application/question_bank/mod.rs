@@ -363,6 +363,13 @@ pub trait QuestionBankRepositoryPort: Send + Sync {
     ) -> Result<Vec<crate::domain::question_bank::PracticeBrowseItem>, BankError> {
         Err(BankError::Unavailable)
     }
+    /// Favorited subjective questions are reviewed outside timed practice.
+    async fn shenlun_favorites(
+        &self,
+        _filters: &crate::domain::question_bank::ModulePracticeFilters,
+    ) -> Result<Vec<crate::domain::question_bank::PracticeBrowseItem>, BankError> {
+        Err(BankError::Unavailable)
+    }
     async fn practice_candidates(&self, _mode: PracticeMode) -> Result<Vec<String>, BankError> {
         Err(BankError::Unavailable)
     }

@@ -26,7 +26,7 @@ test('answer sheet keeps its scroll position when reopened',async({page})=>{
   await expect.poll(()=>sheet.evaluate(node=>node.scrollTop)).toBe(60);
 });
 
-test('answer sheet keeps its position when the flashcard editor replaces the footer',async({page})=>{
+test('flashcard editor occupies the options pane and keeps the answer sheet',async({page})=>{
   await openFixtureReview(page);
   await page.evaluate(() => {
     const sheet = new CSSStyleSheet();
@@ -39,12 +39,15 @@ test('answer sheet keeps its position when the flashcard editor replaces the foo
   await sheet.evaluate(node=>{node.scrollTop=60});
   await expect.poll(()=>sheet.evaluate(node=>node.scrollTop)).toBe(60);
   await page.getByTestId('question-bank-practice-create-flashcard').click();
-  await expect(page.getByTestId('question-bank-practice-flashcard-dialog')).toBeVisible();
-  await expect(sheet).toHaveCount(0);
+  await expect(page.getByTestId('question-bank-practice-flashcard-pane')).toBeVisible();
+  await expect(page.getByTestId('question-bank-practice-heading')).toBeVisible();
+  await expect(page.getByTestId('question-bank-practice-material-pane')).toBeVisible();
+  await expect(page.getByTestId('question-bank-practice-question-scroll')).toHaveCount(0);
+  await expect(sheet).toBeVisible();
+  await expect.poll(()=>sheet.evaluate(node=>node.scrollTop)).toBe(60);
   await page.getByRole('button',{name:'返回复盘'}).click();
-  const reopened=page.getByTestId('training-answer-sheet');
-  await expect(reopened).toBeVisible();
-  await expect.poll(()=>reopened.evaluate(node=>node.scrollTop)).toBe(60);
+  await expect(page.getByTestId('question-bank-practice-question-scroll')).toBeVisible();
+  await expect(page.getByTestId('question-bank-practice-flashcard-pane')).toHaveCount(0);
 });
 
 test('paper practice hides numbering and scroll tools until they are needed',async({page,request})=>{
@@ -283,6 +286,44 @@ test('saved collections are classified by module and category before practicing'
     await page.getByTestId('question-bank-favorite').click();
     await expect(page.getByTestId('question-bank-favorite')).toHaveAttribute('aria-label','收藏题目');
   }
+});
+
+test('my cards lists Xingce flashcards and opens the source question editor',async({page})=>{
+  await loginAsAdmin(page);
+  const source='card-source-question';
+  const deck='真题练习/数量关系/方程比例与应用/错题';
+  const card=(id:string,front:string,back:string,source_question_id:string|null)=>({
+    id,source_question_id,source_file:`${deck}/cards.md`,source_order:0,deck_path:deck,
+    front_markdown:front,back_markdown:back,tags:[],active:true,due_at_ms:null,last_reviewed_at_ms:null,
+    state:'new',review_count:0,lapse_count:0,is_new:true,
+  });
+  const existing=[card('card-xingce-1','第一张卡片','第一张卡片背面',source),card('card-xingce-2','第二张卡片','第二张卡片背面',source)];
+  await page.route('**/api/v1/study/cards**',route=>route.fulfill({json:{cards:[
+    ...existing,
+    {...card('card-shenlun','申论卡片','申论卡片背面',null),deck_path:'真题练习/申论/归纳概括/错题',source_file:'真题练习/申论/归纳概括/错题/cards.md'},
+    {...card('card-shenlun-2','申论卡片二','申论卡片二背面',null),deck_path:'用户整理/申论/归纳概括',source_file:'用户整理/申论/归纳概括/cards.md'},
+  ]}}));
+  await page.route(`**/api/v1/question-bank/practice/questions/${source}`,route=>route.fulfill({json:{
+    item:{question_id:source,paper_id:'card-paper',paper_title:'行测卡片来源卷',year:2026,region:'国考',number:4,module:'数量关系',category:'方程比例与应用'},
+    question:{id:source,number:4,stem:'某工程由甲乙合作完成。',options_markdown:'- A. 10\n- B. 12',materials:['M1'],module:'数量关系',category:'方程比例与应用',topics:[],answer_type:'single',question_type:'choice',grading_mode:'exact',max_score:1},
+    materials:[{id:'M1',name:'材料',markdown:'甲乙合作完成一项工程。'}],correct_answer:['B'],explanation:'先算效率。',correct_count:0,wrong_count:0,
+  }}));
+  await page.route(`**/api/v1/question-bank/practice/questions/${source}/flashcard-preview`,route=>route.fulfill({json:{
+    eligible:true,reason:null,front:'某工程由甲乙合作完成。',correct_answer:['B'],recommended_target:null,
+    allowed_targets:[],requires_type_confirmation:false,source_revision:'card-source-v1',
+    existing:existing.map(value=>({card_id:value.id,deck_path:value.deck_path,source_file:value.source_file,front:value.front_markdown,back:value.back_markdown,mode:'practice'})),
+  }}));
+  await page.goto('/#/study/training');
+  await page.getByTestId('training-mode-question-bank-paper').click();
+  await page.getByTestId('question-bank-collection-cards').click();
+  const cards=page.getByTestId('question-bank-card-item');
+  await expect(cards).toHaveCount(2);
+  await expect(page.getByTestId('question-bank-cards')).not.toContainText('申论');
+  await cards.filter({hasText:'第二张卡片'}).click();
+  await expect(page.getByTestId('collection-review')).toBeVisible();
+  await expect(page.getByTestId('collection-review-material-pane')).toBeVisible();
+  await expect(page.getByTestId('collection-review-flashcard-pane')).toBeVisible();
+  await expect(page.getByTestId('favorite-flashcard-editor-back')).toHaveValue('第二张卡片背面');
 });
 
 test('question bank practice mutations enforce admin, origin and CSRF',async({request})=>{
@@ -716,11 +757,11 @@ test('any original-paper review can create a category flashcard without first fa
   await expect(create).toContainText('+');
   await expect(page.locator('.question-bank-pane-header').getByTestId('question-bank-practice-create-flashcard')).toBeVisible();
   await create.click();
-  const dialog=page.getByTestId('question-bank-practice-flashcard-dialog');
-  await expect(dialog).toBeVisible();
-  await expect(dialog).not.toHaveAttribute('role', 'dialog');
-  await expect(dialog).not.toHaveCSS('position', 'fixed');
-  const card=dialog.getByTestId('favorite-flashcard-card');
+  const pane=page.getByTestId('question-bank-practice-flashcard-pane');
+  await expect(pane).toBeVisible();
+  await expect(page.getByTestId('question-bank-practice-heading')).toBeVisible();
+  await expect(page.getByTestId('question-bank-practice-material-pane')).toBeVisible();
+  const card=pane.getByTestId('favorite-flashcard-card');
   const form=card.getByTestId('favorite-flashcard-form');
   const borderBefore=await form.evaluate(node=>getComputedStyle(node).borderColor);
   await card.getByPlaceholder('写下解题思路或复习提示').focus();
@@ -732,7 +773,7 @@ test('any original-paper review can create a category flashcard without first fa
   await expect(card.getByTestId('favorite-flashcard-path')).toHaveText('将追加或创建：flashcards/真题练习/资料分析/比重/错题/cards.md');
   await card.getByLabel('确认写入所选目录').check();
   await card.getByRole('button',{name:'创建并同步'}).click();
-  await expect(dialog).toHaveCount(0);
+  await expect(pane).toHaveCount(0);
   await expect(page.getByTestId('question-bank-practice-create-flashcard')).toHaveCount(0);
   await expect(page.getByTestId('question-bank-practice-manage-flashcard')).toBeVisible();
   await expect(page.getByTestId('question-bank-practice-manage-flashcard')).toHaveAttribute('aria-label','管理当前题目的 1 张 Flashcard');
