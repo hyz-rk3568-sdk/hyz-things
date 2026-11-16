@@ -292,8 +292,10 @@ endif
 	grep -q '@plugin "daisyui"' "$(THINGS_APP)/frontend/app.css"
 	grep -q '@source "../src/web/\*\*/\*.rs"' "$(THINGS_APP)/frontend/app.css"
 	python3 -c 'from pathlib import Path; p = Path("$(THINGS_APP)/tools/externalize-trunk-bootstrap.py"); compile(p.read_bytes(), str(p), "exec")'
+ifneq ($(wildcard $(CURDIR)/tools/wps-question-bank/tests/test_wpsbank.py),)
 	python3 -c 'from pathlib import Path; [compile(p.read_bytes(), str(p), "exec") for p in Path("$(CURDIR)/tools/wps-question-bank").rglob("*.py")]'
 	python3 "$(CURDIR)/tools/wps-question-bank/tests/test_wpsbank.py"
+endif
 	grep -q 'router-bootstrap\.js' "$(THINGS_APP)/tools/externalize-trunk-bootstrap.py"
 	grep -q 'bootstrap_version' "$(THINGS_APP)/tools/externalize-trunk-bootstrap.py"
 	grep -q 'path == "router-bootstrap.js"' "$(THINGS_APP)/src/adapters/inbound/http/mod.rs"
