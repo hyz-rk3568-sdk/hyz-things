@@ -32,17 +32,10 @@ struct DataVersion {
     version: String,
 }
 
-const DEFAULT_XINGCE_MODULES: [&str; 5] = [
-    "数量关系",
-    "资料分析",
-    "判断推理",
-    "言语理解与表达",
-    "常识判断",
-];
-
-/// Card decks live under `真题练习/<module>` or `用户整理/<module>`; only
-/// 行测 module decks belong to this collection.
-fn xingce_card_module(deck_path: &str, modules: &[String]) -> Option<String> {
+/// Card decks live under `真题练习/<module>[/<category>]` or
+/// `用户整理/<module>[/<category>]`; only 行测 module decks belong to this
+/// collection.
+fn card_deck_scope(deck_path: &str) -> Option<(String, Option<String>)> {
     let mut parts = deck_path.split('/');
     let (Some("真题练习" | "用户整理"), Some(module)) = (parts.next(), parts.next()) else {
         return None;
@@ -50,11 +43,11 @@ fn xingce_card_module(deck_path: &str, modules: &[String]) -> Option<String> {
     if module == "申论" {
         return None;
     }
-    if modules.iter().any(|name| name == module) {
-        Some(module.to_owned())
-    } else {
-        Some("其他".into())
-    }
+    let category = parts
+        .next()
+        .filter(|value| !value.is_empty())
+        .map(str::to_owned);
+    Some((module.to_owned(), category))
 }
 
 fn module_filter_labels(filters: &ModulePracticeFilters) -> [String; 3] {
@@ -333,6 +326,89 @@ fn use_practice_collection(
         })
     };
     PracticeCollectionCache {
+        items,
+        loading,
+        failure,
+        invalidate,
+    }
+}
+
+struct CardCollectionCache {
+    items: UseStateHandle<Option<Vec<FlashcardSummary>>>,
+    loading: UseStateHandle<bool>,
+    failure: UseStateHandle<Option<String>>,
+    invalidate: Callback<()>,
+}
+
+/// Cards use the same cached read model as 收藏/错题: load once when the page
+/// becomes ready, keep the result across tab switches, and only re-read when
+/// the data version changes or the reader retries.
+#[hook]
+fn use_card_collection(refresh: u64, ready: bool) -> CardCollectionCache {
+    let items = use_state(|| None::<Vec<FlashcardSummary>>);
+    let loading = use_state(|| true);
+    let failure = use_state(|| None::<String>);
+    let revision = use_state(|| 0u64);
+    let generation = use_mut_ref(|| 0u64);
+    {
+        let items = items.clone();
+        let loading = loading.clone();
+        let failure = failure.clone();
+        let generation = generation.clone();
+        use_effect_with((refresh, *revision, ready), move |(_, _, ready)| {
+            *generation.borrow_mut() += 1;
+            let request_generation = *generation.borrow();
+            let response_generation = generation.clone();
+            let ready = *ready;
+            loading.set(true);
+            failure.set(None);
+            spawn_local(async move {
+                if !ready {
+                    return;
+                }
+                let mut collected = Vec::new();
+                let mut offset = 0_u32;
+                let result = loop {
+                    let url = study_cards_url(None, offset);
+                    match fetch_json::<StudyCardsResponse>(&url, "我的卡片").await {
+                        Ok(response) => {
+                            let page_len = response.cards.len();
+                            collected.extend(response.cards.into_iter().filter(|card| {
+                                card.source_question_id.is_some()
+                                    && card_deck_scope(&card.deck_path).is_some()
+                            }));
+                            offset = offset.saturating_add(200);
+                            if page_len < 200 || offset >= 2_000 {
+                                break Ok(());
+                            }
+                        }
+                        Err(message) => break Err(message),
+                    }
+                };
+                if *response_generation.borrow() != request_generation {
+                    return;
+                }
+                match result {
+                    Ok(()) => items.set(Some(collected)),
+                    Err(message) => failure.set(Some(message)),
+                }
+                loading.set(false);
+            });
+            move || *generation.borrow_mut() += 1
+        });
+    }
+    let invalidate = {
+        let loading = loading.clone();
+        let failure = failure.clone();
+        let revision = revision.clone();
+        Callback::from(move |()| {
+            *generation.borrow_mut() += 1;
+            loading.set(true);
+            failure.set(None);
+            revision.set(revision.wrapping_add(1));
+        })
+    };
+    CardCollectionCache {
         items,
         loading,
         failure,
@@ -654,6 +730,66 @@ pub(crate) fn question_ai_header_actions(props: &QuestionAiHeaderActionsProps) -
     }
 }
 
+/// One row in the shared 收藏/错题/卡片 browser. Cards and saved questions
+/// render through the same layout so the three collections cannot drift.
+#[derive(Clone, PartialEq)]
+struct CollectionRow {
+    key: String,
+    question_id: String,
+    module: Option<String>,
+    category: Option<String>,
+    title: String,
+    subtitle: String,
+    badge: String,
+}
+
+fn question_collection_rows(items: &[PracticeBrowseItem]) -> Vec<CollectionRow> {
+    items
+        .iter()
+        .map(|item| CollectionRow {
+            key: item.question_id.clone(),
+            question_id: item.question_id.clone(),
+            module: item.module.clone(),
+            category: item.category.clone(),
+            title: format!("{} {} · 第 {} 题", item.year, item.region, item.number),
+            subtitle: format!(
+                "{} / {}",
+                item.module.as_deref().unwrap_or("未分类"),
+                item.category.as_deref().unwrap_or("未分类")
+            ),
+            badge: item.year.to_string(),
+        })
+        .collect()
+}
+
+/// Manual cards have no source question, so there is no review to open; leave
+/// them out of the 行测 card collection.
+fn card_collection_rows(cards: &[FlashcardSummary]) -> Vec<CollectionRow> {
+    cards
+        .iter()
+        .filter_map(|card| {
+            let (module, category) = card_deck_scope(&card.deck_path)?;
+            let question_id = card.source_question_id.clone()?;
+            Some(CollectionRow {
+                key: card.id.to_string(),
+                question_id,
+                subtitle: match category.as_ref() {
+                    Some(category) => format!("{module} / {category}"),
+                    None => module.clone(),
+                },
+                title: flashcard_list_title(&card.front_markdown),
+                badge: if card.deck_path.starts_with("真题练习/") {
+                    "真题".into()
+                } else {
+                    "整理".into()
+                },
+                module: Some(module),
+                category,
+            })
+        })
+        .collect()
+}
+
 #[derive(Clone, PartialEq)]
 struct CollectionModule {
     name: String,
@@ -662,7 +798,7 @@ struct CollectionModule {
 }
 
 fn collection_modules(
-    items: &[PracticeBrowseItem],
+    items: &[CollectionRow],
     catalog: Option<&PracticeCatalog>,
 ) -> Vec<CollectionModule> {
     let mut grouped = std::collections::BTreeMap::<String, CollectionModule>::new();
@@ -800,9 +936,7 @@ pub(crate) fn question_bank_training(props: &QuestionBankTrainingProps) -> Html 
     let collection = use_state(|| None::<PracticeMode>);
     let collection_review = use_state(|| None::<CollectionReviewTarget>);
     let cards_open = use_state(|| false);
-    let cards = use_state(|| None::<Vec<FlashcardSummary>>);
-    let cards_error = use_state(|| None::<String>);
-    let cards_retry = use_state(|| 0u32);
+    let card_open_error = use_state(|| None::<String>);
     let cards_busy = use_state(|| false);
 
     let mode = use_state(|| props.entry_mode.clone());
@@ -931,6 +1065,11 @@ pub(crate) fn question_bank_training(props: &QuestionBankTrainingProps) -> Html 
     let wrong_collection = use_practice_collection(PracticeMode::Wrong, *refresh, *version_ready);
     let favorite_collection =
         use_practice_collection(PracticeMode::Favorite, *refresh, *version_ready);
+    let card_collection = use_card_collection(*refresh, *version_ready);
+    let card_list = card_collection.items.as_ref();
+    let card_total = card_list
+        .map(|cards| cards.len().to_string())
+        .unwrap_or_else(|| "…".into());
     let wrong_total = wrong_collection
         .items
         .as_ref()
@@ -949,9 +1088,37 @@ pub(crate) fn question_bank_training(props: &QuestionBankTrainingProps) -> Html 
     let collection_items = selected_collection.and_then(|cache| cache.items.as_ref());
     let collection_loaded = collection_items.is_some();
     let collection_loading = selected_collection.is_some_and(|cache| *cache.loading);
-    let collection_failed = selected_collection.is_some_and(|cache| cache.failure.is_some());
     let collection_retry = selected_collection.map(|cache| cache.invalidate.clone());
     let browse = collection_items.map(Vec::as_slice).unwrap_or(&[]);
+    let question_rows = question_collection_rows(browse);
+    let card_rows = card_list
+        .map(|cards| card_collection_rows(cards))
+        .unwrap_or_default();
+    let rows: &[CollectionRow] = if *cards_open {
+        &card_rows
+    } else {
+        &question_rows
+    };
+    let rows_loaded = if *cards_open {
+        card_list.is_some()
+    } else {
+        collection_loaded
+    };
+    let rows_loading = if *cards_open {
+        *card_collection.loading
+    } else {
+        collection_loading
+    };
+    let rows_failure = if *cards_open {
+        card_collection.failure.as_ref()
+    } else {
+        selected_collection.and_then(|cache| cache.failure.as_ref())
+    };
+    let rows_retry = if *cards_open {
+        Some(card_collection.invalidate.clone())
+    } else {
+        collection_retry.clone()
+    };
     let refresh_edges = {
         let material_scroll = material_scroll.clone();
         let question_scroll = question_scroll.clone();
@@ -1048,68 +1215,6 @@ pub(crate) fn question_bank_training(props: &QuestionBankTrainingProps) -> Html 
             });
             move || current.set(false)
         });
-    }
-    let xingce_modules = {
-        let mut modules = (*catalog)
-            .as_ref()
-            .map(|catalog| {
-                catalog
-                    .modules
-                    .iter()
-                    .map(|module| module.name.clone())
-                    .collect::<Vec<_>>()
-            })
-            .unwrap_or_default();
-        for name in DEFAULT_XINGCE_MODULES {
-            if !modules.iter().any(|existing| existing == name) {
-                modules.push(name.to_owned());
-            }
-        }
-        modules
-    };
-    {
-        let cards = cards.clone();
-        let cards_error = cards_error.clone();
-        let modules = xingce_modules.clone();
-        use_effect_with(
-            (*cards_open, *cards_retry, modules.clone()),
-            move |(open, _, modules)| {
-                let alive = Rc::new(Cell::new(true));
-                let guard = alive.clone();
-                if *open {
-                    cards.set(None);
-                    cards_error.set(None);
-                    let modules = modules.clone();
-                    spawn_local(async move {
-                        let mut collected = Vec::new();
-                        let mut offset = 0_u32;
-                        let result = loop {
-                            let url = study_cards_url(None, offset);
-                            match fetch_json::<StudyCardsResponse>(&url, "我的卡片").await {
-                                Ok(response) => {
-                                    let page_len = response.cards.len();
-                                    collected.extend(response.cards.into_iter().filter(|card| {
-                                        xingce_card_module(&card.deck_path, &modules).is_some()
-                                    }));
-                                    offset = offset.saturating_add(200);
-                                    if page_len < 200 || offset >= 2_000 {
-                                        break Ok(());
-                                    }
-                                }
-                                Err(message) => break Err(message),
-                            }
-                        };
-                        if guard.get() {
-                            match result {
-                                Ok(()) => cards.set(Some(collected)),
-                                Err(message) => cards_error.set(Some(message)),
-                            }
-                        }
-                    });
-                }
-                move || alive.set(false)
-            },
-        );
     }
     {
         let current = workspace.as_ref().as_ref().map(|w| w.session.clone());
@@ -2342,7 +2447,7 @@ pub(crate) fn question_bank_training(props: &QuestionBankTrainingProps) -> Html 
             </button>
         }
     };
-    let collection_groups = collection_modules(browse, catalog.as_ref());
+    let collection_groups = collection_modules(rows, catalog.as_ref());
     let collection_filtered = browse
         .iter()
         .filter(|item| {
@@ -2351,37 +2456,34 @@ pub(crate) fn question_bank_training(props: &QuestionBankTrainingProps) -> Html 
                     || item.category.as_deref() == Some(selected_category.as_str()))
         })
         .collect::<Vec<_>>();
+    let rows_filtered = rows
+        .iter()
+        .filter(|row| {
+            (selected_module.is_empty() || row.module.as_deref() == Some(selected_module.as_str()))
+                && (selected_category.is_empty()
+                    || row.category.as_deref() == Some(selected_category.as_str()))
+        })
+        .collect::<Vec<_>>();
     let review_scope = (*collection).clone().unwrap_or(PracticeMode::Wrong);
     let review_items = collection_filtered
         .iter()
         .take(100)
         .map(|item| (*item).clone())
         .collect::<Vec<_>>();
-    let card_groups = {
-        let mut groups = std::collections::BTreeMap::<String, Vec<&FlashcardSummary>>::new();
-        if let Some(list) = cards.as_ref().as_ref() {
-            for card in (*list).iter() {
-                if let Some(module) = xingce_card_module(&card.deck_path, &xingce_modules) {
-                    groups.entry(module).or_default().push(card);
-                }
-            }
-        }
-        groups
-    };
-    let card_count = cards.as_ref().map(Vec::len);
+    let card_count = card_list.map(|cards| cards.len());
     let open_card = {
         let collection_review = collection_review.clone();
         let cards_busy = cards_busy.clone();
-        let cards_error = cards_error.clone();
+        let card_open_error = card_open_error.clone();
         Callback::from(move |(card_id, question_id): (String, String)| {
             if *cards_busy {
                 return;
             }
             cards_busy.set(true);
-            cards_error.set(None);
+            card_open_error.set(None);
             let collection_review = collection_review.clone();
             let cards_busy = cards_busy.clone();
-            let cards_error = cards_error.clone();
+            let card_open_error = card_open_error.clone();
             spawn_local(async move {
                 let result = fetch_json::<PracticeQuestionDetail>(
                     &format!("{ROOT}/practice/questions/{question_id}"),
@@ -2396,7 +2498,7 @@ pub(crate) fn question_bank_training(props: &QuestionBankTrainingProps) -> Html 
                         initial_card_id: Some(card_id),
                         scope_label: Some("卡片".into()),
                     })),
-                    Err(message) => cards_error.set(Some(message)),
+                    Err(message) => card_open_error.set(Some(message)),
                 }
                 cards_busy.set(false);
             });
@@ -2616,9 +2718,7 @@ pub(crate) fn question_bank_training(props: &QuestionBankTrainingProps) -> Html 
                         }
                     })}>
                     {"我的卡片"}
-                    if let Some(count)=card_count {
-                        <span class="question-bank-count" data-testid="question-bank-cards-count">{count}</span>
-                    }
+                    <span class="question-bank-count" data-testid="question-bank-cards-count">{card_total}</span>
                 </button>
             </div>
             }
@@ -2798,18 +2898,30 @@ pub(crate) fn question_bank_training(props: &QuestionBankTrainingProps) -> Html 
                     }
                 </section>
             }
-            if collection.is_some() {
-                <section class="space-y-3" data-testid="question-bank-collection-browser">
-                    if collection_loading {
-                        <p class="text-sm text-base-content/60" role="status" data-testid="question-bank-collection-loading">
-                            {if collection_loaded {"正在刷新题目，保留上次结果…"} else {"正在加载题目…"}}
+            if collection.is_some() || *cards_open {
+                <section class="space-y-3"
+                    data-testid={if *cards_open {"question-bank-cards"} else {"question-bank-collection-browser"}}>
+                    if rows_loading {
+                        <p class="text-sm text-base-content/60" role="status"
+                            data-testid={if *cards_open {"question-bank-cards-loading"} else {"question-bank-collection-loading"}}>
+                            {if rows_loaded {
+                                if *cards_open {"正在刷新卡片，保留上次结果…"} else {"正在刷新题目，保留上次结果…"}
+                            } else if *cards_open {"正在加载卡片…"} else {"正在加载题目…"}}
                         </p>
                     }
-                    if collection_failed {
-                        if let Some(retry) = collection_retry.clone() {
-                            <button type="button" class="btn btn-outline btn-sm" data-testid="question-bank-collection-retry"
-                                onclick={Callback::from(move |_|retry.emit(()))}>{"重试加载"}</button>
-                        }
+                    if let Some(message) = rows_failure {
+                        <div class="space-y-2" role="alert"
+                            data-testid={if *cards_open {"question-bank-cards-error"} else {"question-bank-collection-error"}}>
+                            <p class="text-sm text-error">{message.clone()}</p>
+                            if let Some(retry) = rows_retry.clone() {
+                                <button type="button" class="btn btn-outline btn-sm"
+                                    data-testid={if *cards_open {"question-bank-cards-retry"} else {"question-bank-collection-retry"}}
+                                    onclick={Callback::from(move |_|retry.emit(()))}>{"重试加载"}</button>
+                            }
+                        </div>
+                    }
+                    if let Some(message) = card_open_error.as_ref().filter(|_| *cards_open) {
+                        <p class="text-sm text-error" role="alert" data-testid="question-bank-cards-open-error">{message.clone()}</p>
                     }
                     <div class="question-bank-collections-layout">
                         <div class="space-y-3">
@@ -2818,15 +2930,16 @@ pub(crate) fn question_bank_training(props: &QuestionBankTrainingProps) -> Html 
                             <button type="button" class="btn btn-ghost btn-xs" data-testid="question-bank-collection-module"
                                 aria-pressed={selected_module.is_empty().to_string()}
                                 onclick={Callback::from({let selected_module=selected_module.clone();let selected_category=selected_category.clone();move |_|{selected_module.set(String::new());selected_category.set(String::new());}})}>
-                                {format!("全部题目 {}",if collection_loaded {browse.len().to_string()} else {"…".into()})}
+                                {format!("{} {}",if *cards_open {"全部卡片"} else {"全部题目"},if rows_loaded {rows.len().to_string()} else {"…".into()})}
                             </button>
                             </div>
                             <div class="question-bank-collection-grid">
                             {for collection_groups.iter().map(|module| {
                                 let selected=*selected_module==module.name;
+                                let unit=if *cards_open {"张"} else {"题"};
                                 html! {
-                                    <QuestionBankModuleCard name={module.name.clone()} summary={format!("{} 题",module.count)}
-                                        value={module.count} max={browse.len()} selected={selected}
+                                    <QuestionBankModuleCard name={module.name.clone()} summary={format!("{} {unit}",module.count)}
+                                        value={module.count} max={rows.len()} selected={selected}
                                         test_id="question-bank-collection-module"
                                         on_select={Callback::from({
                                             let selected_module=selected_module.clone();let selected_category=selected_category.clone();
@@ -2858,43 +2971,49 @@ pub(crate) fn question_bank_training(props: &QuestionBankTrainingProps) -> Html 
                             <div class="flex min-h-6 items-center justify-between gap-2">
                                 <h3 class="font-semibold">{"筛选结果"}</h3>
                                 <span class="text-xs text-base-content/50" data-testid="question-bank-browse-count">
-                                    {if collection_loaded {
-                                        format!("{}{}{}题",selection_scope,if selection_scope.is_empty() {""} else {" · "},collection_filtered.len())
-                                    } else {"题目数量待加载".into()}}
+                                    {if rows_loaded {
+                                        format!("{}{}{}{}",selection_scope,if selection_scope.is_empty() {""} else {" · "},rows_filtered.len(),if *cards_open {"张"} else {"题"})
+                                    } else {"数量待加载".into()}}
                                 </span>
                             </div>
                             <div class="question-bank-results">
-                            if !collection_loaded {
-                                if !collection_loading {
-                                    <p class="p-4 text-sm text-base-content/60">{"题目尚未加载，请重试。"}</p>
+                            if !rows_loaded {
+                                if !rows_loading {
+                                    <p class="p-4 text-sm text-base-content/60">{"尚未加载，请重试。"}</p>
                                 }
-                            } else if collection_filtered.is_empty() {
-                                <p class="p-4 text-sm text-base-content/60">{"这个分类还没有题目。"}</p>
+                            } else if rows_filtered.is_empty() {
+                                <p class="p-4 text-sm text-base-content/60">{if *cards_open {"还没有可直接打开的行测卡片。"} else {"这个分类还没有题目。"}}</p>
                             } else {
                                 <div class="question-bank-results-list" data-testid="question-bank-browse-list">
-                                    {for collection_filtered.iter().take(100).enumerate().map(|(position,item)| {
+                                    {for rows_filtered.iter().take(100).enumerate().map(|(position,row)| {
+                                        let disabled=*cards_open && *cards_busy;
                                         let content = html! {
                                             <>
                                                 <div class="min-w-0">
-                                                    <strong class="block truncate text-sm">{format!("{} {} · 第 {} 题",item.year,item.region,item.number)}</strong>
-                                                    <p class="mt-0.5 truncate text-xs text-base-content/50">{format!("{} / {}",item.module.as_deref().unwrap_or("未分类"),item.category.as_deref().unwrap_or("未分类"))}</p>
+                                                    <strong class="block truncate text-sm">{row.title.clone()}</strong>
+                                                    <p class="mt-0.5 truncate text-xs text-base-content/50">{row.subtitle.clone()}</p>
                                                 </div>
-                                                <span class="question-bank-result-year">{item.year}</span>
+                                                <span class="question-bank-result-year">{row.badge.clone()}</span>
                                             </>
                                         };
-                                        let on_open = {
+                                        let on_open = if *cards_open {
+                                            let open=open_card.clone();
+                                            let card_id=row.key.clone();
+                                            let question_id=row.question_id.clone();
+                                            Callback::from(move |_| open.emit((card_id.clone(),question_id.clone())))
+                                        } else {
                                             let collection_review=collection_review.clone();
                                             let items=review_items.clone();
                                             let scope=review_scope.clone();
-                                            move |_| collection_review.set(Some(CollectionReviewTarget{
+                                            Callback::from(move |_| collection_review.set(Some(CollectionReviewTarget{
                                                 scope:scope.clone(),items:items.clone(),index:position,
                                                 initial_card_id:None,scope_label:None
-                                            }))
+                                            })))
                                         };
                                         html! {
                                             <button type="button" class="question-bank-result-row w-full text-left"
-                                                data-testid="question-bank-collection-item" title={item.paper_title.clone()}
-                                                onclick={Callback::from(on_open)}>{content}</button>
+                                                data-testid={if *cards_open {"question-bank-card-item"} else {"question-bank-collection-item"}}
+                                                disabled={disabled} onclick={on_open}>{content}</button>
                                         }
                                     })}
                                 </div>
@@ -2902,77 +3021,6 @@ pub(crate) fn question_bank_training(props: &QuestionBankTrainingProps) -> Html 
                             </div>
                         </div>
                     </div>
-                </section>
-            }
-            if *cards_open {
-                <section class="space-y-3" data-testid="question-bank-cards">
-                    <div class="flex items-end justify-between gap-3">
-                        <div>
-                            <h3 class="font-semibold">{"我的卡片"}</h3>
-                            <p class="text-xs text-base-content/60">{"按模块查看已同步卡片；点开卡片进入来源题复盘并默认打开编辑区。"}</p>
-                        </div>
-                        <span class="text-xs text-base-content/50" data-testid="question-bank-cards-total">
-                            {cards.as_ref().as_ref().map(|list| format!("{} 张", list.len())).unwrap_or_else(|| "加载中…".into())}
-                        </span>
-                    </div>
-                    if let Some(message)=(*cards_error).as_ref() {
-                        <div class="space-y-2" role="alert" data-testid="question-bank-cards-error">
-                            <p class="text-sm text-error">{message.clone()}</p>
-                            <button type="button" class="btn btn-outline btn-sm" data-testid="question-bank-cards-retry"
-                                onclick={Callback::from({let cards_retry=cards_retry.clone();move |_|cards_retry.set(*cards_retry+1)})}>
-                                {"重试加载"}
-                            </button>
-                        </div>
-                    } else if cards.is_none() {
-                        <p class="rounded-box bg-base-200 p-4 text-sm" role="status" data-testid="question-bank-cards-loading">
-                            {"正在加载卡片…"}
-                        </p>
-                    } else if card_groups.is_empty() {
-                        <p class="rounded-box bg-base-200 p-4 text-sm" data-testid="question-bank-cards-empty">
-                            {"还没有已同步的行测卡片。"}
-                        </p>
-                    } else {
-                        <div class="space-y-4">
-                            {for card_groups.iter().map(|(module,cards)| {
-                                html! {
-                                    <section class="space-y-2">
-                                        <div class="flex items-center justify-between gap-2">
-                                            <h4 class="text-sm font-semibold">{(*module).clone()}</h4>
-                                            <span class="text-xs text-base-content/50">{format!("{} 张",(*cards).len())}</span>
-                                        </div>
-                                        <div class="question-bank-results-list">
-                                            {for (*cards).iter().map(|card| {
-                                                let card_id=card.id.to_string();
-                                                let question_id=card.source_question_id.clone();
-                                                let disabled=question_id.is_none() || *cards_busy;
-                                                let on_open={
-                                                    let open=open_card.clone();
-                                                    let card_id=card_id.clone();
-                                                    Callback::from(move |_|{
-                                                        if let Some(question_id)=question_id.clone() {
-                                                            open.emit((card_id.clone(),question_id));
-                                                        }
-                                                    })
-                                                };
-                                                html! {
-                                                    <button type="button" class="question-bank-result-row w-full text-left"
-                                                        data-testid="question-bank-card-item" disabled={disabled} onclick={on_open}>
-                                                        <div class="min-w-0">
-                                                            <strong class="block truncate text-sm">{flashcard_list_title(&card.front_markdown)}</strong>
-                                                            <p class="mt-0.5 truncate text-xs text-base-content/50">{card.deck_path.clone()}</p>
-                                                        </div>
-                                                        if card.source_question_id.is_none() {
-                                                            <span class="text-xs text-base-content/50">{"手工卡片"}</span>
-                                                        }
-                                                    </button>
-                                                }
-                                            })}
-                                        </div>
-                                    </section>
-                                }
-                            })}
-                        </div>
-                    }
                 </section>
             }
             if let Some(target) = &*collection_review {
@@ -3149,5 +3197,93 @@ pub(crate) fn question_bank_training(props: &QuestionBankTrainingProps) -> Html 
             }
             </div>
         </TrainingSetupLayout>
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use hyz_things::domain::flashcards::{FlashcardId, ReviewStateKind};
+
+    fn card(id: &str, deck: &str, source: Option<&str>, front: &str) -> FlashcardSummary {
+        FlashcardSummary {
+            id: FlashcardId::from_trusted(id),
+            source_question_id: source.map(str::to_owned),
+            source_file: "cards.md".into(),
+            source_order: 0,
+            deck_path: deck.into(),
+            front_markdown: front.into(),
+            back_markdown: String::new(),
+            tags: Vec::new(),
+            active: true,
+            due_at_ms: None,
+            last_reviewed_at_ms: None,
+            state: ReviewStateKind::New,
+            review_count: 0,
+            lapse_count: 0,
+            is_new: true,
+        }
+    }
+
+    #[test]
+    fn card_deck_scope_reads_module_and_category() {
+        assert_eq!(
+            card_deck_scope("真题练习/判断推理/类比推理/错题"),
+            Some(("判断推理".into(), Some("类比推理".into())))
+        );
+        assert_eq!(
+            card_deck_scope("用户整理/数量关系"),
+            Some(("数量关系".into(), None))
+        );
+        assert_eq!(card_deck_scope("真题练习/申论/归纳概括"), None);
+        assert_eq!(card_deck_scope("其他/判断推理"), None);
+    }
+
+    #[test]
+    fn card_collection_rows_hide_manual_cards() {
+        let cards = vec![
+            card(
+                "card-1",
+                "真题练习/判断推理/图形推理/错题",
+                Some("q-1"),
+                "\n题目：对称轴方向\n",
+            ),
+            card("card-2", "用户整理/判断推理/论证推理", None, "手工卡片"),
+            card(
+                "card-3",
+                "用户整理/判断推理/论证推理",
+                Some("q-3"),
+                "整理卡片",
+            ),
+        ];
+        let rows = card_collection_rows(&cards);
+        assert_eq!(rows.len(), 2);
+        assert_eq!(rows[0].key, "card-1");
+        assert_eq!(rows[0].question_id, "q-1");
+        assert_eq!(rows[0].title, "题目：对称轴方向");
+        assert_eq!(rows[0].subtitle, "判断推理 / 图形推理");
+        assert_eq!(rows[0].badge, "真题");
+        assert_eq!(rows[1].subtitle, "判断推理 / 论证推理");
+        assert_eq!(rows[1].badge, "整理");
+    }
+
+    #[test]
+    fn collection_modules_count_every_module_in_the_rows() {
+        let cards = vec![
+            card("card-1", "真题练习/判断推理/图形推理", Some("q-1"), "A"),
+            card("card-2", "真题练习/判断推理/类比推理", Some("q-2"), "B"),
+            card("card-3", "用户整理/数量关系/行程问题", Some("q-3"), "C"),
+        ];
+        let rows = card_collection_rows(&cards);
+        let modules = collection_modules(&rows, None);
+        assert_eq!(modules.len(), 2);
+        assert_eq!(modules[0].name, "判断推理");
+        assert_eq!(modules[0].count, 2);
+        assert_eq!(
+            modules[0].categories,
+            vec![("图形推理".into(), 1), ("类比推理".into(), 1)]
+        );
+        assert_eq!(modules[1].name, "数量关系");
+        assert_eq!(modules[1].count, 1);
     }
 }

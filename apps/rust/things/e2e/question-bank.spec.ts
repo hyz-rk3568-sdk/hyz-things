@@ -298,11 +298,13 @@ test('my cards lists Xingce flashcards and opens the source question editor',asy
     state:'new',review_count:0,lapse_count:0,is_new:true,
   });
   const existing=[card('card-xingce-1','第一张卡片','第一张卡片背面',source),card('card-xingce-2','第二张卡片','第二张卡片背面',source)];
-  await page.route('**/api/v1/study/cards**',route=>route.fulfill({json:{cards:[
+  let cardRequests=0;
+  await page.route('**/api/v1/study/cards**',route=>{cardRequests+=1;return route.fulfill({json:{cards:[
     ...existing,
     {...card('card-shenlun','申论卡片','申论卡片背面',null),deck_path:'真题练习/申论/归纳概括/错题',source_file:'真题练习/申论/归纳概括/错题/cards.md'},
     {...card('card-shenlun-2','申论卡片二','申论卡片二背面',null),deck_path:'用户整理/申论/归纳概括',source_file:'用户整理/申论/归纳概括/cards.md'},
-  ]}}));
+    {...card('card-manual','手工卡片','手工卡片背面',null),deck_path:'用户整理/数量关系/方程比例与应用',source_file:'用户整理/数量关系/方程比例与应用/cards.md'},
+  ]}})});
   await page.route(`**/api/v1/question-bank/practice/questions/${source}`,route=>route.fulfill({json:{
     item:{question_id:source,paper_id:'card-paper',paper_title:'行测卡片来源卷',year:2026,region:'国考',number:4,module:'数量关系',category:'方程比例与应用'},
     question:{id:source,number:4,stem:'某工程由甲乙合作完成。',options_markdown:'- A. 10\n- B. 12',materials:['M1'],module:'数量关系',category:'方程比例与应用',topics:[],answer_type:'single',question_type:'choice',grading_mode:'exact',max_score:1},
@@ -315,15 +317,32 @@ test('my cards lists Xingce flashcards and opens the source question editor',asy
   }}));
   await page.goto('/#/study/training');
   await page.getByTestId('training-mode-question-bank-paper').click();
+  await expect(page.getByTestId('question-bank-cards-count')).toHaveText('2');
+  const [cardsCountColor, cardsTabColor] = await page.getByTestId('question-bank-cards-count').evaluate(element => {
+    const tab = element.closest('button')!;
+    return [getComputedStyle(element).color, getComputedStyle(tab).color];
+  });
+  expect(cardsCountColor).not.toBe(cardsTabColor);
   await page.getByTestId('question-bank-collection-cards').click();
+  const selectedCardsCountColor = await page.getByTestId('question-bank-cards-count')
+    .evaluate(element => getComputedStyle(element).color);
+  expect(selectedCardsCountColor).toBe(cardsCountColor);
   const cards=page.getByTestId('question-bank-card-item');
   await expect(cards).toHaveCount(2);
+  await expect(page.getByTestId('question-bank-collection-module').filter({hasText:'数量关系'})).toBeVisible();
   await expect(page.getByTestId('question-bank-cards')).not.toContainText('申论');
+  await expect(page.getByTestId('question-bank-cards')).not.toContainText('手工卡片');
+  const requestsAfterLoad=cardRequests;
+  await page.getByTestId('question-bank-collection-favorite').click();
+  await page.getByTestId('question-bank-collection-cards').click();
+  await expect(page.getByTestId('question-bank-card-item')).toHaveCount(2);
+  expect(cardRequests).toBe(requestsAfterLoad);
   await cards.filter({hasText:'第二张卡片'}).click();
   await expect(page.getByTestId('collection-review')).toBeVisible();
   await expect(page.getByTestId('collection-review-material-pane')).toBeVisible();
   await expect(page.getByTestId('collection-review-flashcard-pane')).toBeVisible();
   await expect(page.getByTestId('favorite-flashcard-editor-back')).toHaveValue('第二张卡片背面');
+  await expect(page.getByTestId('collection-review').getByTestId('calculation-scratchpad-toggle')).toBeVisible();
 });
 
 test('question bank practice mutations enforce admin, origin and CSRF',async({request})=>{

@@ -443,19 +443,18 @@ pub(crate) fn collection_question_review(props: &CollectionQuestionReviewProps) 
                 </p>
             }
             <div class="relative min-h-0 flex-1 overflow-hidden">
-                if *creating {
-                    {main}
-                } else {
-                    <InkOverlay question_index={*index} responsive={true} scroll_linked={true}
-                        persist_key={format!("collection-review-{}-{}", scope_label, item.question_id)}>
-                        <TrainingSwipeSurface current={index.clone()} total={props.items.len()}
-                            navigation_allowed={Some(Callback::from({
-                                let creating=creating.clone(); move |()| !*creating
-                            }))}>
-                            {main}
-                        </TrainingSwipeSurface>
-                    </InkOverlay>
-                }
+                // Keep the ink layer mounted while the flashcard editor is
+                // open so the header keeps the same 草稿 controls as any other
+                // review entry.
+                <InkOverlay question_index={*index} responsive={true} scroll_linked={true}
+                    persist_key={format!("collection-review-{}-{}", scope_label, item.question_id)}>
+                    <TrainingSwipeSurface current={index.clone()} total={props.items.len()}
+                        navigation_allowed={Some(Callback::from({
+                            let creating=creating.clone(); move |()| !*creating
+                        }))}>
+                        {main}
+                    </TrainingSwipeSurface>
+                </InkOverlay>
             </div>
             <nav class="flex shrink-0 items-center justify-center gap-3 border-t border-base-content/10 pt-2"
                 aria-label="复盘题目导航">

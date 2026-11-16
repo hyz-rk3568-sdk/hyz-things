@@ -213,20 +213,38 @@ test('申论收藏列表从复盘页打开题目而不进入卡片编辑区', as
       recommended_target: null, allowed_targets: [], requires_type_confirmation: false,
       source_revision: 'shenlun-v1', existing: [],
     } }));
+  let favoriteRequests = 0;
   await installShenlunRoutes(page, {
     favorites: [{
       question_id: questionId, paper_id: paperId, paper_title: '申论真题端到端样卷',
       year: 2025, region: '国考', number: 1, module: null, category: '归纳概括',
     }],
+    onRequest: async (_route, pathname, method) => {
+      if (pathname.endsWith('/shenlun/favorites') && method === 'GET') favoriteRequests += 1;
+      return false;
+    },
   });
   await page.goto('/#/study/training');
   await page.getByTestId('training-mode-shenlun').click();
-  await expect(page.getByTestId('shenlun-collections')).toBeVisible();
+  const tabs = page.getByTestId('shenlun-collections');
+  await expect(tabs).toBeVisible();
+  await expect(page.getByTestId('shenlun-collection-all')).toHaveAttribute('aria-pressed', 'true');
+  await expect(page.getByTestId('shenlun-collection-favorites-count')).toHaveText('1');
+  await expect(page.getByTestId('shenlun-collection-cards-count')).toHaveText('0');
+  await expect(page.getByTestId('question-bank-paper-option').first()).toBeVisible();
+  await expect(page.getByTestId('training-setup-action')).toBeVisible();
 
   await page.getByTestId('shenlun-collection-favorites').click();
+  await expect(page.getByTestId('question-bank-paper-option')).toHaveCount(0);
+  await expect(page.getByTestId('training-setup-action')).toHaveCount(0);
   const row = page.getByTestId('shenlun-collection-item');
   await expect(row).toHaveCount(1);
   await expect(row).toContainText('2025 国考 · 第 1 题');
+  const requestsAfterLoad = favoriteRequests;
+  await page.getByTestId('shenlun-collection-cards').click();
+  await page.getByTestId('shenlun-collection-favorites').click();
+  await expect(page.getByTestId('shenlun-collection-item')).toHaveCount(1);
+  expect(favoriteRequests).toBe(requestsAfterLoad);
   await row.click();
 
   await expect(page.getByTestId('shenlun-workspace')).toBeVisible();
@@ -236,7 +254,7 @@ test('申论收藏列表从复盘页打开题目而不进入卡片编辑区', as
   await expect(page.getByTestId('favorite-flashcard-editor')).toHaveCount(0);
 });
 
-test('申论我的卡片从复盘页右栏打开对应 Flashcard 编辑区', async ({ page }) => {
+test('申论我的卡片复用收藏列表并从右栏打开对应 Flashcard 编辑区', async ({ page }) => {
   await loginAsAdmin(page);
   await page.route(`**/api/v1/question-bank/practice/questions/${questionId}/flashcard-preview`, route =>
     route.fulfill({ json: {
@@ -250,6 +268,9 @@ test('申论我的卡片从复盘页右栏打开对应 Flashcard 编辑区', asy
         { card_id: 'card-shenlun-2', deck_path: '真题练习/申论/归纳概括/错题',
           source_file: '真题练习/申论/归纳概括/错题/cards.md',
           front: '卡片二', back: '第二张卡片背面', mode: 'practice' },
+        { card_id: 'card-shenlun-3', deck_path: '用户整理/申论/归纳概括',
+          source_file: '用户整理/申论/归纳概括/cards.md',
+          front: '整理卡片', back: '整理卡片背面', mode: 'practice' },
       ],
     } }));
   await page.route(`**/api/v1/question-bank/practice/questions/${questionId}`, route =>
@@ -270,20 +291,38 @@ test('申论我的卡片从复盘页右栏打开对应 Flashcard 编辑区', asy
     cards: [
       shenlunCard({ id: 'card-shenlun-1', front_markdown: '卡片一', back_markdown: '第一张卡片背面' }),
       shenlunCard({ id: 'card-shenlun-2', front_markdown: '卡片二', back_markdown: '第二张卡片背面' }),
+      shenlunCard({ id: 'card-shenlun-3', deck_path: '用户整理/申论/归纳概括',
+        source_file: '用户整理/申论/归纳概括/cards.md',
+        front_markdown: '整理卡片', back_markdown: '整理卡片背面' }),
+      shenlunCard({ id: 'card-manual', source_question_id: null, front_markdown: '手工卡片' }),
     ],
   });
   await page.goto('/#/study/training');
   await page.getByTestId('training-mode-shenlun').click();
+  await expect(page.getByTestId('shenlun-collection-cards-count')).toHaveText('3');
+  const cardsCountColor = await page.getByTestId('shenlun-collection-cards-count')
+    .evaluate(element => getComputedStyle(element).color);
   await page.getByTestId('shenlun-collection-cards').click();
-  const second = page.getByTestId('shenlun-collection-card').filter({ hasText: '卡片二' });
-  await expect(second).toBeVisible();
-  await second.click();
+  const selectedCardsCountColor = await page.getByTestId('shenlun-collection-cards-count')
+    .evaluate(element => getComputedStyle(element).color);
+  expect(selectedCardsCountColor).toBe(cardsCountColor);
+  await expect(page.getByTestId('question-bank-paper-option')).toHaveCount(0);
+  await expect(page.getByTestId('training-setup-action')).toHaveCount(0);
+  const rows = page.getByTestId('shenlun-collection-card');
+  await expect(rows).toHaveCount(3);
+  await expect(page.getByTestId('shenlun-collection-cards-list')).not.toContainText('手工卡片');
+  await expect(page.getByTestId('shenlun-collection-cards-list')).not.toContainText('cards.md');
+  const organized = rows.filter({ hasText: '整理卡片' });
+  await expect(organized).toContainText('申论 / 归纳概括');
+  await expect(organized).toContainText('整理');
+  await organized.click();
 
   await expect(page.getByTestId('shenlun-workspace')).toBeVisible();
   await expect(page.getByTestId('shenlun-question-heading')).toBeVisible();
   await expect(page.getByTestId('shenlun-material-scroll')).toBeVisible();
   await expect(page.getByTestId('shenlun-flashcard-workspace')).toBeVisible();
-  await expect(page.getByTestId('favorite-flashcard-editor-back')).toHaveValue('第二张卡片背面');
+  await expect(page.getByTestId('favorite-flashcard-editor-back')).toHaveValue('整理卡片背面');
+  await expect(page.getByTestId('shenlun-question').getByTestId('calculation-scratchpad-toggle')).toBeVisible();
 });
 
 test('申论选题复用 Question Bank 选择器、操作与切换记忆', async ({ page }) => {
@@ -419,6 +458,7 @@ test('未生成申论 AI 对话时不提供删除操作', async ({ page }) => {
     const { pathname } = new URL(route.request().url());
     if (pathname.endsWith('/shenlun/papers')) return route.fulfill({ json: catalog });
     if (pathname.endsWith('/shenlun/papers/' + paperId)) return route.fulfill({ json: paperView });
+    if (pathname.endsWith('/shenlun/favorites')) return route.fulfill({ json: [] });
     throw new Error('Unexpected Shenlun request: ' + route.request().method() + ' ' + pathname);
   });
   await openShenlun(page);
@@ -474,6 +514,7 @@ test('申论第 2 题解析与批改的删除状态彼此独立且切换时保�
     const { pathname } = new URL(route.request().url());
     if (pathname.endsWith('/shenlun/papers')) return route.fulfill({ json: catalog });
     if (pathname.endsWith('/shenlun/papers/' + paperId)) return route.fulfill({ json: paperView });
+    if (pathname.endsWith('/shenlun/favorites')) return route.fulfill({ json: [] });
     throw new Error('Unexpected Shenlun request: ' + route.request().method() + ' ' + pathname);
   });
   await openShenlun(page);
@@ -529,6 +570,7 @@ test('申论当前完成状态的解析仍提供删除操作', async ({ page }) 
     const { pathname } = new URL(route.request().url());
     if (pathname.endsWith('/shenlun/papers')) return route.fulfill({ json: catalog });
     if (pathname.endsWith('/shenlun/papers/' + paperId)) return route.fulfill({ json: paperView });
+    if (pathname.endsWith('/shenlun/favorites')) return route.fulfill({ json: [] });
     throw new Error('Unexpected Shenlun request: ' + route.request().method() + ' ' + pathname);
   });
   await openShenlun(page);
@@ -554,6 +596,7 @@ test('申论材料、来源答案和 OCR 内容区都支持左右滑动切题', 
     const { pathname } = new URL(route.request().url());
     if (pathname.endsWith('/shenlun/papers')) return route.fulfill({ json: catalog });
     if (pathname.endsWith('/shenlun/papers/' + paperId)) return route.fulfill({ json: paperView });
+    if (pathname.endsWith('/shenlun/favorites')) return route.fulfill({ json: [] });
     if (pathname.endsWith('/shenlun/questions/' + questionId + '/source-answer'))
       return route.fulfill({ json: { text: '第一题参考答案。', provenance: '题库来源', source_hash: 'source-v1' } });
     if (pathname.endsWith('/shenlun/questions/' + nextQuestionId + '/source-answer'))
@@ -611,6 +654,7 @@ test('申论 OCR 即时回显图片、流式显示工具进度，并在复盘期
     const { pathname } = new URL(route.request().url());
     if (pathname.endsWith('/shenlun/papers')) return route.fulfill({ json: catalog });
     if (pathname.endsWith('/shenlun/papers/' + paperId)) return route.fulfill({ json: paperView });
+    if (pathname.endsWith('/shenlun/favorites')) return route.fulfill({ json: [] });
     if (pathname.endsWith('/ocr') && route.request().method() === 'POST') {
       ocrStarts += 1;
       return route.fulfill({ status: 202, json: { run_id: `ocr-run-${ocrStarts}` } });

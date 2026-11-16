@@ -331,6 +331,7 @@ pub(crate) fn question_bank_shenlun(props: &QuestionBankShenlunProps) -> Html {
     let flashcard_open = use_state(|| false);
     let flashcard_revision = use_state(|| 0_u32);
     let collection_kind = use_state(|| None::<ShenlunCollectionKind>);
+    let collections_revision = use_state(|| 0_u64);
     let favorites = use_state(|| None::<Vec<PracticeBrowseItem>>);
     let favorites_error = use_state(|| None::<String>);
     let favorites_retry = use_state(|| 0_u32);
@@ -503,81 +504,84 @@ pub(crate) fn question_bank_shenlun(props: &QuestionBankShenlunProps) -> Html {
     {
         let favorites = favorites.clone();
         let favorites_error = favorites_error.clone();
-        use_effect_with((*collection_kind, *favorites_retry), move |(kind, _)| {
-            let alive = Rc::new(Cell::new(true));
-            let guard = alive.clone();
-            if *kind == Some(ShenlunCollectionKind::Favorites) {
-                favorites.set(None);
-                favorites_error.set(None);
-                spawn_local(async move {
-                    let result = fetch_json::<Vec<PracticeBrowseItem>>(
-                        "/api/v1/question-bank/shenlun/favorites",
-                        "申论收藏",
-                    )
-                    .await;
-                    if guard.get() {
-                        match result {
-                            Ok(items) => favorites.set(Some(items)),
-                            Err(message) => favorites_error.set(Some(message)),
+        use_effect_with(
+            (*collections_revision, *favorites_retry, props.active),
+            move |(_, _, active)| {
+                let alive = Rc::new(Cell::new(true));
+                let guard = alive.clone();
+                if *active {
+                    favorites_error.set(None);
+                    spawn_local(async move {
+                        let result = fetch_json::<Vec<PracticeBrowseItem>>(
+                            "/api/v1/question-bank/shenlun/favorites",
+                            "申论收藏",
+                        )
+                        .await;
+                        if guard.get() {
+                            match result {
+                                Ok(items) => favorites.set(Some(items)),
+                                Err(message) => favorites_error.set(Some(message)),
+                            }
                         }
-                    }
-                });
-            }
-            move || alive.set(false)
-        });
+                    });
+                }
+                move || alive.set(false)
+            },
+        );
     }
     {
         let cards = cards.clone();
         let cards_error = cards_error.clone();
-        use_effect_with((*collection_kind, *cards_retry), move |(kind, _)| {
-            let alive = Rc::new(Cell::new(true));
-            let guard = alive.clone();
-            if *kind == Some(ShenlunCollectionKind::Cards) {
-                cards.set(None);
-                cards_error.set(None);
-                spawn_local(async move {
-                    let first = fetch_json::<StudyCardsResponse>(
-                        &shenlun_cards_url("用户整理/申论"),
-                        "申论卡片",
-                    )
-                    .await;
-                    let second = fetch_json::<StudyCardsResponse>(
-                        &shenlun_cards_url("真题练习/申论"),
-                        "申论卡片",
-                    )
-                    .await;
-                    match (first, second) {
-                        (Err(first), Err(_)) => {
-                            if guard.get() {
-                                cards_error.set(Some(first));
-                            }
-                        }
-                        (first, second) => {
-                            let mut merged = Vec::new();
-                            for result in [first, second] {
-                                if let Ok(response) = result {
-                                    merged.extend(response.cards);
+        use_effect_with(
+            (*collections_revision, *cards_retry, props.active),
+            move |(_, _, active)| {
+                let alive = Rc::new(Cell::new(true));
+                let guard = alive.clone();
+                if *active {
+                    cards_error.set(None);
+                    spawn_local(async move {
+                        let first = fetch_json::<StudyCardsResponse>(
+                            &shenlun_cards_url("用户整理/申论"),
+                            "申论卡片",
+                        )
+                        .await;
+                        let second = fetch_json::<StudyCardsResponse>(
+                            &shenlun_cards_url("真题练习/申论"),
+                            "申论卡片",
+                        )
+                        .await;
+                        match (first, second) {
+                            (Err(first), Err(_)) => {
+                                if guard.get() {
+                                    cards_error.set(Some(first));
                                 }
                             }
-                            merged.sort_by(|left, right| {
-                                (left.deck_path.as_str(), left.source_order, left.id.as_str()).cmp(
-                                    &(
-                                        right.deck_path.as_str(),
-                                        right.source_order,
-                                        right.id.as_str(),
-                                    ),
-                                )
-                            });
-                            merged.dedup_by(|left, right| left.id == right.id);
-                            if guard.get() {
-                                cards.set(Some(merged));
+                            (first, second) => {
+                                let mut merged = Vec::new();
+                                for result in [first, second] {
+                                    if let Ok(response) = result {
+                                        merged.extend(response.cards);
+                                    }
+                                }
+                                merged.sort_by(|left, right| {
+                                    (left.deck_path.as_str(), left.source_order, left.id.as_str())
+                                        .cmp(&(
+                                            right.deck_path.as_str(),
+                                            right.source_order,
+                                            right.id.as_str(),
+                                        ))
+                                });
+                                merged.dedup_by(|left, right| left.id == right.id);
+                                if guard.get() {
+                                    cards.set(Some(merged));
+                                }
                             }
                         }
-                    }
-                });
-            }
-            move || alive.set(false)
-        });
+                    });
+                }
+                move || alive.set(false)
+            },
+        );
     }
 
     {
@@ -682,12 +686,14 @@ pub(crate) fn question_bank_shenlun(props: &QuestionBankShenlunProps) -> Html {
         let store = ocr_attempt_store.clone();
         let streams = ocr_streams.clone();
         let generation = ocr_session_generation.clone();
+        let collections_revision = collections_revision.clone();
         Callback::from(move |_| {
             clear_ocr_session(&store, &attempts, &streams, &generation);
             availability.set(HashMap::new());
             immersive.emit(false);
             mode.set(ShenlunMode::Analysis);
             paper.set(None);
+            collections_revision.set(collections_revision.wrapping_add(1));
         })
     };
     if !props.active {
@@ -1097,7 +1103,11 @@ pub(crate) fn question_bank_shenlun(props: &QuestionBankShenlunProps) -> Html {
         };
         let card_groups = {
             let mut groups = BTreeMap::<String, Vec<FlashcardSummary>>::new();
-            for card in cards.iter().flatten() {
+            for card in cards
+                .iter()
+                .flatten()
+                .filter(|card| card.source_question_id.is_some())
+            {
                 groups
                     .entry(shenlun_card_category(&card.deck_path))
                     .or_default()
@@ -1105,11 +1115,23 @@ pub(crate) fn question_bank_shenlun(props: &QuestionBankShenlunProps) -> Html {
             }
             groups
         };
-        let favorite_count = favorites.as_ref().map(Vec::len);
-        let card_count = cards.as_ref().map(Vec::len);
+        let favorite_total = favorites
+            .as_ref()
+            .map(|items| items.len().to_string())
+            .unwrap_or_else(|| "…".into());
+        let card_total = cards
+            .as_ref()
+            .map(|cards| {
+                cards
+                    .iter()
+                    .filter(|card| card.source_question_id.is_some())
+                    .count()
+                    .to_string()
+            })
+            .unwrap_or_else(|| "…".into());
         html! {
             <TrainingSetupLayout test_id="shenlun-catalog" wide={true}
-                action={Some(start_action)} summary="申论复盘" detail={action_detail}>
+                action={collection_kind.is_none().then_some(start_action)} summary="申论复盘" detail={action_detail}>
                 <div class="question-bank-setup-content space-y-5">
                     <div class="question-bank-heading">
                         <h2 class="text-2xl font-bold">{"申论训练"}</h2>
@@ -1120,51 +1142,59 @@ pub(crate) fn question_bank_shenlun(props: &QuestionBankShenlunProps) -> Html {
                     if let Some(message)=(*error).as_ref() {
                         <p role="alert" class="text-sm text-error">{message.clone()}</p>
                     }
-                    <section class="space-y-3" aria-label="选择申论原卷">
-                        <div class="flex items-end justify-between gap-3">
-                            <div>
-                                <h3 class="font-semibold">{"选择原卷"}</h3>
-                                <p class="text-xs text-base-content/60">{"按地区展开年份与原卷；已选原卷高亮显示。"}</p>
+                    <div class="flex flex-wrap gap-2" role="group" aria-label="申论题目浏览分类"
+                        data-testid="shenlun-collections">
+                        <button type="button"
+                            class={classes!("btn","btn-sm",if collection_kind.is_none() {"btn-primary"} else {"btn-outline"})}
+                            data-testid="shenlun-collection-all"
+                            aria-pressed={collection_kind.is_none().to_string()}
+                            onclick={Callback::from({let collection_kind=collection_kind.clone();move |_|collection_kind.set(None)})}>
+                            {"全部题目"}
+                        </button>
+                        <button type="button"
+                            class={classes!("btn","btn-sm",if *collection_kind == Some(ShenlunCollectionKind::Favorites) {"btn-primary"} else {"btn-outline"})}
+                            data-testid="shenlun-collection-favorites"
+                            aria-pressed={(*collection_kind == Some(ShenlunCollectionKind::Favorites)).to_string()}
+                            onclick={Callback::from({let choose=choose_collection.clone();move |_|choose.emit(ShenlunCollectionKind::Favorites)})}>
+                            {"我的收藏"}
+                            <span class="question-bank-count" data-testid="shenlun-collection-favorites-count">{favorite_total}</span>
+                        </button>
+                        <button type="button"
+                            class={classes!("btn","btn-sm",if *collection_kind == Some(ShenlunCollectionKind::Cards) {"btn-primary"} else {"btn-outline"})}
+                            data-testid="shenlun-collection-cards"
+                            aria-pressed={(*collection_kind == Some(ShenlunCollectionKind::Cards)).to_string()}
+                            onclick={Callback::from({let choose=choose_collection.clone();move |_|choose.emit(ShenlunCollectionKind::Cards)})}>
+                            {"我的卡片"}
+                            <span class="question-bank-count" data-testid="shenlun-collection-cards-count">{card_total}</span>
+                        </button>
+                    </div>
+                    if collection_kind.is_none() {
+                        <section class="space-y-3" aria-label="选择申论原卷">
+                            <div class="flex items-end justify-between gap-3">
+                                <div>
+                                    <h3 class="font-semibold">{"选择原卷"}</h3>
+                                    <p class="text-xs text-base-content/60">{"按地区展开年份与原卷；已选原卷高亮显示。"}</p>
+                                </div>
+                                <span class="text-xs text-base-content/50" data-testid="question-bank-paper-total">
+                                    {paper_catalog_label(&available_papers)}
+                                </span>
                             </div>
-                            <span class="text-xs text-base-content/50" data-testid="question-bank-paper-total">
-                                {paper_catalog_label(&available_papers)}
-                            </span>
-                        </div>
-                        if *loading {
-                            <p class="rounded-box bg-base-200 p-4 text-sm" role="status" data-testid="question-bank-paper-loading">
-                                {"正在加载申论原卷…"}
-                            </p>
-                        } else if available_papers.is_empty() {
-                            <p class="rounded-box bg-base-200 p-4 text-sm">
-                                {"暂无可用申论原卷，请先在题库管理同步原卷。"}
-                            </p>
-                        } else {
-                            <QuestionBankPaperPicker papers={available_papers}
-                                selected_id={(*selected_paper).clone()} on_select={select_paper}/>
-                        }
-                    </section>
-                    <section class="space-y-3" aria-label="申论收藏与卡片" data-testid="shenlun-collections">
-                        <div class="flex items-end justify-between gap-3">
-                            <div>
-                                <h3 class="font-semibold">{"我的收藏与卡片"}</h3>
-                                <p class="text-xs text-base-content/60">{"收藏按题目复盘；卡片默认打开对应 Flashcard 编辑区。"}</p>
-                            </div>
-                        </div>
-                        <div class="flex flex-wrap gap-2" role="group" aria-label="收藏与卡片视图">
-                            <button type="button" class="btn btn-sm btn-outline"
-                                data-testid="shenlun-collection-favorites"
-                                aria-pressed={(*collection_kind == Some(ShenlunCollectionKind::Favorites)).to_string()}
-                                onclick={Callback::from({let choose=choose_collection.clone();move |_|choose.emit(ShenlunCollectionKind::Favorites)})}>
-                                {format!("我的收藏{}", favorite_count.map(|count| format!(" {count}")).unwrap_or_default())}
-                            </button>
-                            <button type="button" class="btn btn-sm btn-outline"
-                                data-testid="shenlun-collection-cards"
-                                aria-pressed={(*collection_kind == Some(ShenlunCollectionKind::Cards)).to_string()}
-                                onclick={Callback::from({let choose=choose_collection.clone();move |_|choose.emit(ShenlunCollectionKind::Cards)})}>
-                                {format!("我的卡片{}", card_count.map(|count| format!(" {count}")).unwrap_or_default())}
-                            </button>
-                        </div>
-                        if *collection_kind == Some(ShenlunCollectionKind::Favorites) {
+                            if *loading {
+                                <p class="rounded-box bg-base-200 p-4 text-sm" role="status" data-testid="question-bank-paper-loading">
+                                    {"正在加载申论原卷…"}
+                                </p>
+                            } else if available_papers.is_empty() {
+                                <p class="rounded-box bg-base-200 p-4 text-sm">
+                                    {"暂无可用申论原卷，请先在题库管理同步原卷。"}
+                                </p>
+                            } else {
+                                <QuestionBankPaperPicker papers={available_papers}
+                                    selected_id={(*selected_paper).clone()} on_select={select_paper}/>
+                            }
+                        </section>
+                    }
+                    if *collection_kind == Some(ShenlunCollectionKind::Favorites) {
+                        <section class="space-y-3" aria-label="申论收藏" data-testid="shenlun-collections-favorites-panel">
                             if let Some(message)=(*favorites_error).as_ref() {
                                 <div class="space-y-2" role="alert" data-testid="shenlun-collection-favorites-error">
                                     <p class="text-sm text-error">{message.clone()}</p>
@@ -1199,6 +1229,7 @@ pub(crate) fn question_bank_shenlun(props: &QuestionBankShenlunProps) -> Html {
                                                                     <strong class="block truncate text-sm">{format!("{} {} · 第 {} 题",item.year,item.region,item.number)}</strong>
                                                                     <p class="mt-0.5 truncate text-xs text-base-content/50">{item.paper_title.clone()}</p>
                                                                 </div>
+                                                                <span class="question-bank-result-year">{item.year}</span>
                                                             </button>
                                                         }
                                                     })}
@@ -1208,7 +1239,9 @@ pub(crate) fn question_bank_shenlun(props: &QuestionBankShenlunProps) -> Html {
                                     })}
                                 </div>
                             }
-                        } else if *collection_kind == Some(ShenlunCollectionKind::Cards) {
+                        </section>
+                    } else if *collection_kind == Some(ShenlunCollectionKind::Cards) {
+                        <section class="space-y-3" aria-label="申论卡片" data-testid="shenlun-collections-cards-panel">
                             if let Some(message)=(*cards_error).as_ref() {
                                 <div class="space-y-2" role="alert" data-testid="shenlun-collection-cards-error">
                                     <p class="text-sm text-error">{message.clone()}</p>
@@ -1217,7 +1250,7 @@ pub(crate) fn question_bank_shenlun(props: &QuestionBankShenlunProps) -> Html {
                             } else if cards.is_none() {
                                 <p class="rounded-box bg-base-200 p-4 text-sm" role="status" data-testid="shenlun-collection-cards-loading">{"正在加载申论卡片…"}</p>
                             } else if card_groups.is_empty() {
-                                <p class="rounded-box bg-base-200 p-4 text-sm" data-testid="shenlun-collection-cards-empty">{"还没有申论卡片。"}</p>
+                                <p class="rounded-box bg-base-200 p-4 text-sm" data-testid="shenlun-collection-cards-empty">{"还没有可打开的申论卡片。"}</p>
                             } else {
                                 <div class="space-y-4" data-testid="shenlun-collection-cards-list">
                                     {for card_groups.iter().map(|(category, items)| {
@@ -1247,11 +1280,11 @@ pub(crate) fn question_bank_shenlun(props: &QuestionBankShenlunProps) -> Html {
                                                                 disabled={disabled} onclick={on_open}>
                                                                 <div class="min-w-0">
                                                                     <strong class="block truncate text-sm">{flashcard_list_title(&card.front_markdown)}</strong>
-                                                                    <p class="mt-0.5 truncate text-xs text-base-content/50">{card.deck_path.clone()}</p>
+                                                                    <p class="mt-0.5 truncate text-xs text-base-content/50">{format!("申论 / {category}")}</p>
                                                                 </div>
-                                                                if card.source_question_id.is_none() {
-                                                                    <span class="text-xs text-base-content/50">{"手工卡片"}</span>
-                                                                }
+                                                                <span class="question-bank-result-year">
+                                                                    {if card.deck_path.starts_with("真题练习/") {"真题"} else {"整理"}}
+                                                                </span>
                                                             </button>
                                                         }
                                                     })}
@@ -1261,8 +1294,8 @@ pub(crate) fn question_bank_shenlun(props: &QuestionBankShenlunProps) -> Html {
                                     })}
                                 </div>
                             }
-                        }
-                    </section>
+                        </section>
+                    }
                 </div>
             </TrainingSetupLayout>
         }

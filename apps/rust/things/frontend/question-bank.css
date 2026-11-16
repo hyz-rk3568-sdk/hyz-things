@@ -258,8 +258,16 @@
   .question-bank-shell [data-testid="question-bank-collection-favorite"] .question-bank-count {
     border: 0; background: color-mix(in srgb,var(--color-primary) 10%,transparent); color: var(--color-primary); font-weight: 700;
   }
-  .question-bank-shell [aria-label="题目浏览分类"] [aria-pressed="true"] .question-bank-count {
-    background: #fff3; color: inherit;
+  .question-bank-shell [data-testid="question-bank-collection-cards"] .question-bank-count,
+  .question-bank-shell [data-testid="shenlun-collection-cards"] .question-bank-count {
+    border: 0; background: color-mix(in srgb,var(--color-secondary) 10%,transparent); color: var(--color-secondary); font-weight: 700;
+  }
+  .question-bank-shell [data-testid="shenlun-collection-favorites"] .question-bank-count {
+    border: 0; background: color-mix(in srgb,var(--color-primary) 10%,transparent); color: var(--color-primary); font-weight: 700;
+  }
+  .question-bank-shell [aria-label="题目浏览分类"] [aria-pressed="true"] .question-bank-count,
+  .question-bank-shell [aria-label="申论题目浏览分类"] [aria-pressed="true"] .question-bank-count {
+    background: #fff;
   }
   .question-bank-shell [data-testid="question-bank-resume-card"] { min-height: 6rem; }
   .question-bank-shell [data-testid="question-bank-resume-card"] .btn { min-height: 2.5rem; padding-inline: 1.25rem; }
