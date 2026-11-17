@@ -136,7 +136,7 @@ python3 tools/wps-question-bank/import-wps-pdf.py \
   --ocr-cache /tmp/ocr-cache
 ```
 
-`--explanations` 会把每套答案页到下一套答案页前一页之间的正文 OCR 出来，按题号块去掉重复题干/选项，写成 `### Explanation`；侧栏（花生批注）不并入正文。
+`--explanations` 会把每套答案页到下一套答案页前一页之间的正文 OCR 出来，按题号块去掉重复题干/选项，写成 `### Explanation`；侧栏（花生批注）不并入正文。侧栏按页面竖向空白栏与两侧文本宽度识别；扫描件把正文框拉宽、盖住空白栏时，退回按正文行起始 x 的明显间隔切分，因此顶部只占半页的批注也能排除。
 
 ## 测试
 

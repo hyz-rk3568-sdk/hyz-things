@@ -1,0 +1,331 @@
+{
+ "schema": "hyz-paper/v2",
+ "subject": "xingce",
+ "book": "/mnt/c/Users/hyz/Downloads/ipad/超格老于言语-进阶易错600题_2026110214421147.pdf",
+ "answers": null,
+ "collection_id": "chaoge-2026-yanyu-jinjie-600",
+ "collection_title": "超格 老于言语 进阶易错600题",
+ "year": 2026,
+ "region": "专项",
+ "variant": "言语理解",
+ "module": "言语理解",
+ "role": "primary",
+ "paper_kind": "drill",
+ "option_labels": "ABCD",
+ "questions_per_material": 10000,
+ "body_margin": 10000,
+ "answers_required": true,
+ "patterns": {
+  "section": "^$",
+  "ask": "^(?!\\d{1,2}[.．、]).{2,60}[：:]$",
+  "question": "^(\\d{1,2})[.．、]\\s*",
+  "option": "^([A-D])[.．、]\\s*",
+  "question_prefixes": []
+ },
+ "noise": {
+  "top_band": 80,
+  "bottom_band": 720,
+  "texts": [
+   "超格学员专用",
+   "扫一扫免费学习"
+  ],
+  "patterns": [
+   "^逻辑填空$",
+   "^小题型$",
+   "^主旨理解题$",
+   "^参考答案$",
+   "^第[一二三四五六七八九十]+组$",
+   "^建议用时[：:].*$",
+   "^\\d{1,3}$",
+   "^[-—–]\\s*\\d+\\s*[-—–]$",
+   "^[A-D]$",
+   "^词句理解题&细节判断题$"
+  ]
+ },
+ "answer_key": {
+  "heading": "^(参考答案)\\s*(\\d*)$",
+  "heading_map": {
+   "参考答案": "参考答案"
+  },
+  "range": "^(\\d+)\\s*[～~\\-—–]{1,2}\\s*(\\d+)\\s*([A-D]+)?$",
+  "run": "^[A-D]+$"
+ },
+ "papers": [
+  {
+   "kind": "逻辑填空",
+   "num": 1,
+   "start": 5,
+   "end": 13
+  },
+  {
+   "kind": "逻辑填空",
+   "num": 2,
+   "start": 14,
+   "end": 22
+  },
+  {
+   "kind": "逻辑填空",
+   "num": 3,
+   "start": 23,
+   "end": 31
+  },
+  {
+   "kind": "逻辑填空",
+   "num": 4,
+   "start": 32,
+   "end": 40
+  },
+  {
+   "kind": "逻辑填空",
+   "num": 5,
+   "start": 41,
+   "end": 49
+  },
+  {
+   "kind": "逻辑填空",
+   "num": 6,
+   "start": 50,
+   "end": 59
+  },
+  {
+   "kind": "逻辑填空",
+   "num": 7,
+   "start": 60,
+   "end": 68
+  },
+  {
+   "kind": "标题添加题",
+   "num": 1,
+   "start": 69,
+   "end": 82
+  },
+  {
+   "kind": "接语选择题",
+   "num": 1,
+   "start": 83,
+   "end": 95
+  },
+  {
+   "kind": "语句填空题",
+   "num": 1,
+   "start": 96,
+   "end": 110
+  },
+  {
+   "kind": "语句排序题",
+   "num": 1,
+   "start": 111,
+   "end": 126
+  },
+  {
+   "kind": "词句理解题",
+   "num": 1,
+   "start": 127,
+   "end": 140
+  },
+  {
+   "kind": "主旨理解题",
+   "num": 1,
+   "start": 141,
+   "end": 154
+  },
+  {
+   "kind": "主旨理解题",
+   "num": 2,
+   "start": 155,
+   "end": 167
+  },
+  {
+   "kind": "主旨理解题",
+   "num": 3,
+   "start": 168,
+   "end": 180
+  },
+  {
+   "kind": "主旨理解题",
+   "num": 4,
+   "start": 181,
+   "end": 194
+  },
+  {
+   "kind": "主旨理解题",
+   "num": 5,
+   "start": 195,
+   "end": 208
+  }
+ ],
+ "expected": {
+  "逻辑填空": 35,
+  "标题添加题": 35,
+  "接语选择题": 35,
+  "语句填空题": 40,
+  "语句排序题": 35,
+  "词句理解题": 35,
+  "主旨理解题": 35
+ },
+ "answer_pages": [
+  {
+   "kind": "逻辑填空",
+   "num": 1,
+   "pdf": "/mnt/c/Users/hyz/Downloads/ipad/超格老于言语-进阶易错600题_2026110214421147.pdf",
+   "page": 209,
+   "section": "第一组"
+  },
+  {
+   "kind": "逻辑填空",
+   "num": 2,
+   "pdf": "/mnt/c/Users/hyz/Downloads/ipad/超格老于言语-进阶易错600题_2026110214421147.pdf",
+   "page": 209,
+   "section": "第二组"
+  },
+  {
+   "kind": "逻辑填空",
+   "num": 3,
+   "pdf": "/mnt/c/Users/hyz/Downloads/ipad/超格老于言语-进阶易错600题_2026110214421147.pdf",
+   "page": 209,
+   "section": "第三组"
+  },
+  {
+   "kind": "逻辑填空",
+   "num": 4,
+   "pdf": "/mnt/c/Users/hyz/Downloads/ipad/超格老于言语-进阶易错600题_2026110214421147.pdf",
+   "page": 209,
+   "section": "第四组"
+  },
+  {
+   "kind": "逻辑填空",
+   "num": 5,
+   "pdf": "/mnt/c/Users/hyz/Downloads/ipad/超格老于言语-进阶易错600题_2026110214421147.pdf",
+   "page": 209,
+   "section": "第五组"
+  },
+  {
+   "kind": "逻辑填空",
+   "num": 6,
+   "pdf": "/mnt/c/Users/hyz/Downloads/ipad/超格老于言语-进阶易错600题_2026110214421147.pdf",
+   "page": 209,
+   "section": "第六组"
+  },
+  {
+   "kind": "逻辑填空",
+   "num": 7,
+   "pdf": "/mnt/c/Users/hyz/Downloads/ipad/超格老于言语-进阶易错600题_2026110214421147.pdf",
+   "page": 209,
+   "section": "第七组"
+  },
+  {
+   "kind": "标题添加题",
+   "num": 1,
+   "pdf": "/mnt/c/Users/hyz/Downloads/ipad/超格老于言语-进阶易错600题_2026110214421147.pdf",
+   "page": 210,
+   "section": "标题添加题"
+  },
+  {
+   "kind": "接语选择题",
+   "num": 1,
+   "pdf": "/mnt/c/Users/hyz/Downloads/ipad/超格老于言语-进阶易错600题_2026110214421147.pdf",
+   "page": 210,
+   "section": "接语选择题"
+  },
+  {
+   "kind": "语句填空题",
+   "num": 1,
+   "pdf": "/mnt/c/Users/hyz/Downloads/ipad/超格老于言语-进阶易错600题_2026110214421147.pdf",
+   "page": 210,
+   "section": "语句填空题"
+  },
+  {
+   "kind": "语句排序题",
+   "num": 1,
+   "pdf": "/mnt/c/Users/hyz/Downloads/ipad/超格老于言语-进阶易错600题_2026110214421147.pdf",
+   "page": 210,
+   "section": "语句排序题"
+  },
+  {
+   "kind": "词句理解题",
+   "num": 1,
+   "pdf": "/mnt/c/Users/hyz/Downloads/ipad/超格老于言语-进阶易错600题_2026110214421147.pdf",
+   "page": 210,
+   "section": "词句理解题&细节判断题"
+  },
+  {
+   "kind": "主旨理解题",
+   "num": 1,
+   "pdf": "/mnt/c/Users/hyz/Downloads/ipad/超格老于言语-进阶易错600题_2026110214421147.pdf",
+   "page": 211,
+   "section": "第一组"
+  },
+  {
+   "kind": "主旨理解题",
+   "num": 2,
+   "pdf": "/mnt/c/Users/hyz/Downloads/ipad/超格老于言语-进阶易错600题_2026110214421147.pdf",
+   "page": 211,
+   "section": "第二组"
+  },
+  {
+   "kind": "主旨理解题",
+   "num": 3,
+   "pdf": "/mnt/c/Users/hyz/Downloads/ipad/超格老于言语-进阶易错600题_2026110214421147.pdf",
+   "page": 211,
+   "section": "第三组"
+  },
+  {
+   "kind": "主旨理解题",
+   "num": 4,
+   "pdf": "/mnt/c/Users/hyz/Downloads/ipad/超格老于言语-进阶易错600题_2026110214421147.pdf",
+   "page": 211,
+   "section": "第四组"
+  },
+  {
+   "kind": "主旨理解题",
+   "num": 5,
+   "pdf": "/mnt/c/Users/hyz/Downloads/ipad/超格老于言语-进阶易错600题_2026110214421147.pdf",
+   "page": 211,
+   "section": "第五组"
+  }
+ ],
+ "ocr": {
+  "enabled": true,
+  "dpi": 150,
+  "badge": "第[一二三四五六七八九十]+组",
+  "replacements": {
+   "一手最新公考资料加微信 ST16328": "",
+   "一手最新公考资料加微信ST16328": "",
+   "公考资料免费加微信shgk738": ""
+  }
+ },
+ "overrides": {
+  "逻辑填空": {
+   "2": {
+    "9": {
+     "options": {
+      "A": "精雕细琢 广泛 一墙之隔",
+      "B": "点石成金 少量 一念之差",
+      "C": "脱胎换骨 普遍 一步之遥",
+      "D": "改头换面 长期 一时之选"
+     }
+    }
+   },
+   "4": {
+    "10": {
+     "options": {
+      "A": "推演 领域 消灭",
+      "B": "演绎 语境 消弭",
+      "C": "论证 情境 消损",
+      "D": "归纳 环境 消解"
+     }
+    }
+   },
+   "6": {
+    "4": {
+     "options": {
+      "A": "贡献者 可靠 依赖",
+      "B": "维护者 完备 期待",
+      "C": "推广者 稳定 认可",
+      "D": "建设者 坚定 欢迎"
+     }
+    }
+   }
+  }
+ }
+}

@@ -1911,3 +1911,252 @@ S_{\triangle COD}
 看到矩形被竖线分割、对角线穿过分割线，先找“**平行线＋共角**”构成的相似三角形。题目求面积时，留意是否能**直接求出底与高的乘积**，不必分别求出两条未知线段。
 
 ---
+
+## Card
+<!-- hyz-card-id: 01a1e528-d66e-76c2-b20e-a20aa2d1388f -->
+<!-- hyz-source-question-id: 01a1af25-d036-7523-9552-d2cfc87cb97c -->
+<!-- hyz-correct-answer: [] -->
+### Front
+
+如下图，把三角形 ABC 的三边分别延长 1、2、3 倍，得到一个新的三角形，则新三角形的面积是原三角形 ABC 面积的几倍？
+
+![配图](../../../../images/b1cb8af5184dd4e01764dbbfa675e8e78d9809b85591149381cae43d6681bc60.png)
+
+- A. 15
+- B. 16
+- C. 17
+- D. 18
+
+### Back
+
+## 答案
+
+**D．18 倍。**这是独立求解的结果，原卷未给出答案和解析。
+
+## 判型与所用套路
+
+这是**平面几何中的面积比问题**。采用面积割补：把大三角形拆成原三角形和周围三个三角形，再利用**同高三角形的面积比等于底边比**，逐块计算。
+
+## 关键条件
+
+将图中上方、左下方、右下方的大三角形顶点分别记为 \(D、E、F\)。则：
+
+- \(D\) 在 \(CA\) 的延长线上，\(E\) 在 \(AB\) 的延长线上，\(F\) 在 \(BC\) 的延长线上；
+- 三段延长线分别为对应原边长的 \(1、2、3\) 倍，但题图未标明各自对应哪一倍。下面先分别记为 \(x、y、z\)，最后会看到结果与分配顺序无关。
+
+这里“延长 1 倍”指**增加的线段**等于原边长，而不是延长后的整段等于原边长。
+
+## 按套路分步求解
+
+设原三角形 \(ABC\) 的面积为 \(1\)，且
+
+\[
+AD=x\cdot AC,\qquad BE=y\cdot AB,\qquad CF=z\cdot BC。
+\]
+
+大三角形 \(DEF\) 可拆成 \(ABC\)、\(DAE\)、\(EBF\)、\(FCD\) 四部分。
+
+1. 对三角形 \(DAE\)，底 \(AD\) 是 \(AC\) 的 \(x\) 倍；点 \(E\) 到直线 \(AC\) 的距离是点 \(B\) 到该直线距离的 \(1+y\) 倍。因此其面积为 \(x(1+y)\)。
+
+2. 同理，三角形 \(EBF\) 的面积为 \(y(1+z)\)，三角形 \(FCD\) 的面积为 \(z(1+x)\)。
+
+3. 所求面积倍数为
+
+\[
+\begin{aligned}
+1+x(1+y)+y(1+z)+z(1+x)
+&=1+(x+y+z)+(xy+yz+zx)\\
+&=1+(1+2+3)+(1\times2+2\times3+3\times1)\\
+&=\boxed{18}。
+\end{aligned}
+\]
+
+式子对 \(x、y、z\) 完全对称，所以 \(1、2、3\) 分别对应哪条边，不影响结果。
+
+## 快速验算与排除干扰项
+
+把 \(x、y、z\) 依次取为 \(1、2、3\)，四块面积分别为
+
+\[
+1,\quad 1(1+2)=3,\quad 2(1+3)=8,\quad 3(1+1)=6。
+\]
+
+相加得 \(1+3+8+6=18\)，因此排除 A、B、C。
+
+## 与原卷参考对照
+
+原卷的 **Answer 和 Explanation 均为空**，无法与参考答案核对；上述 D 项由独立计算得到。
+
+## 复盘提醒
+
+遇到“边延长若干倍”，先区分**新增长度**和**延长后的总长度**。面积比题优先找同底、同高关系；只有确认三角形相似后，才能使用“面积比等于边长比的平方”。
+
+---
+
+## Card
+<!-- hyz-card-id: 01a1e535-541f-7650-a39f-164ab4b9321c -->
+<!-- hyz-source-question-id: 01a1af25-d036-7523-9552-d29fc3716c81 -->
+<!-- hyz-correct-answer: [] -->
+### Front
+
+如图，ABCD、AEFG 是并排正方形，连接 FB 与正方形 ABCD 对角线 AC 交于点 P。已知 △APB 面积为 12，那么 △DFP 面积为？
+
+![配图](../../../../images/2a95cb9ba5af80b644157829414b6d0171b6a2ddfe2d72f8504f11c8ba12f549.png)
+
+- A. 12
+- B. 18
+- C. 24
+- D. 30
+
+### Back
+
+## 答案
+
+**C．24。** 这是独立求解的结果，原卷答案与解析均为空。
+
+## 判型与所用套路
+
+这是**平面几何面积题**。按照“先找等面积图形，再用面积割补”的套路，利用正方形的边长关系和对角线性质，直接比较三角形面积。
+
+## 关键条件
+
+设 \(FB\) 与 \(AD\) 交于 \(Q\)。图中 \(A、Q、E、D\) 依次排列。
+
+```svg
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 600 370">
+<title>正方形组合面积示意图</title>
+<desc>两个正方形并排，FB与AD交于Q，与对角线AC交于P；连接DP。</desc>
+<rect x="50" y="180" width="150" height="150" fill="none" stroke="#243447" stroke-width="2"/>
+<rect x="200" y="55" width="275" height="275" fill="none" stroke="#243447" stroke-width="2"/>
+<line x1="50" y1="180" x2="475" y2="330" stroke="#2456a6" stroke-width="2"/>
+<line x1="200" y1="330" x2="475" y2="55" stroke="#a23b31" stroke-width="2"/>
+<line x1="200" y1="55" x2="279" y2="251" stroke="#243447" stroke-width="2"/>
+<circle cx="200" cy="233" r="4" fill="#243447"/>
+<circle cx="279" cy="251" r="4" fill="#243447"/>
+<text x="200" y="350" text-anchor="middle" font-family="sans-serif" fill="#222222">A</text>
+<text x="485" y="345" font-family="sans-serif" fill="#222222">B</text>
+<text x="485" y="55" font-family="sans-serif" fill="#222222">C</text>
+<text x="190" y="48" font-family="sans-serif" fill="#222222">D</text>
+<text x="207" y="175" font-family="sans-serif" fill="#222222">E</text>
+<text x="35" y="180" font-family="sans-serif" fill="#222222">F</text>
+<text x="35" y="345" font-family="sans-serif" fill="#222222">G</text>
+<text x="182" y="236" font-family="sans-serif" fill="#222222">Q</text>
+<text x="286" y="251" font-family="sans-serif" fill="#222222">P</text>
+<text x="335" y="310" font-family="sans-serif" fill="#a23b31">面积 12</text>
+</svg>
+```
+
+- 小正方形中，\(FE=AE\)；大正方形中，\(AB=AD\)。
+- \(P\) 在对角线 \(AC\) 和线段 \(FB\) 上。
+- \(S_{\triangle APB}=12\)。
+
+## 按套路分步求解
+
+### 1. 证明两个大三角形面积相等
+
+因为 \(FE\parallel AB\)，有
+
+\[
+\triangle FEQ\sim\triangle BAQ.
+\]
+
+设大、小正方形的边长分别为 \(a、b\)，则
+
+\[
+AD=AB=a,\qquad AE=FE=b.
+\]
+
+由相似三角形：
+
+\[
+\frac{QE}{AQ}=\frac{b}{a}.
+\]
+
+又因为 \(AE=AQ+QE=b\)，所以
+
+\[
+AQ=\frac{ab}{a+b},
+\qquad
+DQ=AD-AQ=\frac{a^2}{a+b}.
+\]
+
+于是
+
+\[
+\frac{DQ}{AQ}=\frac{a}{b}.
+\]
+
+比较 \(\triangle DFQ\) 和 \(\triangle ABQ\)：以 \(DQ、AQ\) 为底时，它们对应的高分别是 \(FE=b\)、\(AB=a\)。因此
+
+\[
+\frac{S_{\triangle DFQ}}{S_{\triangle ABQ}}
+=\frac{DQ}{AQ}\times\frac{FE}{AB}
+=\frac{a}{b}\times\frac{b}{a}=1.
+\]
+
+所以这两个三角形等面积。各加上公共的 \(\triangle DBQ\)，得到
+
+\[
+\boxed{S_{\triangle DFB}=S_{\triangle DAB}}.
+\]
+
+### 2. 扣去公共部分
+
+因为 \(P\) 在 \(FB\) 上：
+
+\[
+S_{\triangle DFB}
+=S_{\triangle DFP}+S_{\triangle DPB}.
+\]
+
+而 \(P\) 在 \(\triangle DAB\) 内：
+
+\[
+S_{\triangle DAB}
+=S_{\triangle DAP}+S_{\triangle APB}+S_{\triangle DPB}.
+\]
+
+两个大三角形面积相等，扣掉共同的 \(\triangle DPB\)，得
+
+\[
+S_{\triangle DFP}
+=S_{\triangle DAP}+S_{\triangle APB}.
+\]
+
+### 3. 利用正方形对角线
+
+\(P\) 在对角线 \(AC\) 上，到 \(AD\) 和 \(AB\) 的距离相等；又 \(AD=AB\)，因此
+
+\[
+S_{\triangle DAP}=S_{\triangle APB}=12.
+\]
+
+于是
+
+\[
+S_{\triangle DFP}=12+12=\boxed{24}.
+\]
+
+## 快速验算与排除干扰项
+
+关键面积关系是
+
+\[
+S_{\triangle DFP}
+=2S_{\triangle APB}
+=2\times12=24.
+\]
+
+因此选择 **C**，其余选项不符合。
+
+## 与原卷参考对照
+
+原卷的 **Answer 和 Explanation 均为空**，没有可供对照的参考答案或解析。
+
+## 复盘提醒
+
+看到交点分割的几何图形，先找**等面积的大三角形**，再扣掉公共部分；看到正方形对角线上的点，注意它到两条邻边的距离相等。
+
+前面解析中写过 \(DQ=AD-AE-EQ\)，那一步有误；正确关系是 **\(DQ=AD-AQ\)**，上面的计算已修正。
+
+---

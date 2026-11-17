@@ -1,0 +1,456 @@
+{
+  "schema": "hyz-paper/v2",
+  "subject": "xingce",
+  "book": "/mnt/c/Users/hyz/Downloads/ipad/题本篇.pdf",
+  "collection_id": "huasheng-2026-luojitiankong-600",
+  "collection_title": "花生十三 逻辑填空 600 题",
+  "year": 2026,
+  "region": "专项",
+  "variant": "言语理解",
+  "module": "逻辑填空",
+  "role": "primary",
+  "paper_kind": "drill",
+  "option_labels": "ABCD",
+  "questions_per_material": 20,
+  "body_margin": 10000,
+  "answers_required": true,
+  "expected": {
+    "练习题": 20
+  },
+  "ocr": {
+    "enabled": true,
+    "dpi": 150,
+    "badge": "练习题\\s*(\\d+)\\s*套",
+    "replacements": {
+      "如火如茶": "如火如荼",
+      "彪炳史朋": "彪炳史册",
+      "公考资料免费更新加微信shgk738": "",
+      "扫一扫免费学习": "",
+      "-。": "。"
+    }
+  },
+  "noise": {
+    "top_band": 85,
+    "bottom_band": 790,
+    "texts": [
+      "花生十三",
+      "四海公考",
+      "SIHAIGONGKAO",
+      "逻辑填空600",
+      "题本篇",
+      "解析篇"
+    ],
+    "patterns": [
+      "^练习题\\s*\\d+\\s*套$",
+      "^第\\s*\\d+\\s*页$",
+      "^\\d{1,3}$",
+      "^[-—–]\\s*\\d+\\s*[-—–]$",
+      "^[A-D]$"
+    ]
+  },
+  "patterns": {
+    "section": "^$",
+    "ask": "^(?:依次)?填入画横线部分最恰[\\u4e00-\\u9fff]{0,10}[：:]?$",
+    "question": "^(\\d{1,2})[.．、]\\s*",
+    "option": "^([A-D])[.．、]\\s*",
+    "question_prefixes": []
+  },
+  "answer_key": {
+    "heading": "^(练习题)\\s*(\\d+)$",
+    "heading_map": {
+      "练习题": "练习题"
+    },
+    "range": "^(\\d+)\\s*[～~\\-—–]{1,2}\\s*(\\d+)\\s*([A-D]+)?$",
+    "run": "^[A-D]+$"
+  },
+  "question_starts": {
+    "95": 14
+  },
+  "papers": [
+    {
+      "kind": "练习题",
+      "num": 1,
+      "start": 4,
+      "end": 7
+    },
+    {
+      "kind": "练习题",
+      "num": 2,
+      "start": 8,
+      "end": 12
+    },
+    {
+      "kind": "练习题",
+      "num": 3,
+      "start": 13,
+      "end": 17
+    },
+    {
+      "kind": "练习题",
+      "num": 4,
+      "start": 18,
+      "end": 21
+    },
+    {
+      "kind": "练习题",
+      "num": 5,
+      "start": 22,
+      "end": 25
+    },
+    {
+      "kind": "练习题",
+      "num": 6,
+      "start": 26,
+      "end": 29
+    },
+    {
+      "kind": "练习题",
+      "num": 7,
+      "start": 30,
+      "end": 33
+    },
+    {
+      "kind": "练习题",
+      "num": 8,
+      "start": 34,
+      "end": 37
+    },
+    {
+      "kind": "练习题",
+      "num": 9,
+      "start": 38,
+      "end": 42
+    },
+    {
+      "kind": "练习题",
+      "num": 10,
+      "start": 43,
+      "end": 46
+    },
+    {
+      "kind": "练习题",
+      "num": 11,
+      "start": 47,
+      "end": 50
+    },
+    {
+      "kind": "练习题",
+      "num": 12,
+      "start": 51,
+      "end": 54
+    },
+    {
+      "kind": "练习题",
+      "num": 13,
+      "start": 55,
+      "end": 59
+    },
+    {
+      "kind": "练习题",
+      "num": 14,
+      "start": 60,
+      "end": 63
+    },
+    {
+      "kind": "练习题",
+      "num": 15,
+      "start": 64,
+      "end": 67
+    },
+    {
+      "kind": "练习题",
+      "num": 16,
+      "start": 68,
+      "end": 71
+    },
+    {
+      "kind": "练习题",
+      "num": 17,
+      "start": 72,
+      "end": 76
+    },
+    {
+      "kind": "练习题",
+      "num": 18,
+      "start": 77,
+      "end": 81
+    },
+    {
+      "kind": "练习题",
+      "num": 19,
+      "start": 82,
+      "end": 86
+    },
+    {
+      "kind": "练习题",
+      "num": 20,
+      "start": 87,
+      "end": 91
+    },
+    {
+      "kind": "练习题",
+      "num": 21,
+      "start": 92,
+      "end": 96
+    },
+    {
+      "kind": "练习题",
+      "num": 22,
+      "start": 97,
+      "end": 100
+    },
+    {
+      "kind": "练习题",
+      "num": 23,
+      "start": 101,
+      "end": 104
+    },
+    {
+      "kind": "练习题",
+      "num": 24,
+      "start": 105,
+      "end": 108
+    },
+    {
+      "kind": "练习题",
+      "num": 25,
+      "start": 109,
+      "end": 112
+    },
+    {
+      "kind": "练习题",
+      "num": 26,
+      "start": 113,
+      "end": 116
+    },
+    {
+      "kind": "练习题",
+      "num": 27,
+      "start": 117,
+      "end": 121
+    },
+    {
+      "kind": "练习题",
+      "num": 28,
+      "start": 122,
+      "end": 126
+    },
+    {
+      "kind": "练习题",
+      "num": 29,
+      "start": 127,
+      "end": 131
+    },
+    {
+      "kind": "练习题",
+      "num": 30,
+      "start": 132,
+      "end": 136
+    }
+  ],
+  "answer_pages": [
+    {
+      "kind": "练习题",
+      "num": 1,
+      "pdf": "/mnt/c/Users/hyz/Downloads/ipad/解析上.pdf",
+      "page": 6
+    },
+    {
+      "kind": "练习题",
+      "num": 2,
+      "pdf": "/mnt/c/Users/hyz/Downloads/ipad/解析上.pdf",
+      "page": 31
+    },
+    {
+      "kind": "练习题",
+      "num": 3,
+      "pdf": "/mnt/c/Users/hyz/Downloads/ipad/解析上.pdf",
+      "page": 55
+    },
+    {
+      "kind": "练习题",
+      "num": 4,
+      "pdf": "/mnt/c/Users/hyz/Downloads/ipad/解析上.pdf",
+      "page": 78
+    },
+    {
+      "kind": "练习题",
+      "num": 5,
+      "pdf": "/mnt/c/Users/hyz/Downloads/ipad/解析上.pdf",
+      "page": 104
+    },
+    {
+      "kind": "练习题",
+      "num": 6,
+      "pdf": "/mnt/c/Users/hyz/Downloads/ipad/解析上.pdf",
+      "page": 126
+    },
+    {
+      "kind": "练习题",
+      "num": 7,
+      "pdf": "/mnt/c/Users/hyz/Downloads/ipad/解析上.pdf",
+      "page": 151
+    },
+    {
+      "kind": "练习题",
+      "num": 8,
+      "pdf": "/mnt/c/Users/hyz/Downloads/ipad/解析上.pdf",
+      "page": 175
+    },
+    {
+      "kind": "练习题",
+      "num": 9,
+      "pdf": "/mnt/c/Users/hyz/Downloads/ipad/解析上.pdf",
+      "page": 199
+    },
+    {
+      "kind": "练习题",
+      "num": 10,
+      "pdf": "/mnt/c/Users/hyz/Downloads/ipad/解析上.pdf",
+      "page": 225
+    },
+    {
+      "kind": "练习题",
+      "num": 11,
+      "pdf": "/mnt/c/Users/hyz/Downloads/ipad/解析上.pdf",
+      "page": 248
+    },
+    {
+      "kind": "练习题",
+      "num": 12,
+      "pdf": "/mnt/c/Users/hyz/Downloads/ipad/解析上.pdf",
+      "page": 271
+    },
+    {
+      "kind": "练习题",
+      "num": 13,
+      "pdf": "/mnt/c/Users/hyz/Downloads/ipad/解析上.pdf",
+      "page": 294
+    },
+    {
+      "kind": "练习题",
+      "num": 14,
+      "pdf": "/mnt/c/Users/hyz/Downloads/ipad/解析上.pdf",
+      "page": 318
+    },
+    {
+      "kind": "练习题",
+      "num": 15,
+      "pdf": "/mnt/c/Users/hyz/Downloads/ipad/解析上.pdf",
+      "page": 341
+    },
+    {
+      "kind": "练习题",
+      "num": 16,
+      "pdf": "/mnt/c/Users/hyz/Downloads/ipad/解析下.pdf",
+      "page": 4
+    },
+    {
+      "kind": "练习题",
+      "num": 17,
+      "pdf": "/mnt/c/Users/hyz/Downloads/ipad/解析下.pdf",
+      "page": 28
+    },
+    {
+      "kind": "练习题",
+      "num": 18,
+      "pdf": "/mnt/c/Users/hyz/Downloads/ipad/解析下.pdf",
+      "page": 56
+    },
+    {
+      "kind": "练习题",
+      "num": 19,
+      "pdf": "/mnt/c/Users/hyz/Downloads/ipad/解析下.pdf",
+      "page": 79
+    },
+    {
+      "kind": "练习题",
+      "num": 20,
+      "pdf": "/mnt/c/Users/hyz/Downloads/ipad/解析下.pdf",
+      "page": 105
+    },
+    {
+      "kind": "练习题",
+      "num": 21,
+      "pdf": "/mnt/c/Users/hyz/Downloads/ipad/解析下.pdf",
+      "page": 128
+    },
+    {
+      "kind": "练习题",
+      "num": 22,
+      "pdf": "/mnt/c/Users/hyz/Downloads/ipad/解析下.pdf",
+      "page": 153
+    },
+    {
+      "kind": "练习题",
+      "num": 23,
+      "pdf": "/mnt/c/Users/hyz/Downloads/ipad/解析下.pdf",
+      "page": 178
+    },
+    {
+      "kind": "练习题",
+      "num": 24,
+      "pdf": "/mnt/c/Users/hyz/Downloads/ipad/解析下.pdf",
+      "page": 202
+    },
+    {
+      "kind": "练习题",
+      "num": 25,
+      "pdf": "/mnt/c/Users/hyz/Downloads/ipad/解析下.pdf",
+      "page": 227
+    },
+    {
+      "kind": "练习题",
+      "num": 26,
+      "pdf": "/mnt/c/Users/hyz/Downloads/ipad/解析下.pdf",
+      "page": 252
+    },
+    {
+      "kind": "练习题",
+      "num": 27,
+      "pdf": "/mnt/c/Users/hyz/Downloads/ipad/解析下.pdf",
+      "page": 277
+    },
+    {
+      "kind": "练习题",
+      "num": 28,
+      "pdf": "/mnt/c/Users/hyz/Downloads/ipad/解析下.pdf",
+      "page": 299
+    },
+    {
+      "kind": "练习题",
+      "num": 29,
+      "pdf": "/mnt/c/Users/hyz/Downloads/ipad/解析下.pdf",
+      "page": 324
+    },
+    {
+      "kind": "练习题",
+      "num": 30,
+      "pdf": "/mnt/c/Users/hyz/Downloads/ipad/解析下.pdf",
+      "page": 350
+    }
+  ],
+  "overrides": {
+    "练习题": {
+      "19": {
+        "12": {
+          "stem": "中华文化是一座浩瀚的思想库，里面有很多珍宝，但也不乏糟粕，不是所有的内容都可以复活于当代、贡献于世界。时代的变迁决定了我们不可能 ______保留传统文化的一切方面。中华文明有的内容可以超越时空，有的内容则已尘封；有的可以古为今用，有的则应 ______。"
+        }
+      },
+      "21": {
+        "10": {
+          "stem": "社会治理现代化是中国式现代化社会治理领域的具体表现， ______于中国式现代化道路的生成脉络中，凝结了改革开放以来特别是新时代以来我国社会治理的新理念、 ______，现代治理精神和中华善治传统在新时代 ______。"
+        },
+        "12": {
+          "stem": "应急科普能够及时解疑释惑，提升公众认知力，还可以 ______伪科学和谣言， ______社会和网络环境。建立健全国家应急科普协调联动机制，完善各级政府应急管理预案中的应急科普措施，极为必要，更是 ______。"
+        },
+        "15": {
+          "stem": "随着今天社会文化生活进入“5G时代”，电影的供应和发行方式也亟需转型升级。一方面，不能 ______ ，观念和行为依旧停留在传统工业和平面视觉输出阶段， ______新工具新技术带来的发展红利；另一方面，一味迷信互联网工具，乃至完全被新的信息算法所锚定，跌进新的思想 ______。"
+        },
+        "17": {
+          "stem": "在过去，女性往往会被认为应该承担更多的家庭角色，因此真正走进企业成为企业高管的往往 ______。近年来，中国整体经济实力的不断增强，激励女性成长的社会环境日益优化，越来越多女性高管 ______。"
+        }
+      }
+    }
+  }
+}

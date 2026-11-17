@@ -990,6 +990,19 @@ class ExplainTests(unittest.TestCase):
             "本题考查语境搭配。第一空需要搭配。\n\n第一步：分析第一空。",
         )
 
+    def test_parse_strips_reference_answer_with_a_trailing_blank(self):
+        lines = [
+            self.line("1. (2025年全国事业单位联考 54%)"),
+            self.line("依次填入画横线部分最恰当的一项是："),
+            self.line("A. 甲", x=195.0),
+            self.line("B. 乙", x=363.0),
+            self.line("【参考答案】B ______"),
+            self.line("本题考查语境搭配。", x=197.0),
+        ]
+        parsed = explain.parse(lines, self.FakeProfile())
+        self.assertEqual(parsed[1]["answer"], "B")
+        self.assertNotIn("参考答案", parsed[1]["text"])
+
     def test_parse_keeps_explanation_continuing_on_the_next_page(self):
         lines = [
             self.line("14.(2019年浙江省考 55%)"),
@@ -1188,6 +1201,92 @@ class OcrLayoutTests(unittest.TestCase):
         tokens = ocr_layout.tokens(1, page, FakeOcrProfile(), [])
         self.assertEqual(tokens[0]["column"], "main")
         self.assertEqual(tokens[-1]["column"], "side")
+
+    def test_sidebar_with_inflated_boxes_uses_the_start_gap(self):
+        # Scan OCR can stretch a main-column box over the gutter. The sidebar
+        # still starts far to the left of every main-column line.
+        page = OcrPage(
+            1,
+            72,
+            800,
+            600,
+            [
+                {"text": "①花生批注：", "box": [50, 350, 120, 380]},
+                {"text": "补充辨析：", "box": [50, 390, 120, 420]},
+                {"text": "A选项的词义。", "box": [50, 430, 120, 460]},
+                {"text": "B选项的词义。", "box": [50, 470, 120, 500]},
+                {"text": "C选项的词义。", "box": [50, 510, 120, 540]},
+                {"text": "D选项的词义。", "box": [50, 550, 120, 580]},
+                {"text": "正文第一行内容足够宽，可以识别为主栏文本。", "box": [120, 350, 520, 380]},
+                {"text": "正文第二行内容同样足够宽，继续识别主栏。", "box": [120, 390, 520, 420]},
+                {"text": "正文第三行内容仍然足够宽，保持主栏布局。", "box": [120, 430, 520, 460]},
+                {"text": "正文第四行内容继续补足主栏的识别样本。", "box": [120, 470, 520, 500]},
+                {"text": "正文第五行内容继续补足主栏的识别样本。", "box": [120, 510, 520, 540]},
+                {"text": "正文第六行内容继续补足主栏的识别样本。", "box": [120, 550, 520, 580]},
+            ],
+            [],
+        )
+        tokens = ocr_layout.tokens(1, page, FakeOcrProfile(), [])
+        texts = {token["text"]: token["column"] for token in tokens}
+        self.assertEqual(texts["①花生批注："], "side")
+        self.assertEqual(texts["D选项的词义。"], "side")
+        self.assertEqual(texts["正文第六行内容继续补足主栏的识别样本。"], "main")
+
+    def test_sidebar_confined_to_the_top_is_still_a_sidebar(self):
+        # The answer-key table and the body below the notes can leave the
+        # gutter sample with main-column lines only.
+        page = OcrPage(
+            1,
+            72,
+            800,
+            600,
+            [
+                {"text": "花生批注：", "box": [50, 100, 120, 130]},
+                {"text": "补充辨析：", "box": [50, 130, 120, 160]},
+                {"text": "一部书的篇幅很长。", "box": [50, 160, 150, 190]},
+                {"text": "正文第一行内容足够宽，可以识别为主栏文本。", "box": [172, 100, 750, 130]},
+                {"text": "正文第二行内容同样足够宽，继续识别主栏。", "box": [172, 130, 750, 160]},
+                {"text": "正文第三行内容仍然足够宽，保持主栏布局。", "box": [172, 160, 750, 190]},
+                {"text": "正文第四行内容继续补足主栏的识别样本。", "box": [172, 350, 750, 380]},
+                {"text": "正文第五行内容继续补足主栏的识别样本。", "box": [172, 400, 750, 430]},
+                {"text": "正文第六行内容继续补足主栏的识别样本。", "box": [172, 450, 750, 480]},
+                {"text": "正文第七行内容继续补足主栏的识别样本。", "box": [172, 500, 750, 530]},
+                {"text": "正文第八行内容继续补足主栏的识别样本。", "box": [172, 550, 750, 580]},
+                {"text": "正文第九行内容继续补足主栏的识别样本。", "box": [172, 580, 750, 600]},
+            ],
+            [],
+        )
+        tokens = ocr_layout.tokens(1, page, FakeOcrProfile(), [])
+        texts = {token["text"]: token["column"] for token in tokens}
+        self.assertEqual(texts["花生批注："], "side")
+        self.assertEqual(texts["一部书的篇幅很长。"], "side")
+        self.assertEqual(texts["正文第九行内容继续补足主栏的识别样本。"], "main")
+
+    def test_sidebar_edge_that_reaches_into_the_gutter_stays_side(self):
+        # The gutter sample skips the top of the page, so a note there can end
+        # one point past the gutter start. It still belongs to the sidebar.
+        page = OcrPage(
+            1,
+            72,
+            800,
+            600,
+            [
+                {"text": "批注", "box": [50, 100, 126, 130]},
+                {"text": "易混成语补充", "box": [50, 400, 124, 430]},
+                {"text": "一部书的篇幅很长。", "box": [50, 450, 124, 480]},
+                {"text": "形容书籍很多或", "box": [50, 500, 124, 530]},
+                {"text": "正文第一行内容足够宽，可以识别为主栏文本。", "box": [200, 400, 750, 430]},
+                {"text": "正文第二行内容同样足够宽，继续识别主栏。", "box": [200, 450, 750, 480]},
+                {"text": "正文第三行内容仍然足够宽，保持主栏布局。", "box": [200, 500, 750, 530]},
+                {"text": "正文第四行内容继续补足主栏的识别样本。", "box": [200, 550, 750, 580]},
+            ],
+            [],
+        )
+        tokens = ocr_layout.tokens(1, page, FakeOcrProfile(), [])
+        texts = {token["text"]: token["column"] for token in tokens}
+        self.assertEqual(texts["批注"], "side")
+        self.assertEqual(texts["易混成语补充"], "side")
+        self.assertEqual(texts["正文第一行内容足够宽，可以识别为主栏文本。"], "main")
 
 
 if __name__ == "__main__":
