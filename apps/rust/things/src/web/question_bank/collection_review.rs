@@ -291,29 +291,14 @@ pub(crate) fn collection_question_review(props: &CollectionQuestionReviewProps) 
                             {render_question_bank_markdown(&current.question.stem)}
                         </div>
                     }
-                    <div class="space-y-2">
-                        {for options.iter().map(|(label,markdown)|{
-                            let correct=current.correct_answer.contains(label);
-                            html!{<div class={classes!("flex","items-start","gap-2.5","rounded-xl","border","p-3","text-base","leading-7",if correct {"border-success bg-success/10 text-success"} else {"border-base-content/20"})}
-                                data-testid="collection-review-choice">
-                                <span class="shrink-0 font-bold">{format!("{label}.")}</span>
-                                <span class="study-markdown min-w-0">{render_question_bank_markdown(markdown)}</span>
-                            </div>}
-                        })}
-                    </div>
+                    <QuestionBankChoices options={options.clone()} selected={Vec::<String>::new()}
+                        correct={current.correct_answer.clone()} grade={None::<String>} reviewed={true}
+                        disabled={true} pending={false} test_id="collection-review-choice" />
                     <ReviewAnswerStats correct_answer={current.correct_answer.clone()} answer={None::<Vec<String>>}
                         correct_count={current.correct_count} wrong_count={current.wrong_count}
                         answer_test_id="collection-review-answer" counts_test_id="collection-review-attempt-counts"/>
-                    <section class="border-t border-base-content/10 pt-3 space-y-3">
-                        if !*ai_tab {
-                            <h3 class="font-bold">{"原始解析"}</h3>
-                            <div class="study-markdown mt-2 text-base leading-7 text-base-content/75" data-testid="collection-review-explanation">
-                                {if current.explanation.is_empty() {html!{"暂无解析"}} else {render_question_bank_markdown(&current.explanation)}}
-                            </div>
-                            <h3 class="mt-3 font-bold">{"考点"}</h3>
-                            <p class="text-sm text-base-content/60">{if current.question.topics.is_empty() {"暂无考点".into()} else {current.question.topics.join("、")}}</p>
-                        }
-                    </section>
+                    <QuestionBankExplanation explanation={current.explanation.clone()} topics={current.question.topics.clone()}
+                        visible={!*ai_tab} test_id={Some(AttrValue::from("collection-review-explanation"))} />
                     if let Some(value) = &*preview {
                             if value.existing.is_empty() && !favorite_can_create(value) {
                                 <p class="text-xs opacity-60" role="status" data-testid="collection-review-flashcard-unavailable">
@@ -424,10 +409,8 @@ pub(crate) fn collection_question_review(props: &CollectionQuestionReviewProps) 
         }
     };
     html! {
-        <section class="question-bank-workspace training-workspace fixed inset-0 z-[80] flex h-dvh w-screen flex-col overflow-hidden bg-base-200 px-3 py-2"
-            data-testid="collection-review" aria-label={format!("{scope_label}复盘")}>
-            <header class="flex shrink-0 flex-wrap items-center justify-between gap-2 border-b border-base-content/10 pb-2">
-                <div class="flex min-w-0 items-center gap-3">
+        <QuestionBankWorkspace test_id="collection-review" overlay={true} label={Some(AttrValue::from(format!("{scope_label}复盘")))}>
+            <QuestionBankWorkspaceHeader leading={html! {<>
                     <button class="btn btn-ghost btn-sm" data-testid="collection-review-back" onclick={back}>
                         {format!("← {back_label}")}
                     </button>
@@ -437,11 +420,7 @@ pub(crate) fn collection_question_review(props: &CollectionQuestionReviewProps) 
                             {format!("{scope_label}复盘 · 第 {}/{} 题",*index+1,props.items.len())}
                         </span>
                     </div>
-                </div>
-                <div class="flex shrink-0 items-center gap-2">
-                    <span class="badge badge-outline">{"复盘"}</span>
-                </div>
-            </header>
+                </>}} actions={html! {<span class="badge badge-outline">{"复盘"}</span>}} />
             if let Some(message) = (*favorite_error).as_ref() {
                 <p class="shrink-0 pb-2 text-sm text-error" role="alert" data-testid="collection-review-favorite-error">
                     {message.clone()}
@@ -461,6 +440,7 @@ pub(crate) fn collection_question_review(props: &CollectionQuestionReviewProps) 
                     </TrainingSwipeSurface>
                 </InkOverlay>
             </div>
+            <QuestionBankWorkspaceNavigation>
             <nav class="flex shrink-0 items-center justify-center gap-3 border-t border-base-content/10 pt-2"
                 aria-label="复盘题目导航">
                 <button type="button" class="btn btn-outline btn-sm" data-testid="collection-review-previous"
@@ -481,6 +461,7 @@ pub(crate) fn collection_question_review(props: &CollectionQuestionReviewProps) 
                 <button type="button" class="btn btn-outline btn-sm" data-testid="collection-review-next"
                     disabled={(*creating && (props.card_ids.is_empty() || *navigation_blocked)) || *index+1>=props.items.len()} onclick={next}>{"下一题"}</button>
             </nav>
-        </section>
+            </QuestionBankWorkspaceNavigation>
+        </QuestionBankWorkspace>
     }
 }

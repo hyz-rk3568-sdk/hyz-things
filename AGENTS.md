@@ -176,12 +176,14 @@ composition root in its own Cargo package:
   HYZ_THINGS_E2E_SHENLUN_UPLOAD_FIXTURE=1 \
   HYZ_THINGS_E2E_REUSE_FRONTEND_BUNDLE=1 bash tools/start-e2e-server.sh
   ```
-- 分片运行时显式附着到对应 harness，并启用测试级分片；`workers` 仍保持 `1`：
+- 分片运行时显式附着到对应 harness，并启用测试级分片；`workers` 仍保持 `1`。以下端口、分片编号和总数仅为示例，实际运行时按测试数量与可用资源调整：
   ```sh
+  SHARD_INDEX=2
+  SHARD_COUNT=5
   HYZ_THINGS_E2E_WEB_PORT=3192 HYZ_THINGS_E2E_CONTROL_PORT=3193 \
   HYZ_THINGS_E2E_REUSE_FRONTEND_BUNDLE=1 HYZ_THINGS_E2E_REUSE_SERVER=1 \
   HYZ_THINGS_E2E_TEST_SHARD=1 \
-  ./node_modules/.bin/playwright test <spec...> --shard=2/2 --reporter=line
+  ./node_modules/.bin/playwright test <spec...> --shard="${SHARD_INDEX}/${SHARD_COUNT}" --reporter=line
   ```
 - **不要让两个 Playwright 进程同时附着到同一个 harness**：`resetHarness` 与内存状态会互相覆盖。同一 harness 可以串行复用；并行分片必须各自启动后端。本地分片数量不受 CI 的 2 片上限限制，可按 spec、`--grep` 或 `--shard=i/n` 继续细分；`--list` 用于核对实际选中数量。
 - `resetHarness`（`PUT /reset`）只重置内存门户状态、摄像头会话与上传观测，**不清空题库数据**（收藏、作答、AI 记录、练习会话）。同一 harness 内多个 spec 或分片共享题库 SQLite；会改动收藏等题库状态的用例必须回到观测到的初始状态，需要干净题库时显式调用 `PUT /reset-question-bank`。

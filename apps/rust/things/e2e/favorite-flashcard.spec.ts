@@ -75,6 +75,30 @@ async function openCreate(page: Page) {
   return panel;
 }
 
+test('collection review uses the training toolbar without creating a session', async ({ page }) => {
+  const sessionWrites: string[] = [];
+  page.on('request', request => {
+    if (request.method() !== 'GET' && /\/practice\/sessions(?:\/|$)/.test(new URL(request.url()).pathname)) {
+      sessionWrites.push(request.url());
+    }
+  });
+  await install(page);
+  const review = await openReview(page);
+  const header = review.getByTestId('training-workspace-header');
+  await expect(header).toBeVisible();
+  await expect(header.getByTestId('collection-review-back')).toBeVisible();
+  await expect(header.getByTestId('collection-review-scope')).toContainText('第 1/2 题');
+  const choices = review.getByTestId('collection-review-choice');
+  await expect(choices.nth(0)).toHaveAttribute('data-state', 'neutral');
+  await expect(choices.nth(1)).toHaveAttribute('data-state', 'correct');
+  await expect(review.getByRole('button', { name: /^B\./ })).toHaveCount(0);
+  await expect(review.getByTestId('collection-review-explanation')).toContainText('先列方程');
+  await review.getByTestId('collection-review-next').click();
+  await expect(header.getByTestId('collection-review-scope')).toContainText('第 2/2 题');
+  await review.getByTestId('collection-review-back').click();
+  expect(sessionWrites).toEqual([]);
+});
+
 test('flashcard header keeps its description readable in a narrow review pane', async ({ page }) => {
   await page.setViewportSize({ width: 1024, height: 768 });
   await install(page);
@@ -643,7 +667,7 @@ for (const action of ['stop', 'delete'] as const) {
       }
       (window as any).EventSource = FakeEventSource;
     });
-    let gets = 0;
+    let holdNextPoll = false;
     let pollPending = false;
     let release!: () => void;
     const pending = new Promise<void>(resolve => { release = resolve; });
@@ -654,8 +678,8 @@ for (const action of ['stop', 'delete'] as const) {
       const question_id = path.split('/').at(path.endsWith('/stop') ? -3 : -2)!;
       const method = route.request().method();
       if (method === 'GET') {
-        gets += 1;
-        if (gets === 3) {
+        if (holdNextPoll) {
+          holdNextPoll = false;
           pollPending = true;
           await pending;
         }
@@ -669,6 +693,7 @@ for (const action of ['stop', 'delete'] as const) {
     const review = await openReview(page);
     await expect(review.getByTestId('question-bank-ai-status')).toHaveText('正在生成');
     await expect.poll(() => page.evaluate(() => (window as any).__delayedStreams.length)).toBeGreaterThan(0);
+    holdNextPoll = true;
     await page.evaluate(() => {
       const streams = (window as any).__delayedStreams;
       const stream = streams[streams.length - 1];

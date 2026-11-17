@@ -1321,6 +1321,9 @@ pub(crate) fn exam_countdown_panel(props: &ExamCountdownPanelProps) -> Html {
                         <p class="mt-2 font-mono text-sm tabular-nums">
                             {format!("{:02} 时 {:02} 分",nearest_snapshot.hours,nearest_snapshot.minutes)}
                         </p>
+                        <p class="mt-1 text-xs text-base-content/70" data-testid="study-nearest-exam-total-hours">
+                            {format!("总剩余 {} 小时", nearest_snapshot.remaining_seconds / 3600)}
+                        </p>
                     }
                     <progress class="progress progress-primary mt-3 w-full" max="100" value={nearest_snapshot.progress_percent.to_string()}></progress>
                 </div>

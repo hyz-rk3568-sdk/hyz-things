@@ -217,6 +217,132 @@ fn browse_filter_url(
 pub(crate) const WORKSPACE: &str = "question-bank-workspace training-workspace fixed inset-0 z-[70] flex h-dvh w-screen flex-col overflow-hidden bg-base-200 px-3 py-2";
 
 #[derive(Properties, PartialEq)]
+pub(crate) struct QuestionBankWorkspaceProps {
+    pub test_id: AttrValue,
+    #[prop_or_default]
+    pub overlay: bool,
+    #[prop_or_default]
+    pub label: Option<AttrValue>,
+    pub children: Children,
+}
+
+#[function_component(QuestionBankWorkspace)]
+pub(crate) fn question_bank_workspace(props: &QuestionBankWorkspaceProps) -> Html {
+    let class = if props.overlay {
+        "question-bank-workspace training-workspace fixed inset-0 z-[80] flex h-dvh w-screen flex-col overflow-hidden bg-base-200 px-3 py-2"
+    } else {
+        WORKSPACE
+    };
+    html! { <section {class} data-testid={props.test_id.clone()} aria-label={props.label.clone()}>
+        {for props.children.iter()}
+    </section> }
+}
+
+#[derive(Properties, PartialEq)]
+pub(crate) struct QuestionBankWorkspaceHeaderProps {
+    pub leading: Html,
+    pub actions: Html,
+}
+
+#[function_component(QuestionBankWorkspaceHeader)]
+pub(crate) fn question_bank_workspace_header(props: &QuestionBankWorkspaceHeaderProps) -> Html {
+    html! {
+        <TrainingHeader class="flex shrink-0 flex-col gap-1 border-b border-base-content/10 pb-2 sm:flex-row sm:flex-nowrap sm:items-center sm:justify-between sm:gap-2">
+            <div class="flex min-w-0 flex-1 items-center gap-3">{props.leading.clone()}</div>
+            <div class="flex min-w-0 flex-wrap items-center gap-2 sm:flex-nowrap sm:justify-end">{props.actions.clone()}</div>
+        </TrainingHeader>
+    }
+}
+
+#[derive(Properties, PartialEq)]
+pub(crate) struct QuestionBankWorkspaceNavigationProps {
+    pub children: Children,
+}
+
+#[function_component(QuestionBankWorkspaceNavigation)]
+pub(crate) fn question_bank_workspace_navigation(
+    props: &QuestionBankWorkspaceNavigationProps,
+) -> Html {
+    html! { <div class="shrink-0">{for props.children.iter()}</div> }
+}
+
+#[derive(Properties, PartialEq)]
+pub(crate) struct QuestionBankChoicesProps {
+    pub options: Vec<(String, String)>,
+    pub selected: Vec<String>,
+    pub correct: Vec<String>,
+    pub grade: Option<String>,
+    pub reviewed: bool,
+    pub disabled: bool,
+    pub pending: bool,
+    pub test_id: AttrValue,
+    #[prop_or_default]
+    pub on_select: Option<Callback<String>>,
+}
+
+#[function_component(QuestionBankChoices)]
+pub(crate) fn question_bank_choices(props: &QuestionBankChoicesProps) -> Html {
+    html! {
+        <div class="space-y-2">
+            {for props.options.iter().map(|(label, markdown)| {
+                let chosen = props.selected.contains(label);
+                if props.reviewed {
+                    let correct = props.correct.contains(label);
+                    let grade = props.grade.as_deref();
+                    let state = if correct && grade != Some("ungradable") || chosen && grade == Some("correct") {
+                        ReviewChoiceState::Correct
+                    } else if chosen && grade == Some("wrong") {
+                        ReviewChoiceState::Wrong
+                    } else {
+                        ReviewChoiceState::Neutral
+                    };
+                    html! {<TrainingReviewChoice class="flex items-start gap-2.5 rounded-xl border p-3 text-base leading-7" test_id={props.test_id.clone()} {state}>
+                        <span class="shrink-0 font-bold">{format!("{label}.")}</span>
+                        <span class="study-markdown min-w-0">{render_question_bank_markdown(markdown)}</span>
+                    </TrainingReviewChoice>}
+                } else {
+                    let style = if chosen { "border-primary bg-primary text-primary-content" } else { "border-base-content/20 bg-base-100 hover:border-primary/50" };
+                    let on_select = props.on_select.clone();
+                    let choice = label.clone();
+                    html! {<button type="button" class={classes!("flex","w-full","items-start","gap-2.5","rounded-xl","border","p-3","text-left","text-base","leading-7","transition-colors","disabled:opacity-60",style)}
+                        aria-pressed={chosen.to_string()} aria-busy={(props.pending && chosen).to_string()}
+                        data-testid={props.test_id.clone()} disabled={props.disabled}
+                        onclick={Callback::from(move |_| { if let Some(callback) = &on_select { callback.emit(choice.clone()); } })}>
+                        <span class="shrink-0 font-bold">{format!("{label}.")}</span>
+                        <span class="study-markdown min-w-0">{render_question_bank_markdown(markdown)}</span>
+                    </button>}
+                }
+            })}
+        </div>
+    }
+}
+
+#[derive(Properties, PartialEq)]
+pub(crate) struct QuestionBankExplanationProps {
+    pub explanation: String,
+    pub topics: Vec<String>,
+    pub visible: bool,
+    #[prop_or_default]
+    pub test_id: Option<AttrValue>,
+}
+
+#[function_component(QuestionBankExplanation)]
+pub(crate) fn question_bank_explanation(props: &QuestionBankExplanationProps) -> Html {
+    html! {
+        <div class="border-t border-base-content/10 pt-3 space-y-3">
+            if props.visible {
+                <h3 class="font-bold">{"原始解析"}</h3>
+                <div class="study-markdown mt-2 text-base leading-7 text-base-content/75" data-testid={props.test_id.clone()}>
+                    {if props.explanation.is_empty() {html!{"暂无解析"}} else {render_question_bank_markdown(&props.explanation)}}
+                </div>
+                <h3 class="mt-3 font-bold">{"考点"}</h3>
+                <p class="text-sm text-base-content/60">{if props.topics.is_empty() {"暂无考点".into()} else {props.topics.join("、")}}</p>
+            }
+        </div>
+    }
+}
+
+#[derive(Properties, PartialEq)]
 pub(crate) struct QuestionBankTrainingProps {
     pub csrf: String,
     pub entry_mode: PracticeMode,
@@ -1913,41 +2039,11 @@ pub(crate) fn question_bank_training(props: &QuestionBankTrainingProps) -> Html 
                         if shared {
                             <div class="study-markdown question-bank-passage" data-testid="question-bank-practice-stem">{render_question_bank_markdown(&q.stem)}</div>
                         }
-                        <div class="space-y-2">
-                            {for options.iter().map(|(label, markdown)| {
-                                let chosen = displayed_answer.contains(label);
-                                let correct = selected_review.is_some_and(|r|r.correct_answer.contains(label));
-                                let grade = item.item.grade.as_deref();
-                                if completed {
-                                    let state = if correct && grade != Some("ungradable") || chosen && grade == Some("correct") {
-                                        ReviewChoiceState::Correct
-                                    } else if chosen && grade == Some("wrong") {
-                                        ReviewChoiceState::Wrong
-                                    } else {
-                                        ReviewChoiceState::Neutral
-                                    };
-                                    html! {<TrainingReviewChoice class="flex items-start gap-2.5 rounded-xl border p-3 text-base leading-7" test_id="question-bank-practice-choice" {state}>
-                                        <span class="shrink-0 font-bold">{format!("{label}.")}</span>
-                                        <span class="study-markdown min-w-0">{render_question_bank_markdown(markdown)}</span>
-                                    </TrainingReviewChoice>}
-                                } else {
-                                    let style = if chosen {
-                                        "border-primary bg-primary text-primary-content"
-                                    } else {
-                                        "border-base-content/20 bg-base-100 hover:border-primary/50"
-                                    };
-                                    let action = invoke.clone(); let choice = label.clone();
-                                    html! {<button type="button" class={classes!("flex","w-full","items-start","gap-2.5","rounded-xl","border","p-3","text-left","text-base","leading-7","transition-colors","disabled:opacity-60",style)}
-                                        aria-pressed={chosen.to_string()} aria-busy={(pending.is_some() && chosen).to_string()}
-                                        data-testid="question-bank-practice-choice"
-                                        disabled={current.session.paused || *busy}
-                                        onclick={Callback::from(move |_|action.emit(Action::Answer(choice.clone())))}>
-                                        <span class="shrink-0 font-bold">{format!("{label}.")}</span>
-                                        <span class="study-markdown min-w-0">{render_question_bank_markdown(markdown)}</span>
-                                    </button>}
-                                }
-                            })}
-                        </div>
+                        <QuestionBankChoices options={options.clone()} selected={displayed_answer.clone()}
+                            correct={selected_review.map(|r| r.correct_answer.clone()).unwrap_or_default()}
+                            grade={item.item.grade.clone()} reviewed={completed} disabled={current.session.paused || *busy}
+                            pending={pending.is_some()} test_id="question-bank-practice-choice"
+                            on_select={Some(Callback::from({let invoke=invoke.clone(); move |choice| invoke.emit(Action::Answer(choice))}))} />
                         if !completed {
                             <label class="flex items-center gap-2 text-sm">
                                 <input type="checkbox" class="checkbox checkbox-sm" checked={*multi_select} disabled={*busy}
@@ -1966,18 +2062,7 @@ pub(crate) fn question_bank_training(props: &QuestionBankTrainingProps) -> Html 
                             <ReviewAnswerStats correct_answer={r.correct_answer.clone()} answer={Some(item.item.answer.clone())}
                                 correct_count={r.correct_count} wrong_count={r.wrong_count}
                                 answer_test_id="question-bank-practice-review-answer" counts_test_id="question-bank-practice-attempt-counts"/>
-                            <div class="border-t border-base-content/10 pt-3 space-y-3">
-                                if !*ai_tab {
-                                    <h3 class="font-bold">{"原始解析"}</h3>
-                                    <div class="study-markdown mt-2 text-base leading-7 text-base-content/75">
-                                        {if r.explanation.is_empty() {html!{"暂无解析"}} else {render_question_bank_markdown(&r.explanation)}}
-                                    </div>
-                                    <h3 class="mt-3 font-bold">{"考点"}</h3>
-                                    <p class="text-sm text-base-content/60">
-                                        {if q.topics.is_empty() {"暂无考点".into()} else {q.topics.join("、")}}
-                                    </p>
-                                }
-                            </div>
+                            <QuestionBankExplanation explanation={r.explanation.clone()} topics={q.topics.clone()} visible={!*ai_tab} />
                             if !item.content_changed {
                                 if let Some(preview) = &card_preview {
                                     if preview.existing.is_empty() && !favorite_can_create(preview) {
@@ -2166,9 +2251,8 @@ pub(crate) fn question_bank_training(props: &QuestionBankTrainingProps) -> Html 
             );
             if !*history_forced {
                 return html! {
-                    <section class={WORKSPACE} data-testid="question-bank-practice-workspace">
-                        <TrainingHeader class="flex shrink-0 flex-col gap-1 border-b border-base-content/10 pb-2 sm:flex-row sm:flex-nowrap sm:items-center sm:justify-between sm:gap-2">
-                            <div class="flex min-w-0 flex-1 items-center gap-3">
+                    <QuestionBankWorkspace test_id="question-bank-practice-workspace">
+                        <QuestionBankWorkspaceHeader leading={html! {<>
                                 <button class="btn btn-ghost btn-sm" disabled={*busy} onclick={Callback::from({let invoke=invoke.clone();move |_|invoke.emit(Action::Exit)})}>
                                     {if completed {"← 返回训练"} else {"← 暂停并退出"}}
                                 </button>
@@ -2187,8 +2271,7 @@ pub(crate) fn question_bank_training(props: &QuestionBankTrainingProps) -> Html 
                                         </div>
                                     }
                                 </div>
-                            </div>
-                            <div class="flex min-w-0 flex-wrap items-center gap-2 sm:flex-nowrap sm:justify-end">
+                            </>}} actions={html! {<>
                                 <StudyGoalBars />
                                 <CodexLimitBars />
                                 if !completed {
@@ -2218,8 +2301,7 @@ pub(crate) fn question_bank_training(props: &QuestionBankTrainingProps) -> Html 
                                             })}>{"重做原题"}</button>
                                     </span>
                                 }
-                            </div>
-                        </TrainingHeader>
+                            </>}} />
                         {alert}
                         if *submit_confirm && !completed {
                             <div class="mb-2 flex flex-wrap items-center justify-center gap-2 rounded-box bg-warning/20 p-2" role="alert" data-testid="question-bank-submit-confirm">
@@ -2256,8 +2338,8 @@ pub(crate) fn question_bank_training(props: &QuestionBankTrainingProps) -> Html 
                                 </InkOverlay>
                             }
                         </div>
-                        {nav}
-                    </section>
+                        <QuestionBankWorkspaceNavigation>{nav}</QuestionBankWorkspaceNavigation>
+                    </QuestionBankWorkspace>
                 };
             }
         }

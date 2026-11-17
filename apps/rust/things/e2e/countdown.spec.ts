@@ -57,6 +57,15 @@ test("renders the upcoming exam countdown in chronological order", async ({
   expect(accessibility.violations).toEqual([]);
 });
 
+test("shows total remaining hours for the nearest exam", async ({ page }) => {
+  await page.clock.setFixedTime(new Date("2027-03-11T13:30:00+08:00"));
+  await page.goto("/");
+  await goToAppPage(page, "学习");
+
+  await expect(page.getByTestId("study-nearest-exam-days")).toContainText("2天");
+  await expect(page.getByTestId("study-nearest-exam-total-hours")).toHaveText("总剩余 58 小时");
+});
+
 test("legacy morning afternoon evening countdown panel is removed", async ({ page }) => {
   await openStudyPage(page);
   await expect(page.getByRole("region",{name:"自定义倒计时"})).toHaveCount(0);
