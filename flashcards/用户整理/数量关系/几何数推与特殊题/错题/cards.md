@@ -2160,3 +2160,297 @@ S_{\triangle DFP}
 前面解析中写过 \(DQ=AD-AE-EQ\)，那一步有误；正确关系是 **\(DQ=AD-AQ\)**，上面的计算已修正。
 
 ---
+
+## Card
+<!-- hyz-card-id: 01a1e759-ebca-79f0-8137-74f358a2fea4 -->
+<!-- hyz-source-question-id: 01a1af25-d036-7523-9552-d2dbf3f24988 -->
+<!-- hyz-correct-answer: [] -->
+### Front
+
+一块种植花卉的矩形土地如图所示，AD 边长是 AB 的 2 倍，E 是 CD 的中点，甲、乙、丙、丁、戊区域分别种植白花、红花、黄花、紫花、白花。则种植白花的面积占矩形土地面积的：
+
+![配图](../../../../images/3915bb46e1edd7f9bc6de21ee52a5f70351647f4f073835c8c914258ae92cd05.png)
+
+- A. 3/4
+- B. 2/3
+- C. 7/12
+- D. 1/2
+
+### Back
+
+## 答案
+
+**C．\(\dfrac{7}{12}\)**。这是独立求解的结果。
+
+## 判型与所用套路
+
+这是**平面几何面积比例题**。图中的平行线与交叉线构成了**蝴蝶模型**：先用相似三角形求交点分割线段的比例，再利用同高三角形的面积关系求白花面积。
+
+## 关键条件
+
+设 \(AE\) 与 \(BD\) 交于点 \(O\)。
+
+- \(E\) 是 \(CD\) 的中点，所以 \(DE=\dfrac12CD\)。
+- 矩形中 \(AB=CD\)、\(AB\parallel DE\)，因此 \(AB:DE=2:1\)。
+- 白花区域是甲、戊，即 \(\triangle AOB\) 和 \(\triangle EBC\)。
+
+## 按套路分步求解
+
+### 1. 用蝴蝶模型求交点处的线段比
+
+由于 \(AB\parallel DE\)，结合交点处的对顶角，可得
+
+\[
+\triangle AOB\sim\triangle EOD。
+\]
+
+因此对应边成比例：
+
+\[
+BO:OD=AB:DE=2:1。
+\]
+
+于是 \(BD\) 共分为 \(3\) 份，其中 \(BO\) 占 \(2\) 份：
+
+\[
+\frac{BO}{BD}=\frac23。
+\]
+
+### 2. 求甲区域面积
+
+\(\triangle AOB\) 和 \(\triangle ABD\) 以 \(BO\)、\(BD\) 为底，具有相同的高，所以面积比等于底边比：
+
+\[
+S_{\text{甲}}=\frac23S_{\triangle ABD}。
+\]
+
+矩形的对角线将矩形分成面积相等的两部分，因此
+
+\[
+S_{\text{甲}}
+=\frac23\times\frac12S_{\text{矩形}}
+=\frac13S_{\text{矩形}}。
+\]
+
+### 3. 求戊区域面积
+
+戊是 \(\triangle EBC\)，其底 \(EC\) 是矩形底边 \(DC\) 的一半，高等于矩形的高。因此
+
+\[
+S_{\text{戊}}=\frac14S_{\text{矩形}}。
+\]
+
+### 4. 合并白花面积
+
+\[
+\frac{S_{\text{白花}}}{S_{\text{矩形}}}
+=\frac13+\frac14
+=\boxed{\frac7{12}}。
+\]
+
+## 快速验算与排除干扰项
+
+把矩形面积看作 \(12\) 份，甲占 \(4\) 份，戊占 \(3\) 份，白花共占 \(7\) 份，因此选 **C**。
+
+## 与原卷参考对照
+
+原卷的 **Answer 和 Explanation 均为空**，上述结果未经原卷答案核对。
+
+## 复盘提醒
+
+蝴蝶模型的入口是**两条平行线＋交叉线**。本题中，\(\triangle AOB\) 与 \(\triangle EOD\) 相似，有：
+
+\[
+\frac{AO}{OE}
+=\frac{BO}{OD}
+=\frac{AB}{DE}。
+\]
+
+若要求这两个相似三角形的面积比，才把边长比平方；本题先求线段比，再用同高三角形求甲的面积，更直接。
+
+另外，题目给出的 \(AD=2AB\) 不影响这道题的面积占比，无需代入计算。
+
+---
+
+## Card
+<!-- hyz-card-id: 01a1e788-d73b-7c93-8450-ee5032770117 -->
+<!-- hyz-source-question-id: 01a1af25-d036-7523-9552-d2ea59348f10 -->
+<!-- hyz-correct-answer: [] -->
+### Front
+
+如图所示，在长方形 ABCD 中，E、F 为 AB 的三等分点，G 为 CD 的中点，连接 EC、FG 相交于 O 点。已知四边形 FOCB 的面积为 16 平方米，则五边形 ADGOE 的面积为多少平方米？
+
+![配图](../../../../images/ea3c37a4cb47718872d25c0f9a88a13e464f88f75902775a9ce41148fe61502e.png)
+
+- A. 20
+- B. 29
+- C. 31
+- D. 60
+
+### Back
+
+这样做可以，而且比上一种分成 60 份的方法更直接：**用大三角形 \(\triangle EBC\)，减去小三角形 \(\triangle EFO\)，就得到已知的四边形 \(FOCB\)。**
+
+如果你设矩形的长、宽分别为 \(x、y\)，那么矩形面积就是 \(xy\)。你图中写的这两项是对的：
+
+\[
+S_{\triangle EBC}=\frac13xy
+\]
+
+\[
+S_{\triangle EFO}
+=\frac12\times\frac{x}{3}\times\frac{2y}{5}
+=\frac1{15}xy
+\]
+
+其中 \(\frac{2y}{5}\) 是点 \(O\) 到上边 \(AB\) 的距离：蝴蝶模型得 \(FO:OG=2:3\)，因此它占矩形高的 \(\frac25\)。
+
+把你这一步接下去：
+
+\[
+\underbrace{S_{\triangle EBC}}_{\frac13xy}
+-\underbrace{S_{\triangle EFO}}_{\frac1{15}xy}
+=\underbrace{S_{FOCB}}_{16}
+\]
+
+\[
+\frac13xy-\frac1{15}xy=16
+\quad\Longrightarrow\quad
+\frac4{15}xy=16
+\quad\Longrightarrow\quad
+xy=60
+\]
+
+也就是矩形面积为 **60 平方米**。
+
+接着求左边五边形：从矩形中减去 \(\triangle EBC\) 和 \(\triangle OGC\)。
+
+\[
+S_{\triangle EBC}=\frac13xy=20
+\]
+
+而 \(\triangle OGC\) 的底 \(GC=\frac{x}{2}\)，高是 \(\frac{3y}{5}\)，所以：
+
+\[
+S_{\triangle OGC}
+=\frac12\times\frac{x}{2}\times\frac{3y}{5}
+=\frac3{20}xy=9
+\]
+
+因此：
+
+\[
+S_{ADGOE}=60-20-9=\boxed{31\text{ 平方米}}
+\]
+
+**你这次的思路和图中可辨认的两个面积式都没有错**，关键是继续用“大三角形减小三角形”列出已知的 16，再求矩形面积。图中个别手写标记的含义我无法完全确认，本地 OCR 也没有返回结果，所以不把那些不确定的标记当作错误来判断。
+
+---
+
+## Card
+<!-- hyz-card-id: 01a1e854-3d31-7d41-b5f0-1c97d0300a4c -->
+<!-- hyz-source-question-id: 01a1af25-d036-7523-9552-d2f08134a92e -->
+<!-- hyz-correct-answer: [] -->
+### Front
+
+如图三角形中，A、B 分别为两条边的中点，则图中阴影部分面积为三角形总面积的（ ）
+
+![配图](../../../../images/a7f112412c2269cb2839ade2b35e2172aa6f00a900b3acaf6df6c3a405ddfec5.png)
+
+- A. 1/3
+- B. 1/4
+- C. 2/7
+- D. 3/8
+
+### Back
+
+## 答案
+
+**A．\(\dfrac13\)**。这是独立求解的结果。
+
+## 判型与所用套路
+
+这是**平面几何中的面积比例题**。图中两条中线交叉，形成蝴蝶形；适合用**面积割补＋同高三角形面积比**，不必求具体边长。
+
+## 关键条件
+
+给原图中未标字母的三个顶点分别标为 \(P、Q、R\)，两条线交于 \(O\)，再补一条辅助线 \(RO\)：
+
+```svg
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 620 370">
+<title>三角形中线与阴影面积</title>
+<desc>A是PR中点，B是QR中点，QA与PB交于O。连接RO后，阴影三角形POA和QOB各占一份。</desc>
+<polygon points="60,300 300,300 320,220" fill="#a9c9e8"/>
+<polygon points="360,60 450,180 320,220" fill="#a9c9e8"/>
+<polygon points="60,300 360,60 540,300" fill="none" stroke="#222222" stroke-width="3"/>
+<line x1="360" y1="60" x2="300" y2="300" stroke="#222222" stroke-width="2"/>
+<line x1="60" y1="300" x2="450" y2="180" stroke="#222222" stroke-width="2"/>
+<line x1="540" y1="300" x2="320" y2="220" stroke="#b34b35" stroke-width="2"/>
+<text x="40" y="325" fill="#222222" font-family="sans-serif">P</text>
+<text x="355" y="45" fill="#222222" font-family="sans-serif">Q</text>
+<text x="545" y="325" fill="#222222" font-family="sans-serif">R</text>
+<text x="294" y="325" fill="#222222" font-family="sans-serif">A</text>
+<text x="457" y="180" fill="#222222" font-family="sans-serif">B</text>
+<text x="305" y="210" fill="#222222" font-family="sans-serif">O</text>
+<text x="235" y="205" fill="#222222" font-family="sans-serif">2份</text>
+<text x="225" y="275" fill="#222222" font-family="sans-serif">1份</text>
+<text x="365" y="155" fill="#222222" font-family="sans-serif">1份</text>
+<text x="350" y="275" fill="#222222" font-family="sans-serif">1份</text>
+<text x="430" y="235" fill="#222222" font-family="sans-serif">1份</text>
+<text x="310" y="350" text-anchor="middle" fill="#a13a28" font-family="sans-serif">红线 RO 为辅助线</text>
+</svg>
+```
+
+其中 \(A\) 是 \(PR\) 的中点，\(B\) 是 \(QR\) 的中点；阴影是 \(\triangle POA\) 和 \(\triangle QOB\)。
+
+## 按套路分步求解
+
+**第一步：用中点找等面积。**
+
+因为 \(PA=AR\)，\(\triangle POA\) 与 \(\triangle ROA\) **等底、同高**，所以面积相等。
+
+同理，因为 \(QB=BR\)，\(\triangle QOB\) 与 \(\triangle ROB\) 也等面积。
+
+**第二步：证明两块阴影等面积。**
+
+\(QA\) 和 \(PB\) 都是大三角形的中线，各自把大三角形分成面积相等的两半，因此：
+
+\[
+S_{\triangle PQA}=S_{\triangle PQB}
+\]
+
+这两个三角形都有公共部分 \(\triangle PQO\)，分别减去公共部分，就得到：
+
+\[
+S_{\triangle POA}=S_{\triangle QOB}
+\]
+
+因此，图中除 \(\triangle PQO\) 以外的四个小三角形，面积都相等。设每个都是 **1 份**。
+
+**第三步：求总份数。**
+
+\(QA\) 把大三角形面积平分：
+
+- 左半边 \(\triangle PQA\)：\(\triangle PQO+1\) 份；
+- 右半边 \(\triangle QAR\)：\(1+1+1=3\) 份。
+
+所以 \(\triangle PQO\) 是 \(3-1=2\) 份。大三角形共 \(3+3=6\) 份，两块阴影共 \(1+1=2\) 份。
+
+\[
+\boxed{\frac{S_{\text{阴影}}}{S_{\triangle PQR}}
+=\frac26=\frac13}
+\]
+
+## 快速验算与排除干扰项
+
+图中两块阴影各占总面积的 \(\frac16\)，合起来为 \(\frac13\)，对应 **A**；B、C、D 均不符。
+
+## 与原卷参考对照
+
+原卷的 **Answer 和 Explanation 均为空**，以上结果未经原卷答案核对。
+
+## 复盘提醒
+
+遇到“**三角形两边中点＋连线相交**”，先找中线平分面积；需要比较交点附近的区域时，可以连接**第三个顶点与交点**，再用等底同高把面积分成份数。注意题目要求的是**两块阴影之和**。
+
+---
