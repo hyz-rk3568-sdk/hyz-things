@@ -1003,33 +1003,35 @@ pub(crate) fn comprehensive_training(props: &ComprehensiveProps) -> Html {
             })
         };
         return html! {
-            <section class="analysis-fullscreen fixed inset-0 z-[70] flex h-dvh w-screen min-w-0 flex-col overflow-hidden bg-base-200"
-                data-testid="analysis-result" data-view="review">
-                <TrainingHeader class="analysis-header flex shrink-0 flex-col gap-1 border-b border-base-content/10 pb-2 sm:flex-row sm:items-center sm:justify-between sm:gap-2">
+            <TrainingDetailLayout root_class="analysis-fullscreen fixed inset-0 z-[70] flex h-dvh w-screen min-w-0 flex-col overflow-hidden bg-base-200" test_id="analysis-result" view={Some("review")}
+                leading={html! {
                     <div class="flex min-w-0 items-center gap-2">
                         <button type="button" class="btn btn-ghost btn-sm" data-testid="analysis-exit"
                             onclick={back_from_review}>{if *reviewing_history {"← 返回记录"} else {"← 返回专项"}}</button>
                         <strong class="truncate text-sm">{"综合训练 · 答案解析"}</strong>
                         <span class="hidden text-xs text-base-content/60 sm:inline">{format!("第 {}/20 题 · 材料 {}/4",index+1,group_index+1)}</span>
                     </div>
+                }}
+                actions={html! {
                     <div class="flex min-w-0 flex-wrap items-center gap-2 sm:justify-end">
-                        <StudyGoalBars />
                         <TrainingStatusBar prefix="analysis-result" counts={review_status} mode={TrainingStatusMode::Review}/>
                         <button type="button" class="btn btn-outline btn-sm" onclick={show_history}>{"查看练习记录"}</button>
                         <button type="button" class="btn btn-outline btn-sm" data-testid="analysis-retry-result" disabled={*busy} onclick={redo_from_result}>{"重做原题"}</button>
                         <button type="button" class="btn btn-primary btn-sm" onclick={again}>{"再出一套"}</button>
                     </div>
-                </TrainingHeader>
-                <div class="min-h-0 flex-1">
+                }}
+                notices={html! {
+                    if let Some(msg)=(*error).clone() {
+                        <p class="shrink-0 text-error text-xs" role="alert">{msg}</p>
+                    }
+                }}
+                content={html! {
                     <InkOverlay question_index={index} persist_key={format!("{}-workspace-{}",review_id,index)} responsive={true} scroll_linked={true}><TrainingSwipeSurface current={current.clone()} total={score.questions.len()}>
                         <AnalysisPanes material={score.materials[group_index].clone()} question={review_question} question_index={index} right_title="答案与解析" />
                     </TrainingSwipeSurface></InkOverlay>
-                </div>
-                if let Some(msg)=(*error).clone() {
-                    <p class="shrink-0 text-error text-xs" role="alert">{msg}</p>
-                }
-                {analysis_navigation(current.clone(),index,&marks,true)}
-            </section>
+                }}
+                navigation={analysis_navigation(current.clone(),index,&marks,true)}
+            />
         };
     }
     if *history_open {
@@ -1181,17 +1183,17 @@ pub(crate) fn comprehensive_training(props: &ComprehensiveProps) -> Html {
             .map(|answer| answer.map(|_| true))
             .collect::<Vec<_>>();
         return html! {
-            <section class="analysis-fullscreen fixed inset-0 z-[70] flex h-dvh w-screen min-w-0 flex-col overflow-hidden bg-base-200"
-                data-testid="analysis-run" data-view="answer">
-                <TrainingHeader class="analysis-header flex shrink-0 items-center justify-between gap-2 border-b border-base-content/10 pb-2">
+            <TrainingDetailLayout root_class="analysis-fullscreen fixed inset-0 z-[70] flex h-dvh w-screen min-w-0 flex-col overflow-hidden bg-base-200" test_id="analysis-run" view={Some("answer")}
+                leading={html! {
                     <div class="flex min-w-0 items-center gap-2">
                         <button type="button" class="btn btn-ghost btn-sm" data-testid="analysis-exit"
                             onclick={pause_and_exit.clone()}>{"← 暂停并退出"}</button>
                         <strong class="truncate text-sm">{"资料分析综合训练"}</strong>
                         <span class="hidden text-xs text-base-content/60 sm:inline">{format!("第 {}/20 题 · 材料 {}/4",index+1,group_index+1)}</span>
                     </div>
+                }}
+                actions={html! {
                     <div class="flex shrink-0 items-center gap-2">
-                        <StudyGoalBars />
                         <TrainingStatusBar prefix="analysis" counts={active_status} mode={TrainingStatusMode::Active}/>
                         <button type="button" class={if remaining<=60 {"btn btn-ghost font-mono text-xl text-error"}else{"btn btn-ghost font-mono text-xl"}}
                             data-testid="analysis-clock" title={if paused {"点击继续计时"} else {"点击暂停计时"}}
@@ -1199,8 +1201,11 @@ pub(crate) fn comprehensive_training(props: &ComprehensiveProps) -> Html {
                         <button type="button" class="btn btn-sm btn-error btn-outline" disabled={*busy || paused}
                             onclick={{let submit=submit.clone();Callback::from(move |_|submit.emit(()))}}>{"交卷"}</button>
                     </div>
-                </TrainingHeader>
-                <div class="relative min-h-0 flex-1 overflow-hidden">
+                }}
+                notices={html! {
+                    if let Some(msg)=(*error).clone(){<div class="shrink-0 text-error text-xs" role="alert">{msg}</div>}
+                }}
+                content={html! {
                     if paused {
                         <div class="flex h-full items-center justify-center overflow-y-auto p-4" data-testid="analysis-paused">
                             <div class="w-full max-w-md rounded-box bg-base-100 p-6 text-center sm:p-8">
@@ -1218,10 +1223,9 @@ pub(crate) fn comprehensive_training(props: &ComprehensiveProps) -> Html {
                             <AnalysisPanes material={group.material.clone()} question={question_content} question_index={index} />
                         </TrainingSwipeSurface></InkOverlay>
                     }
-                </div>
-                if let Some(msg)=(*error).clone(){<div class="shrink-0 text-error text-xs" role="alert">{msg}</div>}
-                {analysis_navigation(current.clone(),index,&markers,false)}
-            </section>
+                }}
+                navigation={analysis_navigation(current.clone(),index,&markers,false)}
+            />
         };
     }
     html! {

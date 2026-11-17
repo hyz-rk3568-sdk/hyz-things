@@ -30,6 +30,42 @@ pub(crate) fn training_header(props: &TrainingHeaderProps) -> Html {
     }
 }
 
+#[derive(Properties, PartialEq)]
+pub(crate) struct TrainingDetailLayoutProps {
+    pub(crate) root_class: Classes,
+    pub(crate) test_id: AttrValue,
+    #[prop_or_default]
+    pub(crate) view: Option<AttrValue>,
+    #[prop_or_default]
+    pub(crate) label: Option<AttrValue>,
+    pub(crate) leading: Html,
+    pub(crate) actions: Html,
+    #[prop_or_default]
+    pub(crate) notices: Html,
+    pub(crate) content: Html,
+    pub(crate) navigation: Html,
+}
+
+#[function_component(TrainingDetailLayout)]
+pub(crate) fn training_detail_layout(props: &TrainingDetailLayoutProps) -> Html {
+    html! {
+        <section class={props.root_class.clone()} data-testid={props.test_id.clone()}
+            data-view={props.view.clone()} aria-label={props.label.clone()}>
+            <div class="flex min-h-0 w-full flex-1 flex-col" data-testid="question-detail-layout">
+                <TrainingHeader class="analysis-header flex shrink-0 flex-col gap-1 border-b border-base-content/10 pb-2 sm:flex-row sm:flex-nowrap sm:items-center sm:justify-between sm:gap-2">
+                    <div class="flex min-w-0 flex-1 items-center gap-3">{props.leading.clone()}</div>
+                    <div class="flex min-w-0 flex-wrap items-center gap-2 sm:flex-nowrap sm:justify-end">
+                        <StudyGoalBars /><CodexLimitBars />{props.actions.clone()}
+                    </div>
+                </TrainingHeader>
+                {props.notices.clone()}
+                <div class="relative min-h-0 flex-1 overflow-hidden">{props.content.clone()}</div>
+                <div class="shrink-0">{props.navigation.clone()}</div>
+            </div>
+        </section>
+    }
+}
+
 #[derive(Clone, Copy, PartialEq)]
 pub(crate) enum ReviewChoiceState {
     Correct,

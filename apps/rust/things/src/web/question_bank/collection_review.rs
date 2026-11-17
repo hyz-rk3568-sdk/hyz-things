@@ -66,7 +66,7 @@ pub(crate) fn collection_question_review(props: &CollectionQuestionReviewProps) 
                 spawn_local(async move {
                     let result = fetch_json::<PracticeQuestionDetail>(
                         &format!("{ROOT}/practice/questions/{id}"),
-                        "题目复盘",
+                        "题目详情",
                     )
                     .await;
                     if current.get() {
@@ -172,7 +172,7 @@ pub(crate) fn collection_question_review(props: &CollectionQuestionReviewProps) 
         }
     });
     let back_label = if props.scope_label.is_some() {
-        "返回复盘".to_string()
+        "返回卡片".to_string()
     } else {
         format!("返回{scope_label}")
     };
@@ -237,14 +237,12 @@ pub(crate) fn collection_question_review(props: &CollectionQuestionReviewProps) 
         let on_back = props.on_back.clone();
         Callback::from(move |_| on_back.emit(()))
     };
-    let previous = {
-        let index = index.clone();
-        Callback::from(move |_| index.set(index.saturating_sub(1)))
-    };
-    let next = {
-        let index = index.clone();
-        let total = props.items.len();
-        Callback::from(move |_| index.set((*index + 1).min(total.saturating_sub(1))))
+    let navigation_disabled = *creating && (props.card_ids.is_empty() || *navigation_blocked);
+    let navigation_allowed = {
+        let creating = creating.clone();
+        let blocked = navigation_blocked.clone();
+        let cards = !props.card_ids.is_empty();
+        Callback::from(move |()| !*creating || (cards && !*blocked))
     };
     let main = if let Some(current) = &*detail {
         let shared = !current.materials.is_empty();
@@ -254,7 +252,6 @@ pub(crate) fn collection_question_review(props: &CollectionQuestionReviewProps) 
                 data-testid="collection-review-material-pane">
                 <div class={classes!(QUESTION_BANK_PANE_HEADER,"question-bank-pane-header")}>
                     <strong>{"原卷材料"}</strong>
-                    <span class="text-[11px] text-base-content/45">{"复盘"}</span>
                 </div>
                 <div ref={material_scroll.clone()}
                     class="min-h-0 flex-1 overflow-y-auto overscroll-contain touch-pan-y p-4"
@@ -273,7 +270,6 @@ pub(crate) fn collection_question_review(props: &CollectionQuestionReviewProps) 
                 data-testid="collection-review-stem-pane">
                 <div class={classes!(QUESTION_BANK_PANE_HEADER,"question-bank-pane-header")}>
                     <strong>{"题干"}</strong>
-                    <span class="text-[11px] text-base-content/45">{"复盘"}</span>
                 </div>
                 <div ref={material_scroll.clone()}
                     class="min-h-0 flex-1 overflow-y-auto overscroll-contain touch-pan-y p-4"
@@ -404,64 +400,44 @@ pub(crate) fn collection_question_review(props: &CollectionQuestionReviewProps) 
     } else {
         html! {
             <div class="flex h-full items-center justify-center rounded-box bg-base-100" data-testid="collection-review-loading">
-                <p class="opacity-60" role="status">{"正在读取题目复盘…"}</p>
+                <p class="opacity-60" role="status">{"正在读取题目…"}</p>
             </div>
         }
     };
     html! {
-        <QuestionBankWorkspace test_id="collection-review" overlay={true} label={Some(AttrValue::from(format!("{scope_label}复盘")))}>
-            <QuestionBankWorkspaceHeader leading={html! {<>
-                    <button class="btn btn-ghost btn-sm" data-testid="collection-review-back" onclick={back}>
-                        {format!("← {back_label}")}
-                    </button>
-                    <div class="min-w-0">
-                        <strong class="block truncate text-sm">{item.paper_title.clone()}</strong>
-                        <span class="block truncate text-[11px] text-base-content/50" data-testid="collection-review-scope">
-                            {format!("{scope_label}复盘 · 第 {}/{} 题",*index+1,props.items.len())}
-                        </span>
-                    </div>
-                </>}} actions={html! {<span class="badge badge-outline">{"复盘"}</span>}} />
-            if let Some(message) = (*favorite_error).as_ref() {
-                <p class="shrink-0 pb-2 text-sm text-error" role="alert" data-testid="collection-review-favorite-error">
-                    {message.clone()}
-                </p>
-            }
-            <div class="relative min-h-0 flex-1 overflow-hidden">
-                // Keep the ink layer mounted while the flashcard editor is
-                // open so the header keeps the same 草稿 controls as any other
-                // review entry.
+        <TrainingDetailLayout root_class="question-bank-workspace training-workspace fixed inset-0 z-[80] flex h-dvh w-screen flex-col overflow-hidden bg-base-200 px-3 py-2"
+            test_id="collection-review" label={Some(AttrValue::from(format!("{scope_label}题目")))}
+            leading={html! {<>
+                <button class="btn btn-ghost btn-sm" data-testid="collection-review-back" onclick={back}>
+                    {format!("← {back_label}")}
+                </button>
+                <div class="min-w-0">
+                    <strong class="block truncate text-sm">{item.paper_title.clone()}</strong>
+                    <span class="block truncate text-[11px] text-base-content/50" data-testid="collection-review-scope">
+                        {format!("{scope_label} · 第 {}/{} 题",*index+1,props.items.len())}
+                    </span>
+                </div>
+            </>}}
+            actions={Html::default()}
+            notices={html! {if let Some(message) = (*favorite_error).as_ref() {
+                <p class="shrink-0 pb-2 text-sm text-error" role="alert" data-testid="collection-review-favorite-error">{message.clone()}</p>
+            }}}
+            content={html! {
                 <InkOverlay question_index={*index} responsive={true} scroll_linked={true}
                     persist_key={format!("collection-review-{}-{}", scope_label, item.question_id)}>
                     <TrainingSwipeSurface current={index.clone()} total={props.items.len()}
-                        navigation_allowed={Some(Callback::from({
-                            let creating=creating.clone(); let blocked=navigation_blocked.clone(); let cards=!props.card_ids.is_empty(); move |()| !*creating || (cards && !*blocked)
-                        }))}>
+                        navigation_allowed={Some(navigation_allowed.clone())}>
                         {main}
                     </TrainingSwipeSurface>
                 </InkOverlay>
-            </div>
-            <QuestionBankWorkspaceNavigation>
-            <nav class="flex shrink-0 items-center justify-center gap-3 border-t border-base-content/10 pt-2"
-                aria-label="复盘题目导航">
-                <button type="button" class="btn btn-outline btn-sm" data-testid="collection-review-previous"
-                    disabled={(*creating && (props.card_ids.is_empty() || *navigation_blocked)) || *index==0} onclick={previous}>{"上一题"}</button>
-                if !props.card_ids.is_empty() {
-                    <div class="flex max-w-[60vw] gap-1 overflow-x-auto" aria-label="卡片答题卡" data-testid="collection-review-card-navigation">
-                        {for props.card_ids.iter().enumerate().map(|(position, _)| {
-                            let index = index.clone();
-                            html! { <button type="button" class={classes!("btn", "btn-sm", if position == *index {"btn-primary"} else {"btn-ghost"})}
-                                disabled={*navigation_blocked} aria-label={format!("第 {} 张卡片", position + 1)}
-                                onclick={Callback::from(move |_| index.set(position))}>{position + 1}</button> }
-                        })}
-                    </div>
-                }
-                <span class="min-w-16 text-center text-sm tabular-nums" data-testid="collection-review-position">
-                    {format!("{} / {}",*index+1,props.items.len())}
-                </span>
-                <button type="button" class="btn btn-outline btn-sm" data-testid="collection-review-next"
-                    disabled={(*creating && (props.card_ids.is_empty() || *navigation_blocked)) || *index+1>=props.items.len()} onclick={next}>{"下一题"}</button>
-            </nav>
-            </QuestionBankWorkspaceNavigation>
-        </QuestionBankWorkspace>
+            }}
+            navigation={html! {
+                <CompactQuestionNavigation current={index.clone()}
+                    navigation_allowed={Some(navigation_allowed)} disabled={navigation_disabled}
+                    state_key={format!("collection-{}", scope_label)}
+                    numbers={props.items.iter().enumerate().map(|(i, item)| if props.card_ids.is_empty() {item.number} else {(i+1) as u32}).collect::<Vec<_>>()}
+                    answered={vec![false; props.items.len()]} grades={None::<Vec<Option<bool>>>}
+                    groups={vec![NavigationGroup {label: scope_label.clone(), subtitle: None, start: 0, end: props.items.len()}]} />
+            }} />
     }
 }

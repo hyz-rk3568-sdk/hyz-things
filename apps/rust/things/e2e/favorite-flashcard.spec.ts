@@ -86,6 +86,9 @@ test('collection review uses the training toolbar without creating a session', a
   const review = await openReview(page);
   const header = review.getByTestId('training-workspace-header');
   await expect(header).toBeVisible();
+  await expect(header.getByTestId('study-goal-bars')).toBeVisible();
+  await expect(header.getByTestId('codex-limit-bars')).toBeVisible();
+  await expect(header.getByText('复盘', { exact: true })).toHaveCount(0);
   await expect(header.getByTestId('collection-review-back')).toBeVisible();
   await expect(header.getByTestId('collection-review-scope')).toContainText('第 1/2 题');
   const choices = review.getByTestId('collection-review-choice');
@@ -93,10 +96,22 @@ test('collection review uses the training toolbar without creating a session', a
   await expect(choices.nth(1)).toHaveAttribute('data-state', 'correct');
   await expect(review.getByRole('button', { name: /^B\./ })).toHaveCount(0);
   await expect(review.getByTestId('collection-review-explanation')).toContainText('先列方程');
-  await review.getByTestId('collection-review-next').click();
+  await review.getByRole('button', { name: '下一题' }).click();
   await expect(header.getByTestId('collection-review-scope')).toContainText('第 2/2 题');
   await review.getByTestId('collection-review-back').click();
   expect(sessionWrites).toEqual([]);
+});
+
+test('saved questions use the training answer sheet for navigation', async ({ page }) => {
+  await install(page);
+  const review = await openReview(page);
+  await expect(review.getByTestId('question-detail-layout')).toBeVisible();
+  await expect(review.getByTestId('collection-review-scope')).not.toContainText('复盘');
+  await expect(review.getByText('复盘', { exact: true })).toHaveCount(0);
+  await expect(review.getByTestId('training-answer-sheet-toggle')).toHaveText('答题卡 · 1/2');
+  await review.getByTestId('training-answer-sheet-toggle').click();
+  await review.getByTestId('question-bank-practice-number').nth(1).click();
+  await expect(review.getByTestId('training-answer-sheet-toggle')).toHaveText('答题卡 · 2/2');
 });
 
 test('flashcard header keeps its description readable in a narrow review pane', async ({ page }) => {
@@ -385,10 +400,10 @@ test('wrong review opens the same split view with flashcard creation', async ({ 
   await expect(review.getByTestId('collection-review-split')).toBeVisible();
   await expect(review.getByTestId('collection-review-material-pane')).toContainText('完整材料');
   await expect(review.getByTestId('collection-review-answer')).toHaveText('B');
-  await expect(review.getByTestId('collection-review-scope')).toContainText('错题复盘 · 第 1/2 题');
+  await expect(review.getByTestId('collection-review-scope')).toContainText('错题 · 第 1/2 题');
   await expect(review.getByTestId('collection-review-create-flashcard')).toBeVisible();
   await expect(review.getByTestId('collection-review-flashcard-unavailable')).toHaveCount(0);
-  await review.getByTestId('collection-review-next').click();
+  await review.getByRole('button', { name: '下一题' }).click();
   await expect(review.getByTestId('collection-review-scope')).toContainText('第 2/2 题');
   await expect(review.getByTestId('collection-review-heading')).toContainText('第 2 题');
   await expectNoHorizontalOverflow(page);
@@ -464,7 +479,7 @@ test('review swipe moves to the neighbouring saved question', async ({ page }) =
     emit('pointerdown', 600); emit('pointermove', 540); emit('pointermove', 460);
   });
   await expect(review.getByTestId('collection-review-scope')).toContainText('第 2/2 题');
-  await expect(review.getByTestId('collection-review-position')).toHaveText('2 / 2');
+  await expect(review.getByTestId('training-answer-sheet-toggle')).toHaveText('答题卡 · 2/2');
   await surface.evaluate(node => {
     node.dispatchEvent(new PointerEvent('pointerup', {
       bubbles: true, pointerType: 'touch', pointerId: 31, isPrimary: true, clientX: 460, clientY: 300,
@@ -576,7 +591,7 @@ test('collection review prefers existing question AI analysis', async ({ page })
   const more = review.getByRole('button', { name: '更多解析操作' });
   await more.click();
   await expect(review.getByTestId('question-bank-ai-delete')).toBeVisible();
-  await review.getByTestId('collection-review-next').click();
+  await review.getByRole('button', { name: '下一题' }).click();
   await expect(review.getByTestId('collection-review-heading')).toContainText('第 2 题');
   await expect(more).toHaveAttribute('aria-expanded', 'false');
   await expect(review.getByTestId('question-bank-ai-delete')).toHaveCount(0);
@@ -939,8 +954,8 @@ for (const viewport of [{width:1133,height:744},{width:390,height:844}]) {
     await page.keyboard.press(horizontal?'ArrowLeft':'ArrowUp');
     await expect.poll(async()=>Number(await handle.getAttribute('aria-valuenow'))).toBeLessThan(before);
     const adjusted=Number(await handle.getAttribute('aria-valuenow'));
-    await review.getByTestId('collection-review-next').click();
-    await review.getByTestId('collection-review-previous').click();
+    await review.getByRole('button', { name: '下一题' }).click();
+    await review.getByRole('button', { name: '上一题' }).click();
     await expect.poll(async()=>Number(await review.getByTestId('training-split-handle').getAttribute('aria-valuenow'))).toBeCloseTo(adjusted,0);
   });
 }

@@ -594,22 +594,23 @@ pub(crate) fn logic_judgment_training(props: &LogicJudgmentProps) -> Html {
             active.answers.len(),
         );
         return html! {
-            <section class="analysis-fullscreen fixed inset-0 z-[70] flex h-dvh w-screen min-w-0 flex-col overflow-hidden bg-base-200" data-testid={format!("{prefix}-run")}>
-                <TrainingHeader class="analysis-header flex shrink-0 flex-wrap items-center justify-between gap-2 border-b border-base-content/10 pb-2">
+            <TrainingDetailLayout root_class="analysis-fullscreen fixed inset-0 z-[70] flex h-dvh w-screen min-w-0 flex-col overflow-hidden bg-base-200" test_id={format!("{prefix}-run")}
+                leading={html! {
                     <div class="flex min-w-0 flex-1 items-center gap-2">
                         <button class="btn btn-ghost btn-sm" disabled={*busy} onclick={invoke(LogicAction::PauseAndExit)}>{"← 暂停并退出"}</button>
                         <strong class="truncate text-sm">{title}</strong>
                         <span class="hidden text-xs text-base-content/60 sm:inline">{format!("第 {}/10 题",index+1)}</span>
                     </div>
+                }}
+                actions={html! {
                     <div class="ml-auto flex w-full shrink-0 flex-wrap items-center justify-end gap-2 sm:w-auto">
-                        <StudyGoalBars />
                         <TrainingStatusBar prefix={format!("{prefix}")} counts={active_status} mode={TrainingStatusMode::Active}/>
                         <button type="button" role="timer" class={if remaining<=60 {"btn btn-ghost font-mono text-xl text-error"} else {"btn btn-ghost font-mono text-xl"}} data-testid={format!("{prefix}-clock")} title={if paused {"点击继续计时"} else {"点击暂停计时"}} disabled={*busy || (remaining==0 && !paused)} onclick={invoke(LogicAction::Pause)}>{format!("{:02}:{:02}",remaining/60,remaining%60)}</button>
                         <button class="btn btn-sm btn-error btn-outline" data-testid={format!("{prefix}-submit")} disabled={*busy || paused} onclick={invoke(LogicAction::Submit)}>{"交卷"}</button>
                     </div>
-                </TrainingHeader>
-                {alert}
-                <div class="relative min-h-0 flex-1 overflow-hidden">
+                }}
+                notices={alert}
+                content={html! {
                     if paused {
                         <div class="flex h-full items-center justify-center overflow-y-auto p-4" data-testid={format!("{prefix}-paused")}>
                             <div class="w-full max-w-md rounded-box bg-base-100 p-6 text-center sm:p-8">
@@ -646,8 +647,8 @@ pub(crate) fn logic_judgment_training(props: &LogicJudgmentProps) -> Html {
                             />
                         </InkOverlay></TrainingSwipeSurface>
                     }
-                </div>
-                {question_navigation(
+                }}
+                navigation={question_navigation(
                     current.clone(),
                     index,
                     &active.answers.iter().map(|answer| answer.is_some().then_some(true)).collect::<Vec<_>>(),
@@ -656,7 +657,7 @@ pub(crate) fn logic_judgment_training(props: &LogicJudgmentProps) -> Html {
                     if prefix == "logic" { "logic-navigation" } else { "quant-navigation" },
                     if prefix == "logic" { "logic-question-tab" } else { "quant-question-tab" },
                 )}
-            </section>
+            />
         };
     }
     if let Some(score) = result.as_ref().filter(|_| !*history_forced) {
@@ -694,18 +695,19 @@ pub(crate) fn logic_judgment_training(props: &LogicJudgmentProps) -> Html {
             Callback::from(move |_| history_forced.set(true))
         };
         return html! {
-            <section class="analysis-fullscreen fixed inset-0 z-[70] flex h-dvh w-screen min-w-0 flex-col overflow-hidden bg-base-200" data-testid={format!("{prefix}-result")}>
-                <TrainingHeader class="analysis-header flex shrink-0 flex-wrap items-center justify-between gap-2 border-b border-base-content/10 pb-2">
+            <TrainingDetailLayout root_class="analysis-fullscreen fixed inset-0 z-[70] flex h-dvh w-screen min-w-0 flex-col overflow-hidden bg-base-200" test_id={format!("{prefix}-result")}
+                leading={html! {
                     <button class="btn btn-ghost btn-sm" disabled={*busy} onclick={invoke(LogicAction::Back)}>{"← 返回训练"}</button>
+                }}
+                actions={html! {
                     <div class="ml-auto flex flex-wrap items-center justify-end gap-2">
-                        <StudyGoalBars />
                         <TrainingStatusBar prefix={format!("{prefix}-result")} counts={review_status} mode={TrainingStatusMode::Review}/>
                         <button class="btn btn-outline btn-sm" data-testid={format!("{prefix}-records")} onclick={show_records}>{"查看练习记录"}</button>
                         <button class="btn btn-primary btn-sm" data-testid={format!("{prefix}-retry")} disabled={*busy} onclick={invoke(LogicAction::Retry(score.id.clone()))}>{"重做原题"}</button>
                     </div>
-                </TrainingHeader>
-                {alert}
-                <div class="relative min-h-0 flex-1 overflow-hidden">
+                }}
+                notices={alert}
+                content={html! {
                     <TrainingSwipeSurface current={current.clone()} total={score.questions.len()}><InkOverlay question_index={index} responsive={true} scroll_linked={true} persist_key={format!("{prefix}-{}-{index}",score.id)}>
                         <LogicScrollPane prefix={prefix} question_index={index} status={grade} right_title="答案与解析"
                             question={html! {
@@ -738,8 +740,8 @@ pub(crate) fn logic_judgment_training(props: &LogicJudgmentProps) -> Html {
                             }}
                         />
                     </InkOverlay></TrainingSwipeSurface>
-                </div>
-                {question_navigation(
+                }}
+                navigation={question_navigation(
                     current.clone(),
                     index,
                     &score.questions.iter().map(|q| q.chosen.map(|chosen| chosen == q.correct_index)).collect::<Vec<_>>(),
@@ -748,7 +750,7 @@ pub(crate) fn logic_judgment_training(props: &LogicJudgmentProps) -> Html {
                     if prefix == "logic" { "logic-navigation" } else { "quant-navigation" },
                     if prefix == "logic" { "logic-question-tab" } else { "quant-question-tab" },
                 )}
-            </section>
+            />
         };
     }
     if *history_open || *history_forced {

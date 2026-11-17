@@ -18,6 +18,7 @@ test('申论复盘启用共享草稿区并支持在材料与题目上书写', as
     sourceAnswers: { [questionId]: shenlunSourceAnswer('参考答案。') },
   });
   await openShenlun(page);
+  await expect(page.getByTestId('shenlun-workspace').getByTestId('question-detail-layout')).toBeVisible();
   await page.getByTestId('shenlun-mode-source').click();
 
   const toggle = page.getByTestId('calculation-scratchpad-toggle');

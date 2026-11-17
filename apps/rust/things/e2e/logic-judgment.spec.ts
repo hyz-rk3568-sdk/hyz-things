@@ -38,6 +38,7 @@ test("logic judgment persists answers, recovers deadline and reviews exact-paper
   await expect(page.getByTestId('training-mode-logic-judgment')).toHaveAttribute('aria-pressed','true');
   await expect(page.getByTestId('logic-setup')).toContainText('24');
   await page.getByTestId('logic-resume').click();
+  await expect(page.getByTestId('logic-run').getByTestId('question-detail-layout')).toBeVisible();
   await expect(page.getByTestId('training-workspace-header')).toBeVisible();
   await expect(page.getByTestId('logic-clock')).toHaveText('10:00');
   await expect(page.getByText('仅交卷后可见的解析')).toHaveCount(0);
@@ -56,6 +57,7 @@ test("logic judgment persists answers, recovers deadline and reviews exact-paper
   await page.getByTestId('calculation-scratchpad-toggle').click();
   await expect(page.getByTestId('calculation-scratchpad-canvas')).toBeVisible();
   await page.getByTestId('logic-submit').click();
+  await expect(page.getByTestId('logic-result').getByTestId('question-detail-layout')).toBeVisible();
   await expect(page.getByTestId('logic-result').getByTestId('training-workspace-header')).toBeVisible();
   await expect(page.getByTestId('logic-result')).toContainText('1/10');
   await expect(page.getByTestId('logic-result-correct')).toHaveAttribute('aria-label', '正确 1');
@@ -462,6 +464,7 @@ test("quantitative scratch ink follows the quantitative question and answer pane
   await expect(page.getByTestId('calculation-scratchpad-save-status')).toHaveCount(0);
   await page.getByTestId('quant-submit').click();
   await expect(page.getByTestId('quant-result')).toBeVisible();
+  await expect(page.getByTestId('quant-result').getByTestId('question-detail-layout')).toBeVisible();
   await expect(page.getByTestId('quant-result').getByTestId('training-workspace-header')).toBeVisible();
   await expectInlineInkControls(page.getByTestId('quant-answer-pane').locator(':scope > div').first());
   await expect(page.getByTestId('calculation-scratchpad-save-status')).toHaveCount(0);
@@ -547,6 +550,7 @@ async function expectGeneratedDrillWorkspace(page: import("@playwright/test").Pa
   await open();
   await page.getByTestId(subject+"-resume").click();
   const screen=page.getByTestId(subject+"-run");
+  await expect(screen.getByTestId("question-detail-layout")).toBeVisible();
   const split=screen.getByTestId(subject+"-scroll-workspace");
   await expect(split).toHaveAttribute("data-split-resizable","true");
   const handle=split.getByTestId("training-split-handle");

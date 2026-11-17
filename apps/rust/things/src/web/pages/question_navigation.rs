@@ -669,6 +669,8 @@ pub(crate) struct CompactQuestionNavigationProps {
     #[prop_or_default]
     pub(crate) navigation_allowed: Option<Callback<(), bool>>,
     #[prop_or_default]
+    pub(crate) disabled: bool,
+    #[prop_or_default]
     pub(crate) state_key: AttrValue,
 }
 
@@ -840,12 +842,12 @@ pub(crate) fn compact_question_navigation(props: &CompactQuestionNavigationProps
     html! {
         <footer class="training-compact-footer relative z-40 flex shrink-0 items-center justify-between gap-2 border-t border-base-content/10 py-2"
             data-testid="question-bank-practice-navigation">
-            <button type="button" class="btn btn-outline btn-sm" disabled={index==0} onclick={previous}>{"上一题"}</button>
+            <button type="button" class="btn btn-outline btn-sm" disabled={props.disabled || index==0} onclick={previous}>{"上一题"}</button>
             <TrainingAnswerSheet current={props.current.clone()} numbers={props.numbers.clone()}
                 answered={props.answered.clone()} grades={props.grades.clone()}
                 groups={props.groups.clone()} navigation_allowed={props.navigation_allowed.clone()}
                 state_key={props.state_key.clone()}/>
-            <button type="button" class="btn btn-primary btn-sm" disabled={index+1>=total} onclick={next}>{"下一题"}</button>
+            <button type="button" class="btn btn-primary btn-sm" disabled={props.disabled || index+1>=total} onclick={next}>{"下一题"}</button>
         </footer>
     }
 }

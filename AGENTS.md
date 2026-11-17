@@ -60,6 +60,12 @@ composition root in its own Cargo package:
   - `src/web` 是浏览器侧 driving adapter，只通过受限 HTTP API 通信，
     不得获得对 native inbound/outbound adapter 的 Rust 依赖（`web`
     feature 只编译 `domain` 与 SPA）。
+  - 行测真题、卡片/错题/收藏详情、申论和资料分析、判断推理、数量关系
+    出题的作答与解析页面必须使用 `TrainingDetailLayout`：统一顶部学习
+    进度、内容区域和底部导航布局，通过 typed props 配置标题、工具栏、
+    提示、题目内容与导航；业务状态和已有切题保护由入口维护。新增题目
+    详情入口也遵循此约束，并以浏览器测试覆盖进度条、分栏与导航，避免
+    自行拼接另一套页面骨架。
   - `src/main.rs` 是唯一 production composition root。等待
     `/run/hyz-router/ready` 后才绑定 HTTP。
 - `apps/rust/camera`：`src/main.rs` 是唯一 production composition root；

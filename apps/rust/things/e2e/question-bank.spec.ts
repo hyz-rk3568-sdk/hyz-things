@@ -5,6 +5,15 @@ import {chooseFixturePaper,openFixtureReview,openQuestionBankPaper,openSheet} fr
 
 test.beforeEach(async ({request})=>{await resetHarness(request)});
 
+test('training question uses the shared detail layout',async({page})=>{
+  await openQuestionBankPaper(page);
+  const detail=page.getByTestId('question-detail-layout');
+  await expect(detail.getByTestId('study-goal-bars')).toBeVisible();
+  await expect(detail.getByTestId('codex-limit-bars')).toBeVisible();
+  await expect(detail.getByTestId('question-bank-practice-split')).toBeVisible();
+  await expect(detail.getByTestId('training-answer-sheet-toggle')).toBeVisible();
+});
+
 test('answer sheet keeps its scroll position when reopened',async({page})=>{
   await openQuestionBankPaper(page);
   // Constructable stylesheets work under the portal's strict CSP and persist
@@ -235,7 +244,7 @@ test('saved collections are classified by module and category before practicing'
   await expect(page.getByTestId('question-bank-browse-preview')).toHaveCount(0);
   await page.getByTestId('question-bank-collection-item').first().click();
   await expect(page.getByTestId('collection-review')).toBeVisible();
-  await expect(page.getByTestId('collection-review-scope')).toContainText('错题复盘 · 第 1/1 题');
+  await expect(page.getByTestId('collection-review-scope')).toContainText('错题 · 第 1/1 题');
   await expect(page.getByTestId('collection-review-favorite')).toHaveAttribute('aria-label','取消收藏');
   await expect(page.getByTestId('collection-review-material-pane')).toContainText('两道题共用材料');
   await expect(page.getByTestId('collection-review-choice').first()).toHaveCSS('font-size','16px');
@@ -271,7 +280,7 @@ test('saved collections are classified by module and category before practicing'
   await expect(page.getByTestId('question-bank-collection-item')).toBeVisible();
   await page.getByTestId('question-bank-collection-item').first().click();
   await expect(page.getByTestId('collection-review')).toBeVisible();
-  await expect(page.getByTestId('collection-review-scope')).toContainText('收藏复盘 · 第 1/1 题');
+  await expect(page.getByTestId('collection-review-scope')).toContainText('收藏 · 第 1/1 题');
   await expect(page.getByTestId('collection-review-favorite')).toHaveAttribute('aria-label','取消收藏');
   await expect(page.getByTestId('collection-review-answer')).toContainText('B');
   await expect(collectionCounts).toHaveAttribute('data-correct',/^[1-9]\d*$/);
@@ -343,15 +352,17 @@ test('my cards lists Xingce flashcards and opens the source question editor',asy
   await expect(page.getByTestId('collection-review-flashcard-pane')).toBeVisible();
   await expect(page.getByTestId('favorite-flashcard-editor-back')).toHaveValue('第二张卡片背面');
   await expect(page.getByTestId('collection-review-scope')).toContainText('第 2/2 题');
-  await page.getByTestId('collection-review-previous').click();
+  await page.getByRole('button', { name: '上一题' }).click();
   await expect(page.getByTestId('favorite-flashcard-editor-back')).toHaveValue('第一张卡片背面');
-  await page.getByTestId('collection-review-next').click();
+  await page.getByRole('button', { name: '下一题' }).click();
   await expect(page.getByTestId('favorite-flashcard-editor-back')).toHaveValue('第二张卡片背面');
-  await page.getByRole('button', { name: '第 1 张卡片' }).click();
+  await page.getByTestId('training-answer-sheet-toggle').click();
+  await page.getByTestId('question-bank-practice-number').nth(0).click();
   await expect(page.getByTestId('favorite-flashcard-editor-back')).toHaveValue('第一张卡片背面');
-  await page.getByRole('button', { name: '第 2 张卡片' }).click();
+  await page.getByTestId('training-answer-sheet-toggle').click();
+  await page.getByTestId('question-bank-practice-number').nth(1).click();
   await page.getByTestId('favorite-flashcard-editor-back').fill('未保存的编辑');
-  await expect(page.getByTestId('collection-review-previous')).toBeDisabled();
+  await expect(page.getByRole('button', { name: '上一题' })).toBeDisabled();
   await expect(page.getByTestId('collection-review').getByTestId('calculation-scratchpad-toggle')).toBeVisible();
 });
 

@@ -217,56 +217,6 @@ fn browse_filter_url(
 pub(crate) const WORKSPACE: &str = "question-bank-workspace training-workspace fixed inset-0 z-[70] flex h-dvh w-screen flex-col overflow-hidden bg-base-200 px-3 py-2";
 
 #[derive(Properties, PartialEq)]
-pub(crate) struct QuestionBankWorkspaceProps {
-    pub test_id: AttrValue,
-    #[prop_or_default]
-    pub overlay: bool,
-    #[prop_or_default]
-    pub label: Option<AttrValue>,
-    pub children: Children,
-}
-
-#[function_component(QuestionBankWorkspace)]
-pub(crate) fn question_bank_workspace(props: &QuestionBankWorkspaceProps) -> Html {
-    let class = if props.overlay {
-        "question-bank-workspace training-workspace fixed inset-0 z-[80] flex h-dvh w-screen flex-col overflow-hidden bg-base-200 px-3 py-2"
-    } else {
-        WORKSPACE
-    };
-    html! { <section {class} data-testid={props.test_id.clone()} aria-label={props.label.clone()}>
-        {for props.children.iter()}
-    </section> }
-}
-
-#[derive(Properties, PartialEq)]
-pub(crate) struct QuestionBankWorkspaceHeaderProps {
-    pub leading: Html,
-    pub actions: Html,
-}
-
-#[function_component(QuestionBankWorkspaceHeader)]
-pub(crate) fn question_bank_workspace_header(props: &QuestionBankWorkspaceHeaderProps) -> Html {
-    html! {
-        <TrainingHeader class="flex shrink-0 flex-col gap-1 border-b border-base-content/10 pb-2 sm:flex-row sm:flex-nowrap sm:items-center sm:justify-between sm:gap-2">
-            <div class="flex min-w-0 flex-1 items-center gap-3">{props.leading.clone()}</div>
-            <div class="flex min-w-0 flex-wrap items-center gap-2 sm:flex-nowrap sm:justify-end">{props.actions.clone()}</div>
-        </TrainingHeader>
-    }
-}
-
-#[derive(Properties, PartialEq)]
-pub(crate) struct QuestionBankWorkspaceNavigationProps {
-    pub children: Children,
-}
-
-#[function_component(QuestionBankWorkspaceNavigation)]
-pub(crate) fn question_bank_workspace_navigation(
-    props: &QuestionBankWorkspaceNavigationProps,
-) -> Html {
-    html! { <div class="shrink-0">{for props.children.iter()}</div> }
-}
-
-#[derive(Properties, PartialEq)]
 pub(crate) struct QuestionBankChoicesProps {
     pub options: Vec<(String, String)>,
     pub selected: Vec<String>,
@@ -2251,8 +2201,8 @@ pub(crate) fn question_bank_training(props: &QuestionBankTrainingProps) -> Html 
             );
             if !*history_forced {
                 return html! {
-                    <QuestionBankWorkspace test_id="question-bank-practice-workspace">
-                        <QuestionBankWorkspaceHeader leading={html! {<>
+                    <TrainingDetailLayout root_class={classes!(WORKSPACE)} test_id="question-bank-practice-workspace"
+                        leading={html! {<>
                                 <button class="btn btn-ghost btn-sm" disabled={*busy} onclick={Callback::from({let invoke=invoke.clone();move |_|invoke.emit(Action::Exit)})}>
                                     {if completed {"← 返回训练"} else {"← 暂停并退出"}}
                                 </button>
@@ -2272,8 +2222,6 @@ pub(crate) fn question_bank_training(props: &QuestionBankTrainingProps) -> Html 
                                     }
                                 </div>
                             </>}} actions={html! {<>
-                                <StudyGoalBars />
-                                <CodexLimitBars />
                                 if !completed {
                                     <TrainingStatusBar prefix="question-bank-practice" counts={active_status} mode={TrainingStatusMode::Active}/>
                                 }
@@ -2301,7 +2249,7 @@ pub(crate) fn question_bank_training(props: &QuestionBankTrainingProps) -> Html 
                                             })}>{"重做原题"}</button>
                                     </span>
                                 }
-                            </>}} />
+                            </>}} notices={html! {<>
                         {alert}
                         if *submit_confirm && !completed {
                             <div class="mb-2 flex flex-wrap items-center justify-center gap-2 rounded-box bg-warning/20 p-2" role="alert" data-testid="question-bank-submit-confirm">
@@ -2314,7 +2262,7 @@ pub(crate) fn question_bank_training(props: &QuestionBankTrainingProps) -> Html 
                                 })}>{"继续答题"}</button>
                             </div>
                         }
-                        <div class="relative min-h-0 flex-1 overflow-hidden">
+                        </>}} content={html! {<>
                             if paused {
                                 <div class="flex h-full items-center justify-center rounded-box bg-base-100" data-testid="question-bank-practice-paused">
                                     <div class="text-center space-y-4">
@@ -2337,9 +2285,7 @@ pub(crate) fn question_bank_training(props: &QuestionBankTrainingProps) -> Html 
                                     </TrainingSwipeSurface>
                                 </InkOverlay>
                             }
-                        </div>
-                        <QuestionBankWorkspaceNavigation>{nav}</QuestionBankWorkspaceNavigation>
-                    </QuestionBankWorkspace>
+                        </>}} navigation={nav} />
                 };
             }
         }

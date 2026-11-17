@@ -968,21 +968,15 @@ pub(crate) fn question_bank_shenlun(props: &QuestionBankShenlunProps) -> Html {
         // This shared answer sheet is the sole question switcher in review mode.
         let answered = vec![false; current.questions.len()];
         html! {
-            <div class={classes!(super::practice::WORKSPACE, "gap-2")} data-testid="shenlun-workspace">
-                <TrainingHeader class="flex shrink-0 flex-col gap-1 border-b border-base-content/10 pb-2 sm:flex-row sm:flex-nowrap sm:items-center sm:justify-between sm:gap-2">
-                    <div class="flex min-w-0 flex-1 items-center gap-3">
-                        <button type="button" class="btn btn-ghost btn-sm" onclick={close}>{"← 返回选题"}</button>
-                        <div class="min-w-0 flex-1">
-                            <strong class="block truncate text-sm">{current.title.clone()}</strong>
-                            <span class="block truncate text-[11px] text-base-content/50">{"申论训练 · 原卷复盘"}</span>
-                        </div>
+            <TrainingDetailLayout root_class={classes!(super::practice::WORKSPACE, "gap-2")} test_id="shenlun-workspace"
+                leading={html! {<>
+                    <button type="button" class="btn btn-ghost btn-sm" onclick={close}>{"← 返回选题"}</button>
+                    <div class="min-w-0 flex-1">
+                        <strong class="block truncate text-sm">{current.title.clone()}</strong>
+                        <span class="block truncate text-[11px] text-base-content/50">{"申论训练 · 原卷复盘"}</span>
                     </div>
-                    <div class="flex min-w-0 flex-wrap items-center gap-2 sm:flex-nowrap sm:justify-end">
-                        <StudyGoalBars />
-                        <CodexLimitBars />
-                    </div>
-                </TrainingHeader>
-                <div class="relative min-h-0 flex-1 overflow-hidden">
+                </>}} actions={Html::default()}
+                content={html! {
                     <TrainingSwipeSurface current={selected.clone()} total={current.questions.len()}
                         navigation_allowed={Some(navigation_allowed.clone())}>
                         <InkOverlay key={format!("shenlun-{paper_id}-{question_id}")}
@@ -992,13 +986,14 @@ pub(crate) fn question_bank_shenlun(props: &QuestionBankShenlunProps) -> Html {
                                 test_id="shenlun-split" resizable={true} split_at_md={true}/>
                         </InkOverlay>
                     </TrainingSwipeSurface>
-                </div>
-                <CompactQuestionNavigation current={selected.clone()}
-                    navigation_allowed={Some(navigation_allowed)}
-                    state_key={format!("shenlun-{paper_id}")}
-                    numbers={current.questions.iter().map(|q|q.number).collect::<Vec<_>>()}
-                    answered={answered} grades={None::<Vec<Option<bool>>>} groups={groups}/>
-            </div>
+                }}
+                navigation={html! {
+                    <CompactQuestionNavigation current={selected.clone()}
+                        navigation_allowed={Some(navigation_allowed)}
+                        state_key={format!("shenlun-{paper_id}")}
+                        numbers={current.questions.iter().map(|q|q.number).collect::<Vec<_>>()}
+                        answered={answered} grades={None::<Vec<Option<bool>>>} groups={groups}/>
+                }} />
         }
     } else {
         let available_papers = (*papers)

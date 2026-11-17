@@ -331,6 +331,7 @@ test("comprehensive headers and navigation stay inside PWA safe areas at every v
   await page.getByRole("button",{name:"继续计时",exact:true}).click();
   await page.getByRole("button",{name:"交卷",exact:true}).click();
   await expect(page.getByTestId("analysis-result")).toBeVisible();
+  await expect(page.getByTestId("analysis-result").getByTestId("question-detail-layout")).toBeVisible();
   await expect(page.getByTestId("analysis-result").getByTestId("training-workspace-header")).toBeVisible();
   await expect(page.getByTestId("analysis-result-correct")).toHaveAttribute("aria-label", "正确 0");
   await expect(page.getByTestId("analysis-result-wrong")).toHaveAttribute("aria-label", "错误 0");
@@ -733,6 +734,7 @@ test("iPad comprehensive 20-question flow with answer save and submit", async ({
   await expect(page.getByTestId("analysis-clock")).toHaveCount(0);
   await page.getByTestId("analysis-enter").click();
   await expect(page.getByTestId("analysis-run")).toBeVisible();
+  await expect(page.getByTestId("analysis-run").getByTestId("question-detail-layout")).toBeVisible();
   await expect(page.getByTestId("analysis-run").getByTestId("training-workspace-header")).toBeVisible();
   await expect(page.getByTestId("analysis-answered")).toHaveAttribute("aria-label", "已答 0");
   await expect(page.getByTestId("analysis-unanswered")).toHaveAttribute("aria-label", "未答 20");
