@@ -75,6 +75,16 @@ async function openCreate(page: Page) {
   return panel;
 }
 
+test('flashcard header keeps its description readable in a narrow review pane', async ({ page }) => {
+  await page.setViewportSize({ width: 1024, height: 768 });
+  await install(page);
+  const panel = await openCreate(page);
+  const description = panel.getByText('题目与正确答案将保存到正面');
+  const box = await description.boundingBox();
+  expect(box).not.toBeNull();
+  expect(box!.width).toBeGreaterThan(120);
+});
+
 const existingCard = {
   card_id: '019a31b7-8c42-7c16-a6d1-0c1f0f34c821',
   deck_path: '真题练习/数量关系/数学运算/错题',

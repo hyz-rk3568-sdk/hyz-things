@@ -44,16 +44,27 @@ pub(crate) fn hydrate_math() {
     let Some(window) = web_sys::window() else {
         return;
     };
-    let Ok(renderer) = Reflect::get(&window, &JsValue::from_str("hyzRenderMath")) else {
+    let Some(document) = window.document() else {
+        return;
+    };
+    hydrate_math_root(&window, &document.into());
+}
+
+pub(crate) fn hydrate_math_element(element: &HtmlElement) {
+    let Some(window) = web_sys::window() else {
+        return;
+    };
+    hydrate_math_root(&window, element.as_ref());
+}
+
+fn hydrate_math_root(window: &web_sys::Window, root: &JsValue) {
+    let Ok(renderer) = Reflect::get(window.as_ref(), &JsValue::from_str("hyzRenderMath")) else {
         return;
     };
     let Ok(renderer) = renderer.dyn_into::<Function>() else {
         return;
     };
-    let Some(document) = window.document() else {
-        return;
-    };
-    let _ = renderer.call1(&window, &document.into());
+    let _ = renderer.call1(window, root);
 }
 
 pub(crate) fn render_markdown(markdown: &str, source_file: &str) -> Html {
@@ -68,6 +79,37 @@ pub(crate) fn markdown_html(markdown: &str, source_file: &str) -> String {
 
 pub(crate) fn render_question_bank_markdown(markdown: &str) -> Html {
     html! { <MarkdownView html={question_bank_markdown_html(markdown)}/> }
+}
+
+thread_local! {
+    static AI_MARKDOWN_CACHE: std::cell::RefCell<std::collections::VecDeque<(String, String)>> = const { std::cell::RefCell::new(std::collections::VecDeque::new()) };
+}
+
+pub(crate) fn render_cached_ai_markdown(markdown: &str) -> Html {
+    let rendered = AI_MARKDOWN_CACHE.with(|cache| {
+        let mut cache = cache.borrow_mut();
+        if let Some(index) = cache.iter().position(|(source, _)| source == markdown) {
+            let entry = cache.remove(index).expect("cache entry exists");
+            let rendered = entry.1.clone();
+            cache.push_front(entry);
+            return rendered;
+        }
+        let rendered = question_bank_markdown_html(markdown);
+        if markdown.len() + rendered.len() <= 512 * 1024 {
+            cache.push_front((markdown.to_owned(), rendered.clone()));
+            while cache.len() > 8
+                || cache
+                    .iter()
+                    .map(|(source, html)| source.len() + html.len())
+                    .sum::<usize>()
+                    > 2 * 1024 * 1024
+            {
+                cache.pop_back();
+            }
+        }
+        rendered
+    });
+    html! { <MarkdownView html={rendered}/> }
 }
 
 pub(crate) fn render_question_bank_user_markdown(markdown: &str) -> Html {

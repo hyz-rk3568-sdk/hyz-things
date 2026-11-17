@@ -342,6 +342,16 @@ test('my cards lists Xingce flashcards and opens the source question editor',asy
   await expect(page.getByTestId('collection-review-material-pane')).toBeVisible();
   await expect(page.getByTestId('collection-review-flashcard-pane')).toBeVisible();
   await expect(page.getByTestId('favorite-flashcard-editor-back')).toHaveValue('第二张卡片背面');
+  await expect(page.getByTestId('collection-review-scope')).toContainText('第 2/2 题');
+  await page.getByTestId('collection-review-previous').click();
+  await expect(page.getByTestId('favorite-flashcard-editor-back')).toHaveValue('第一张卡片背面');
+  await page.getByTestId('collection-review-next').click();
+  await expect(page.getByTestId('favorite-flashcard-editor-back')).toHaveValue('第二张卡片背面');
+  await page.getByRole('button', { name: '第 1 张卡片' }).click();
+  await expect(page.getByTestId('favorite-flashcard-editor-back')).toHaveValue('第一张卡片背面');
+  await page.getByRole('button', { name: '第 2 张卡片' }).click();
+  await page.getByTestId('favorite-flashcard-editor-back').fill('未保存的编辑');
+  await expect(page.getByTestId('collection-review-previous')).toBeDisabled();
   await expect(page.getByTestId('collection-review').getByTestId('calculation-scratchpad-toggle')).toBeVisible();
 });
 

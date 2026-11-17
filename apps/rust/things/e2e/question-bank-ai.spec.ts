@@ -79,6 +79,7 @@ test('AI analysis renders LaTeX delimiters with KaTeX', async ({page}) => {
 
 test('saved AI analysis opens by default and remains scoped to its question', async ({page}) => {
   let savedQuestion = '';
+  const longAnalysis = `已经保存的 AI 解析\n\n${Array.from({length: 120}, (_, index) => `段落 ${index}：计算 $x+1=2$。`).join('\n\n')}\n\n解析末尾`;
   await page.route('**/api/v1/question-bank/practice/questions/*/ai', async route => {
     const parts = new URL(route.request().url()).pathname.split('/');
     const offset = parts.indexOf('questions');
@@ -87,12 +88,13 @@ test('saved AI analysis opens by default and remains scoped to its question', as
     const saved = question_id === savedQuestion;
     await route.fulfill({json: {
       question_id, status: saved ? 'complete' : 'idle', error: null,
-      messages: saved ? [{role:'assistant', content:'已经保存的 AI 解析', created_at:1}] : [],
+      messages: saved ? [{role:'assistant', content:longAnalysis, created_at:1}] : [],
     }});
   });
   await openFixtureReview(page);
   await expect(page.getByTestId('question-bank-ai-tab')).toHaveAttribute('aria-pressed','true');
   await expect(page.getByTestId('question-bank-ai-message')).toContainText('已经保存的 AI 解析');
+  await expect(page.getByTestId('question-bank-ai-message')).toContainText('解析末尾');
   const more = page.getByRole('button',{name:'更多解析操作'});
   await more.click();
   await expect(page.getByTestId('question-bank-ai-delete')).toBeVisible();
@@ -109,6 +111,19 @@ test('saved AI analysis opens by default and remains scoped to its question', as
   await page.getByTestId('question-bank-practice-number').first().click();
   await expect(page.getByTestId('question-bank-ai-tab')).toHaveAttribute('aria-pressed','true');
   await expect(page.getByTestId('question-bank-ai-message')).toContainText('已经保存的 AI 解析');
+});
+
+test('opening saved AI analysis reuses the lookup response', async ({page}) => {
+  let reads = 0;
+  await page.route('**/api/v1/question-bank/practice/questions/*/ai/events', route => route.fulfill({status:503}));
+  await page.route('**/api/v1/question-bank/practice/questions/*/ai', async route => {
+    reads++;
+    const question_id = new URL(route.request().url()).pathname.split('/').at(-2)!;
+    await route.fulfill({json:{question_id,status:'complete',error:null,messages:[{id:1,role:'assistant',content:'已有解析',created_at:1}]}});
+  });
+  await openFixtureReview(page);
+  await expect(page.getByTestId('question-bank-ai-message')).toContainText('已有解析');
+  await expect.poll(() => reads).toBe(1);
 });
 
 test('deleting saved AI analysis sends a same-origin JSON request', async ({page}) => {
@@ -680,9 +695,11 @@ test('AI SSE replaces snapshots, ignores duplicates, reconnects on gaps and refr
   await expect.poll(()=>page.evaluate(()=>(window as any).__aiStreams.length)).toBeGreaterThan(1);
   await emit('snapshot',{version:1,question_id,stem_fingerprint:'fingerprint',run_id:'run-1',seq:6,status:'running',text:'快照恢复',progress:[]});
   await expect(page.getByTestId('question-bank-ai-stream-text')).toContainText('快照恢复');
+  for (let seq=7; seq<=26; seq++) await emit('message',event(seq,'text_delta',{text:` 段落${seq}`}));
+  await expect(page.getByTestId('question-bank-ai-stream-text')).toContainText('段落26');
   const before=reads, historyBefore=historyReads;
   final=true;
-  await emit('message',event(7,'run_finished',{}));
+  await emit('message',event(27,'run_finished',{}));
   await expect.poll(()=>reads).toBeGreaterThan(before);
   await expect(page.getByTestId('question-bank-ai-message')).toContainText('持久化最终答案');
   await expect(page.getByTestId('question-bank-ai-stream-text')).toHaveCount(0);

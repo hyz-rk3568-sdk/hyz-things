@@ -18,6 +18,8 @@ pub(crate) struct QuestionAiReviewProps {
     pub question_scroll: NodeRef,
     pub on_question_scroll: Callback<Event>,
     #[prop_or_default]
+    pub initial_review: Option<Rc<RefCell<Option<AiReviewState>>>>,
+    #[prop_or_default]
     pub delete_signal: u32,
     #[prop_or_default]
     pub on_delete_availability: Callback<bool>,
@@ -31,7 +33,14 @@ pub(crate) struct QuestionAiReviewProps {
 /// backend owns its turns and never cancels on unmount or question navigation.
 #[function_component(QuestionAiReview)]
 pub(crate) fn question_ai_review(props: &QuestionAiReviewProps) -> Html {
-    let state = use_state(|| None::<AiReviewState>);
+    let initial = use_mut_ref(|| {
+        props
+            .initial_review
+            .as_ref()
+            .and_then(|value| value.borrow_mut().take())
+            .filter(|value| value.question_id == props.question_id && props.mode == "analysis")
+    });
+    let state = use_state(|| initial.borrow().clone());
     let history_generation = use_state(|| 0u64);
     let history_has_runs = use_state(|| None::<bool>);
     {
@@ -150,8 +159,12 @@ pub(crate) fn question_ai_review(props: &QuestionAiReviewProps) -> Html {
         let endpoint = endpoint.clone();
         let scope = scope;
         let revision = revision.clone();
+        let initial = initial.clone();
         let key = props.question_id.clone();
         use_effect_with(key, move |_| {
+            if initial.borrow_mut().take().is_some() {
+                return Box::new(|| ()) as Box<dyn FnOnce()>;
+            }
             state.set(None);
             failure.set(None);
             let alive = std::rc::Rc::new(std::cell::Cell::new(true));
@@ -167,7 +180,7 @@ pub(crate) fn question_ai_review(props: &QuestionAiReviewProps) -> Html {
                     }
                 }
             });
-            move || alive.set(false)
+            Box::new(move || alive.set(false)) as Box<dyn FnOnce()>
         });
     }
     let (stream, disconnected, reconnect_stream) = super::ai_review_stream::use_ai_review_stream(
@@ -258,8 +271,8 @@ pub(crate) fn question_ai_review(props: &QuestionAiReviewProps) -> Html {
             (*stream).clone(),
         );
         use_effect_with(key, move |_| {
-            hydrate_math();
             if let Some(root) = diagram_root.cast::<HtmlElement>() {
+                hydrate_math_element(&root);
                 render_ai_diagrams(&root);
             }
             || ()

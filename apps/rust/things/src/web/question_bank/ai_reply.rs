@@ -8,6 +8,9 @@ pub(crate) struct AiReplyProps {
 
 #[function_component(AiReply)]
 pub(crate) fn ai_reply(props: &AiReplyProps) -> Html {
+    let rendered = use_memo(props.content.clone(), |content| {
+        render_cached_ai_markdown(content)
+    });
     let showing_source = use_state(|| false);
     let menu_open = use_state(|| false);
     let notice = use_state(|| None::<String>);
@@ -79,7 +82,7 @@ pub(crate) fn ai_reply(props: &AiReplyProps) -> Html {
                 <pre class="whitespace-pre-wrap break-words text-sm" data-testid="question-bank-ai-source">{props.content.clone()}</pre>
             }
             <div hidden={*showing_source} class="study-markdown text-base leading-7" data-ai-diagram-source="true">
-                {render_question_bank_markdown(&props.content)}
+                {(*rendered).clone()}
             </div>
             <div class="relative flex justify-end items-center gap-2">
                 if let Some(message) = notice.as_ref() {

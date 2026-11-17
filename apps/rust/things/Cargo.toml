@@ -41,6 +41,7 @@ native = [
 web = [
   "dep:hyz-contract",
   "dep:base64",
+  "dep:futures-util",
   "dep:gloo-net",
   "dep:gloo-timers",
   "dep:pulldown-cmark",
@@ -56,6 +57,7 @@ web = [
 hyz-contract = { path = "../contract", default-features = false, optional = true }
 hyz-logging = { path = "../logging", optional = true }
 serde = { version = "1", features = ["derive"] }
+roxmltree = "0.20"
 url = "2.5.8"
 zeroize = "1.9.0"
 

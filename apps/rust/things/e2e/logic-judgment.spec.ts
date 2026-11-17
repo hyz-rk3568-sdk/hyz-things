@@ -575,6 +575,16 @@ test("generated quantitative questions share the draggable workspace and answer 
   await expectGeneratedDrillWorkspace(page,"quant");
 });
 
+test('quantitative geometry diagrams appear in practice and review', async ({page}) => {
+  const {open, state} = await logicFixture(page, 'quant');
+  state.run.questions[0].question = '三角形 ABC\n\n```svg\n<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><polygon points="10,90 50,10 90,90" fill="none" stroke="black"/><text x="50" y="10">A</text></svg>\n```';
+  await open();
+  await page.getByTestId('quant-resume').click();
+  await expect(page.getByTestId('quant-question').locator('img')).toBeVisible();
+  await page.getByTestId('quant-submit').click();
+  await expect(page.getByTestId('quant-result').getByTestId('quant-question').locator('img')).toBeVisible();
+});
+
 
 const activity = (jobId: string) => ({
   job_id: jobId,

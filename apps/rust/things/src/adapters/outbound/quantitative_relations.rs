@@ -387,11 +387,12 @@ fn bind_questions(
 fn output_schema() -> Value {
     let question = json!({
         "type":"object", "additionalProperties":false,
-        "required":["target_id","kind","question","options","correct_index","explanation"],
+        "required":["target_id","kind","question","diagram_required","options","correct_index","explanation"],
         "properties": {
             "target_id":{"type":"string"},
             "kind":{"type":"string","enum":["quantitative"]},
             "question":{"type":"string"},
+            "diagram_required":{"type":"boolean"},
             "options":{"type":"array","minItems":4,"maxItems":4,"items":{"type":"string"}},
             "correct_index":{"type":"integer","minimum":0,"maximum":3},
             "explanation":{"type":"string"}
@@ -900,7 +901,7 @@ impl QuantitativeGenerationPort for CodexConfig {
             r#"【固定规则 / 应用端约束】
 你是 hyz 行测数量关系命题 Agent。先阅读仓库 .agents/skills/行测做题/SKILL.md 和 .agents/skills/行测做题/references/数量关系.md；根据目标题型阅读同目录中的 数量关系-方程比例与应用.md、数量关系-计数概率与最值.md、数量关系-几何数推与特殊题.md，必要时阅读 数量关系-实战验题与输出.md。只有来自 用户整理/数量关系/方程比例与应用、计数概率与最值、几何数推与特殊题 下的已同步 cards.md 或 错题/cards.md 可作为本轮命题目标。
 根据后端指定的已同步 Flashcard 命题，生成恰好10道原创四选一独立题，每张卡片恰好对应一道，target_id 不可更换和复用，kind 固定 quantitative。
-覆盖三类方法对应的方程、比例、利润、工程、行程、溶液、计数、概率、最值、周期、几何、数字推理及特殊题型，但每题必须紧扣对应卡片的实际考点。只出文字条件充分、无需附图或共享材料的四选一独立题；几何题不能依赖未提供的图形。题干只陈述已知条件，不泄露思路、公式、答案。
+覆盖三类方法对应的方程、比例、利润、工程、行程、溶液、计数、概率、最值、周期、几何、数字推理及特殊题型，但每题必须紧扣对应卡片的实际考点。只出文字条件充分、无需共享材料的四选一独立题。需要图形辅助理解的几何题设置 diagram_required 为 true，在 question 末尾提供独立的 ```svg 代码块；其他题设置为 false。SVG 使用 xmlns="http://www.w3.org/2000/svg" 和正宽高 viewBox，仅使用 svg、g、line、polyline、polygon、rect、circle、ellipse、text、tspan、title、desc 与简单数字、颜色和文字标注，不使用 path、样式、脚本或外部资源。检查图形点位、标注和题干条件一致，画不准确时重新出题。题干只陈述已知条件，不泄露思路、公式、答案。
 遵循资料分析已验证的命题责任分工：应用只检验结构、题量、选项、目标唯一性，数学正确性和语义唯一性由 Codex 自检。
 
 【本轮动态上下文】
@@ -915,7 +916,7 @@ Codex 自行验算每题数值、边界、单位、正确选项唯一性、解�
 【用户出题要求 / 自定义】
 {user_prompt}
 
-只输出合法 JSON：{{"questions":[{{"target_id":"...","kind":"quantitative","question":"...","options":["...","...","...","..."],"correct_index":0,"explanation":"..."}}]}}，题目恰好10道，correct_index 从0到3，不要前言。"#,
+只输出合法 JSON：{{"questions":[{{"target_id":"...","kind":"quantitative","question":"...","diagram_required":false,"options":["...","...","...","..."],"correct_index":0,"explanation":"..."}}]}}，题目恰好10道，correct_index 从0到3，不要前言。"#,
             targets_text = targets_text,
             user_prompt = request.user_prompt,
         );
@@ -1046,6 +1047,7 @@ mod favorite_metadata_tests {
                         target_id: target.target_id,
                         kind: target.kind,
                         question: "New question".into(),
+                        diagram_required: false,
                         options: ["A".into(), "B".into(), "C".into(), "D".into()],
                         correct_index: 1,
                         explanation: "New explanation".into(),

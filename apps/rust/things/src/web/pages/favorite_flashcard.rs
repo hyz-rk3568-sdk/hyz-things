@@ -130,6 +130,8 @@ struct FavoriteCardFormProps {
     on_select_card: Callback<String>,
     on_close: Callback<()>,
     on_changed: Callback<()>,
+    #[prop_or_default]
+    on_navigation_blocked: Callback<bool>,
 }
 
 #[function_component(FavoriteCardForm)]
@@ -168,6 +170,14 @@ fn favorite_card_form(props: &FavoriteCardFormProps) -> Html {
     let frozen_back = use_mut_ref(|| None::<String>);
     let in_flight = use_mut_ref(|| false);
     let mounted = use_mut_ref(|| true);
+    {
+        let changed = existing.as_ref().is_some_and(|card| card.back != *back);
+        let callback = props.on_navigation_blocked.clone();
+        use_effect_with((changed, *busy), move |(changed, busy)| {
+            callback.emit(*changed || *busy);
+            move || callback.emit(false)
+        });
+    }
     let dialog = use_node_ref();
     {
         let mounted = mounted.clone();
@@ -496,13 +506,13 @@ fn favorite_card_form(props: &FavoriteCardFormProps) -> Html {
                 <button type="button" class="btn btn-ghost btn-sm -ml-2" aria-label="返回复盘" onclick={close.clone()}>
                     <span aria-hidden="true">{"←"}</span>{"返回复盘"}
                 </button>
-                <div class="flex min-w-0 flex-1 items-center gap-3">
+                <div class="flex min-w-0 flex-1 basis-48 items-center gap-3">
                     <span class="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-primary via-primary to-secondary text-lg text-primary-content shadow-sm" aria-hidden="true">
                         {if editing {"✎"} else {"✦"}}
                     </span>
                     <div class="min-w-0">
                         <h2 class="truncate text-base font-semibold">{title}</h2>
-                        <p class="break-all text-xs text-base-content/55">{subtitle}</p>
+                        <p class="break-words text-xs text-base-content/55">{subtitle}</p>
                     </div>
                 </div>
                 if !editing {
@@ -727,6 +737,8 @@ pub(crate) struct FavoriteFlashcardWorkspaceProps {
     pub(crate) initial_card_id: Option<String>,
     pub(crate) on_close: Callback<()>,
     pub(crate) on_changed: Callback<()>,
+    #[prop_or_default]
+    pub(crate) on_navigation_blocked: Callback<bool>,
 }
 
 #[function_component(FavoriteFlashcardWorkspace)]
@@ -769,6 +781,7 @@ pub(crate) fn favorite_flashcard_workspace(props: &FavoriteFlashcardWorkspacePro
                 existing_cards={props.preview.existing.clone()}
                 on_select_card={on_select_card}
                 csrf={props.csrf.clone()}
+                on_navigation_blocked={props.on_navigation_blocked.clone()}
                 on_changed={props.on_changed.clone()} on_close={props.on_close.clone()}/>
         }
     } else {
@@ -776,6 +789,7 @@ pub(crate) fn favorite_flashcard_workspace(props: &FavoriteFlashcardWorkspacePro
             <FavoriteCardForm question_id={props.question_id.clone()}
                 preview={props.preview.clone()} mode={FavoriteCardFormMode::Create}
                 csrf={props.csrf.clone()}
+                on_navigation_blocked={props.on_navigation_blocked.clone()}
                 on_changed={props.on_changed.clone()} on_close={props.on_close.clone()}/>
         }
     }

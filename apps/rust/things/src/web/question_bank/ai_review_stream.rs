@@ -58,6 +58,7 @@ pub(super) fn use_ai_review_stream(
             move |(question_id, endpoint, scope, _)| {
                 let alive = Rc::new(Cell::new(true));
                 let cursor = Rc::new(RefCell::new(None::<StreamSnapshot>));
+                let pending_render = Rc::new(RefCell::new(None::<gloo_timers::callback::Timeout>));
                 let scope = *scope;
                 let source = web_sys::EventSource::new(&super::ai_review_api::ai_scope_url(
                     endpoint, "/events", scope, None,
@@ -123,6 +124,7 @@ pub(super) fn use_ai_review_stream(
                         let reconnect_now = reconnect_now.clone();
                         let source = source.clone();
                         let refresh = refresh.clone();
+                        let pending_render = pending_render.clone();
                         Closure::wrap(Box::new(move |event: web_sys::MessageEvent| {
                             let Some(data) = event.data().as_string() else {
                                 return;
@@ -181,7 +183,21 @@ pub(super) fn use_ai_review_stream(
                                 event.kind.as_str(),
                                 "run_finished" | "run_failed" | "run_stopped"
                             );
-                            snapshot.set(Some(value.clone()));
+                            if terminal {
+                                pending_render.borrow_mut().take();
+                                snapshot.set(Some(value.clone()));
+                            } else if pending_render.borrow().is_none() {
+                                let cursor = cursor.clone();
+                                let snapshot = snapshot.clone();
+                                let pending = pending_render.clone();
+                                *pending_render.borrow_mut() =
+                                    Some(gloo_timers::callback::Timeout::new(100, move || {
+                                        if let Some(value) = cursor.borrow().clone() {
+                                            snapshot.set(Some(value));
+                                        }
+                                        pending.borrow_mut().take();
+                                    }));
+                            }
                             if terminal {
                                 refresh();
                             }
@@ -202,6 +218,7 @@ pub(super) fn use_ai_review_stream(
                 }
                 move || {
                     alive.set(false);
+                    pending_render.borrow_mut().take();
                     if let Ok(source) = source {
                         source.close();
                         if let Some(on_snapshot) = handlers.first() {

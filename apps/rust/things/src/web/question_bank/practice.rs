@@ -247,6 +247,7 @@ struct CollectionReviewTarget {
     items: Vec<PracticeBrowseItem>,
     index: usize,
     initial_card_id: Option<String>,
+    card_ids: Vec<String>,
     scope_label: Option<String>,
 }
 
@@ -877,15 +878,22 @@ pub(crate) fn review_answer_stats(props: &ReviewAnswerStatsProps) -> Html {
 #[hook]
 pub(crate) fn use_question_ai_tab(
     question_id: Option<String>,
-) -> (UseStateHandle<bool>, Rc<RefCell<bool>>) {
+) -> (
+    UseStateHandle<bool>,
+    Rc<RefCell<bool>>,
+    Rc<RefCell<Option<AiReviewState>>>,
+) {
     let ai_tab = use_state(|| false);
     let chosen = use_mut_ref(|| false);
+    let initial_review = use_mut_ref(|| None::<AiReviewState>);
     {
         let ai_tab = ai_tab.clone();
         let chosen = chosen.clone();
+        let initial_review = initial_review.clone();
         use_effect_with(question_id, move |id| {
             ai_tab.set(false);
             *chosen.borrow_mut() = false;
+            *initial_review.borrow_mut() = None;
             let alive = Rc::new(Cell::new(true));
             if let Some(question_id) = id.clone() {
                 let active = alive.clone();
@@ -898,6 +906,7 @@ pub(crate) fn use_question_ai_tab(
                             && state.question_id == question_id
                             && has_existing_ai_analysis(&state)
                         {
+                            *initial_review.borrow_mut() = Some(state);
                             ai_tab.set(true);
                         }
                     }
@@ -906,7 +915,7 @@ pub(crate) fn use_question_ai_tab(
             move || alive.set(false)
         });
     }
-    (ai_tab, chosen)
+    (ai_tab, chosen, initial_review)
 }
 
 #[function_component(QuestionBankTraining)]
@@ -951,7 +960,7 @@ pub(crate) fn question_bank_training(props: &QuestionBankTrainingProps) -> Html 
             && reviewed.question.item.question_id == question.item.question_id)
             .then(|| question.item.question_id.clone())
     });
-    let (ai_tab, ai_tab_chosen) = use_question_ai_tab(selected_ai_question);
+    let (ai_tab, ai_tab_chosen, initial_ai_review) = use_question_ai_tab(selected_ai_question);
     let ai_delete_signal = use_state(|| 0u32);
     let ai_can_delete = use_state(|| false);
     let multi_select = use_state(|| false);
@@ -2046,7 +2055,7 @@ pub(crate) fn question_bank_training(props: &QuestionBankTrainingProps) -> Html 
                             </p>
                         }
                     } else if selected_review.is_some() && *ai_tab {
-                        <QuestionAiReview delete_signal={*ai_delete_signal} on_delete_availability={Callback::from({let value=ai_can_delete.clone();move |available|value.set(available)})} key={format!("{}:{}", current.session.id, item.item.question_id)} csrf={props.csrf.clone()} question_id={item.item.question_id.clone()} question_content={question_content.clone()} question_scroll={question_scroll.clone()} on_question_scroll={on_question_scrolling.clone()}/>
+                        <QuestionAiReview initial_review={Some(initial_ai_review.clone())} delete_signal={*ai_delete_signal} on_delete_availability={Callback::from({let value=ai_can_delete.clone();move |available|value.set(available)})} key={format!("{}:{}", current.session.id, item.item.question_id)} csrf={props.csrf.clone()} question_id={item.item.question_id.clone()} question_content={question_content.clone()} question_scroll={question_scroll.clone()} on_question_scroll={on_question_scrolling.clone()}/>
                     } else {
                         <div ref={question_scroll.clone()} onscroll={on_question_scrolling.clone()}
                             class="min-h-0 flex-1 overflow-y-auto overscroll-contain touch-pan-y p-4"
@@ -2475,6 +2484,10 @@ pub(crate) fn question_bank_training(props: &QuestionBankTrainingProps) -> Html 
         let collection_review = collection_review.clone();
         let cards_busy = cards_busy.clone();
         let card_open_error = card_open_error.clone();
+        let card_rows = rows_filtered
+            .iter()
+            .map(|row| (row.key.clone(), row.question_id.clone()))
+            .collect::<Vec<_>>();
         Callback::from(move |(card_id, question_id): (String, String)| {
             if *cards_busy {
                 return;
@@ -2484,18 +2497,32 @@ pub(crate) fn question_bank_training(props: &QuestionBankTrainingProps) -> Html 
             let collection_review = collection_review.clone();
             let cards_busy = cards_busy.clone();
             let card_open_error = card_open_error.clone();
+            let card_rows = card_rows.clone();
             spawn_local(async move {
-                let result = fetch_json::<PracticeQuestionDetail>(
-                    &format!("{ROOT}/practice/questions/{question_id}"),
-                    "卡片来源题",
-                )
-                .await;
+                use futures_util::{stream, StreamExt};
+                let result = stream::iter(card_rows.iter().map(|(_, id)| async move {
+                    fetch_json::<PracticeQuestionDetail>(
+                        &format!("{ROOT}/practice/questions/{id}"),
+                        "卡片来源题",
+                    )
+                    .await
+                    .map(|detail| detail.item)
+                }))
+                .buffered(8)
+                .collect::<Vec<_>>()
+                .await
+                .into_iter()
+                .collect::<Result<Vec<_>, _>>();
                 match result {
-                    Ok(detail) => collection_review.set(Some(CollectionReviewTarget {
+                    Ok(items) => collection_review.set(Some(CollectionReviewTarget {
                         scope: PracticeMode::Favorite,
-                        items: vec![detail.item],
-                        index: 0,
+                        items,
+                        index: card_rows
+                            .iter()
+                            .position(|(id, qid)| id == &card_id && qid == &question_id)
+                            .unwrap_or(0),
                         initial_card_id: Some(card_id),
+                        card_ids: card_rows.iter().map(|(id, _)| id.clone()).collect(),
                         scope_label: Some("卡片".into()),
                     })),
                     Err(message) => card_open_error.set(Some(message)),
@@ -2985,7 +3012,7 @@ pub(crate) fn question_bank_training(props: &QuestionBankTrainingProps) -> Html 
                                 <p class="p-4 text-sm text-base-content/60">{if *cards_open {"还没有可直接打开的行测卡片。"} else {"这个分类还没有题目。"}}</p>
                             } else {
                                 <div class="question-bank-results-list" data-testid="question-bank-browse-list">
-                                    {for rows_filtered.iter().take(100).enumerate().map(|(position,row)| {
+                                    {for rows_filtered.iter().take(if *cards_open {usize::MAX} else {100}).enumerate().map(|(position,row)| {
                                         let disabled=*cards_open && *cards_busy;
                                         let content = html! {
                                             <>
@@ -3007,7 +3034,7 @@ pub(crate) fn question_bank_training(props: &QuestionBankTrainingProps) -> Html 
                                             let scope=review_scope.clone();
                                             Callback::from(move |_| collection_review.set(Some(CollectionReviewTarget{
                                                 scope:scope.clone(),items:items.clone(),index:position,
-                                                initial_card_id:None,scope_label:None
+                                                initial_card_id:None,card_ids:Vec::new(),scope_label:None
                                             })))
                                         };
                                         html! {
@@ -3027,6 +3054,7 @@ pub(crate) fn question_bank_training(props: &QuestionBankTrainingProps) -> Html 
                 <CollectionQuestionReview items={target.items.clone()} initial_index={target.index}
                     scope={target.scope.clone()} csrf={props.csrf.clone()}
                     initial_card_id={target.initial_card_id.clone()}
+                    card_ids={target.card_ids.clone()}
                     scope_label={target.scope_label.clone()}
                     on_back={Callback::from({
                         let collection_review=collection_review.clone();

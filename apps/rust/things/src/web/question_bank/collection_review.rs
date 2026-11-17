@@ -18,6 +18,8 @@ pub(crate) struct CollectionQuestionReviewProps {
     /// the selected card.
     #[prop_or_default]
     pub initial_card_id: Option<String>,
+    #[prop_or_default]
+    pub card_ids: Vec<String>,
     /// Collection name shown in the review header; defaults to the scope.
     #[prop_or_default]
     pub scope_label: Option<String>,
@@ -36,7 +38,7 @@ pub(crate) fn collection_question_review(props: &CollectionQuestionReviewProps) 
     let question_edges = use_state(ScrollEdges::default);
     let current_item = props.items.get(*index).cloned();
     let question_id = current_item.as_ref().map(|item| item.question_id.clone());
-    let (ai_tab, ai_tab_chosen) = use_question_ai_tab(question_id.clone());
+    let (ai_tab, ai_tab_chosen, initial_ai_review) = use_question_ai_tab(question_id.clone());
     let ai_delete_signal = use_state(|| 0u32);
     let ai_can_delete = use_state(|| false);
     let favorite = use_practice_favorite(question_id.clone());
@@ -46,6 +48,7 @@ pub(crate) fn collection_question_review(props: &CollectionQuestionReviewProps) 
     let preview_error = use_state(|| None::<String>);
     let preview_retry = use_state(|| 0u32);
     let creating = use_state(|| props.initial_card_id.is_some());
+    let navigation_blocked = use_state(|| false);
     let index_effect_ready = use_mut_ref(|| false);
     let flashcard_changed = Callback::from({
         let preview_retry = preview_retry.clone();
@@ -141,11 +144,12 @@ pub(crate) fn collection_question_review(props: &CollectionQuestionReviewProps) 
         let question_scroll = question_scroll.clone();
         let creating = creating.clone();
         let index_effect_ready = index_effect_ready.clone();
+        let card_collection = !props.card_ids.is_empty();
         use_effect_with(*index, move |_| {
             // The first effect run only mounts the view; a card entry keeps
             // its editor open until the reader switches question.
             if *index_effect_ready.borrow() {
-                creating.set(false);
+                creating.set(card_collection);
             } else {
                 *index_effect_ready.borrow_mut() = true;
             }
@@ -365,9 +369,10 @@ pub(crate) fn collection_question_review(props: &CollectionQuestionReviewProps) 
                 if *creating {
                     if let Some(value) = &*preview {
                         <div class="min-h-0 flex-1 overflow-y-auto p-3" data-testid="collection-review-flashcard-pane">
-                            <FavoriteFlashcardWorkspace question_id={item.question_id.clone()}
+                            <FavoriteFlashcardWorkspace key={format!("{}-{}", item.question_id, *index)} question_id={item.question_id.clone()}
                                 preview={value.clone()} csrf={props.csrf.clone()}
-                                initial_card_id={props.initial_card_id.clone()}
+                                initial_card_id={props.card_ids.get(*index).cloned().or_else(|| props.initial_card_id.clone())}
+                                on_navigation_blocked={Callback::from({ let navigation_blocked=navigation_blocked.clone(); move |blocked| navigation_blocked.set(blocked) })}
                                 on_changed={flashcard_changed.clone()}
                                 on_close={Callback::from({
                                     let creating=creating.clone(); move |_|creating.set(false)
@@ -388,7 +393,7 @@ pub(crate) fn collection_question_review(props: &CollectionQuestionReviewProps) 
                         </p>
                     }
                 } else if *ai_tab {
-                    <QuestionAiReview delete_signal={*ai_delete_signal} on_delete_availability={Callback::from({let value=ai_can_delete.clone();move |available|value.set(available)})} key={item.question_id.clone()} question_id={item.question_id.clone()} csrf={props.csrf.clone()} question_content={question_content.clone()} question_scroll={question_scroll.clone()} on_question_scroll={Callback::from({let refresh=refresh_question_edges.clone();move |_|refresh.emit(())})}/>
+                    <QuestionAiReview initial_review={Some(initial_ai_review.clone())} delete_signal={*ai_delete_signal} on_delete_availability={Callback::from({let value=ai_can_delete.clone();move |available|value.set(available)})} key={item.question_id.clone()} question_id={item.question_id.clone()} csrf={props.csrf.clone()} question_content={question_content.clone()} question_scroll={question_scroll.clone()} on_question_scroll={Callback::from({let refresh=refresh_question_edges.clone();move |_|refresh.emit(())})}/>
                 } else {
                     <div ref={question_scroll.clone()}
                         onscroll={Callback::from({let refresh=refresh_question_edges.clone();move |_|refresh.emit(())})}
@@ -450,7 +455,7 @@ pub(crate) fn collection_question_review(props: &CollectionQuestionReviewProps) 
                     persist_key={format!("collection-review-{}-{}", scope_label, item.question_id)}>
                     <TrainingSwipeSurface current={index.clone()} total={props.items.len()}
                         navigation_allowed={Some(Callback::from({
-                            let creating=creating.clone(); move |()| !*creating
+                            let creating=creating.clone(); let blocked=navigation_blocked.clone(); let cards=!props.card_ids.is_empty(); move |()| !*creating || (cards && !*blocked)
                         }))}>
                         {main}
                     </TrainingSwipeSurface>
@@ -459,12 +464,22 @@ pub(crate) fn collection_question_review(props: &CollectionQuestionReviewProps) 
             <nav class="flex shrink-0 items-center justify-center gap-3 border-t border-base-content/10 pt-2"
                 aria-label="复盘题目导航">
                 <button type="button" class="btn btn-outline btn-sm" data-testid="collection-review-previous"
-                    disabled={*creating || *index==0} onclick={previous}>{"上一题"}</button>
+                    disabled={(*creating && (props.card_ids.is_empty() || *navigation_blocked)) || *index==0} onclick={previous}>{"上一题"}</button>
+                if !props.card_ids.is_empty() {
+                    <div class="flex max-w-[60vw] gap-1 overflow-x-auto" aria-label="卡片答题卡" data-testid="collection-review-card-navigation">
+                        {for props.card_ids.iter().enumerate().map(|(position, _)| {
+                            let index = index.clone();
+                            html! { <button type="button" class={classes!("btn", "btn-sm", if position == *index {"btn-primary"} else {"btn-ghost"})}
+                                disabled={*navigation_blocked} aria-label={format!("第 {} 张卡片", position + 1)}
+                                onclick={Callback::from(move |_| index.set(position))}>{position + 1}</button> }
+                        })}
+                    </div>
+                }
                 <span class="min-w-16 text-center text-sm tabular-nums" data-testid="collection-review-position">
                     {format!("{} / {}",*index+1,props.items.len())}
                 </span>
                 <button type="button" class="btn btn-outline btn-sm" data-testid="collection-review-next"
-                    disabled={*creating || *index+1>=props.items.len()} onclick={next}>{"下一题"}</button>
+                    disabled={(*creating && (props.card_ids.is_empty() || *navigation_blocked)) || *index+1>=props.items.len()} onclick={next}>{"下一题"}</button>
             </nav>
         </section>
     }
