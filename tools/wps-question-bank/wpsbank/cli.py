@@ -374,7 +374,9 @@ def main(argv=None) -> int:
         extract.build(spec, document, profile, token_source)
         for spec in profile.paper_specs
     ]
-    split_options = emit.normalize_option_spacing(papers)
+    split_options = emit.normalize_option_spacing(
+        papers, profile.ocr_squeeze_han_spaces
+    )
     if split_options:
         print(f"recovered spaces in {split_options} options")
     report(papers, answers, profile)

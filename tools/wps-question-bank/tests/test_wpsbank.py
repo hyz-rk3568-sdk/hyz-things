@@ -86,6 +86,15 @@ class ProfileTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 profile_module.Profile.load(path)
 
+    def test_profile_reads_the_ocr_han_space_squeeze_flag(self):
+        data = json.loads(CHAOGE_PATH.read_text(encoding="utf-8"))
+        data["ocr"]["squeeze_han_spaces"] = True
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "profile.json"
+            path.write_text(json.dumps(data), encoding="utf-8")
+            loaded = profile_module.Profile.load(path)
+        self.assertTrue(loaded.ocr_squeeze_han_spaces)
+
     def test_profile_rejects_overlapping_paper_ids(self):
         data = json.loads(PROFILE_PATH.read_text(encoding="utf-8"))
         data["papers"].append(dict(data["papers"][0]))
@@ -394,6 +403,41 @@ class AnswerTests(unittest.TestCase):
         self.assertEqual(answers[5], "D")
         self.assertEqual(answers[10], "D")
         self.assertEqual(answers[15], "D")
+
+    def test_answer_json_file_maps_each_set_to_its_letters(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "answers.json"
+            path.write_text(
+                json.dumps(
+                    {"练习题": {"1": "ADDBACDCABDBBCCBBADD", "2": "DDACB"}},
+                    ensure_ascii=False,
+                ),
+                encoding="utf-8",
+            )
+            answers = emit.parse_answers(path, self.profile)
+        self.assertEqual(answers[("练习题", 1)][1], "A")
+        self.assertEqual(answers[("练习题", 1)][20], "D")
+        self.assertEqual(answers[("练习题", 2)][5], "B")
+
+    def test_answer_json_file_groups_letters_in_fives(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "answers.json"
+            path.write_text(
+                json.dumps({"练习题": {"1": "ADDBA CDCAB"}}, ensure_ascii=False),
+                encoding="utf-8",
+            )
+            answers = emit.parse_answers(path, self.profile)
+        self.assertEqual(answers[("练习题", 1)][6], "C")
+
+    def test_answer_json_file_rejects_letters_outside_the_labels(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "answers.json"
+            path.write_text(
+                json.dumps({"练习题": {"1": "ADDBA CDCAB EBBCC"}}, ensure_ascii=False),
+                encoding="utf-8",
+            )
+            with self.assertRaises(ValueError):
+                emit.parse_answers(path, self.profile)
 
     def test_ocr_split_range_and_letters(self):
         answers = emit.parse_answer_runs(["1-5", "BDCBD"], self.profile)
@@ -822,6 +866,18 @@ class EmitTests(unittest.TestCase):
             question["options"][3]["blocks"][0]["text"], "卷帙浩繁言传身教"
         )
 
+    def test_option_lines_split_by_ocr_join_without_a_gap_when_squeezing(self):
+        paper = self.paper()
+        option = paper["questions"][0]["options"][0]
+        option["blocks"] = [
+            {"kind": "text", "text": "大白鼠在“恐怖箱”中呆立不动的", "ocr": True},
+            {"kind": "text", "text": "时间和之前一样", "ocr": True},
+        ]
+        emit.normalize_option_spacing([paper], squeeze_han_spaces=True)
+        self.assertEqual(
+            option["blocks"][0]["text"], "大白鼠在“恐怖箱”中呆立不动的时间和之前一样"
+        )
+
     def test_material_reference_follows_question_block(self):
         paper = self.paper()
         for number in range(1, 7):
@@ -843,12 +899,17 @@ class EmitTests(unittest.TestCase):
 
 class FakeOcrProfile:
     top_band = 85
+    ocr_squeeze_han_spaces = False
 
     def correct(self, value):
         return value
 
     def is_noise(self, value, bbox):
         return not value.strip()
+
+
+class SqueezingOcrProfile(FakeOcrProfile):
+    ocr_squeeze_han_spaces = True
 
 
 @unittest.skipIf(ocr_layout is None, "PIL or PyMuPDF is not installed")
@@ -1099,6 +1160,30 @@ class OcrLayoutTests(unittest.TestCase):
         )
         tokens = ocr_layout.tokens(1, page, FakeOcrProfile(), page.blanks)
         self.assertEqual(tokens[0]["text"], "已经与此形成内在 ______")
+
+    def test_han_gap_from_a_wrapped_ocr_line_is_squeezed_when_enabled(self):
+        page = OcrPage(
+            1,
+            72,
+            800,
+            200,
+            [{"text": "大白鼠呆立不动的 时间和之前一样", "box": [100, 100, 700, 130]}],
+            [],
+        )
+        tokens = ocr_layout.tokens(1, page, SqueezingOcrProfile(), [])
+        self.assertEqual(tokens[0]["text"], "大白鼠呆立不动的时间和之前一样")
+
+    def test_han_gap_stays_when_the_profile_keeps_option_word_spaces(self):
+        page = OcrPage(
+            1,
+            72,
+            800,
+            200,
+            [{"text": "琳琅满目 一脉相承", "box": [100, 100, 700, 130]}],
+            [],
+        )
+        tokens = ocr_layout.tokens(1, page, FakeOcrProfile(), [])
+        self.assertEqual(tokens[0]["text"], "琳琅满目 一脉相承")
 
     def test_rule_inside_block_is_an_underline_not_a_blank(self):
         page = OcrPage(

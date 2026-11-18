@@ -10,6 +10,8 @@ from PIL import Image, ImageDraw
 from .ocr import OcrPage
 
 OPTION_SPLIT = re.compile(r"(?<![A-Za-z])([A-D])[.．、]\s*")
+# A wrapped scan line leaves a gap where the glyphs continue on the next line.
+HAN_GAP = re.compile(r"(?<=[\u3400-\u9fff]) +(?=[\u3400-\u9fff])")
 
 
 def clean_ocr(value: str) -> str:
@@ -263,6 +265,8 @@ def tokens(
     for block in ocr_page.blocks:
         text = clean_ocr(block["text"])
         text = profile.correct(text)
+        if profile.ocr_squeeze_han_spaces:
+            text = HAN_GAP.sub("", text)
         if not text:
             continue
         x0, y0, x1, y1 = block["box"]

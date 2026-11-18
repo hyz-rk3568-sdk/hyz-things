@@ -127,9 +127,44 @@ def parse_answer_runs(lines, profile: Profile) -> dict[int, str]:
     return answers
 
 
+def parse_answer_json(path: Path | str, profile: Profile) -> dict:
+    """Read a hand-checked key: ``{"练习题": {"1": "ADDBA..."}}``.
+
+    Answer sheets that exist only as images are transcribed once into this
+    shape, so a re-import does not need another OCR pass over the key.
+    """
+    import json
+
+    try:
+        data = json.loads(Path(path).read_text(encoding="utf-8"))
+    except json.JSONDecodeError as error:
+        raise ValueError(f"cannot read answer key {path}: {error}") from error
+    if not isinstance(data, dict):
+        raise ValueError("answer key must map paper kinds to set runs")
+    answers = {}
+    labels = set(profile.option_labels)
+    for kind, papers in data.items():
+        if not isinstance(papers, dict):
+            raise ValueError(f"answer key {kind!r} must map set numbers to runs")
+        for num, letters in papers.items():
+            if not isinstance(letters, str):
+                raise ValueError(f"answer key {kind}{num} must be a string")
+            run = re.sub(r"\s+", "", letters)
+            if not run or not set(run) <= labels:
+                raise ValueError(
+                    f"answer key {kind}{num} has letters outside {profile.option_labels}"
+                )
+            answers[(kind, int(num))] = {
+                index: letter for index, letter in enumerate(run, start=1)
+            }
+    return answers
+
+
 def parse_answers(path: Path | str, profile: Profile) -> dict:
     import pymupdf
 
+    if str(path).lower().endswith(".json"):
+        return parse_answer_json(path, profile)
     document = pymupdf.open(str(path))
     lines = []
     for page in document:
@@ -237,7 +272,7 @@ def repair_statement_markers(stem: str, options: list[dict]) -> str:
     return re.sub(rf"[（(](?=[{_CIRCLED}])", "", stem)
 
 
-def _merge_option_blocks(option: dict) -> bool:
+def _merge_option_blocks(option: dict, squeeze_han_spaces: bool = False) -> bool:
     """Join option lines that OCR split, inserting the missing word gap."""
     blocks = [block for block in option["blocks"] if block["kind"] == "text"]
     if len(blocks) < 2:
@@ -247,10 +282,12 @@ def _merge_option_blocks(option: dict) -> bool:
     for block in blocks:
         text = block["text"]
         # OCR splits at a word gap, so the space is real. A text-layer line
-        # break can fall inside a word, so the pieces stay glued.
+        # break can fall inside a word, so the pieces stay glued. A prose book
+        # only wraps long options, so its profile asks for no gap at all.
         if (
             block.get("ocr")
             and merged
+            and not squeeze_han_spaces
             and not merged.endswith(" ")
             and not text.startswith(" ")
         ):
@@ -263,7 +300,9 @@ def _merge_option_blocks(option: dict) -> bool:
     return inserted
 
 
-def normalize_option_spacing(papers: list[dict]) -> int:
+def normalize_option_spacing(
+    papers: list[dict], squeeze_han_spaces: bool = False
+) -> int:
     """Split option words that OCR glued together.
 
     The stem's blank count equals the number of words in each option. A
@@ -275,7 +314,7 @@ def normalize_option_spacing(papers: list[dict]) -> int:
     for paper in papers:
         for question in paper["questions"]:
             for option in question["options"]:
-                if _merge_option_blocks(option):
+                if _merge_option_blocks(option, squeeze_han_spaces):
                     changed += 1
                 for word in _option_text(option).split():
                     if len(word) >= 2:

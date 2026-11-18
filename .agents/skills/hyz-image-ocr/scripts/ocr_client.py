@@ -17,7 +17,7 @@ import urllib.error
 import urllib.request
 from pathlib import Path
 
-DEFAULT_URL = "http://127.0.0.1:8080/ocr"
+DEFAULT_URL = "http://127.0.0.1:18743/ocr"
 MAX_BYTES = 8 * 1024 * 1024
 TIMEOUT = 120
 

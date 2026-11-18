@@ -43,6 +43,11 @@ class FakeArray:
         return self.value
 
 
+class ClientConfigTest(unittest.TestCase):
+    def test_default_url_uses_dedicated_loopback_port(self):
+        self.assertEqual(ocr.DEFAULT_URL, "http://127.0.0.1:18743/ocr")
+
+
 class BlocksTest(unittest.TestCase):
     def test_normal_blocks_keep_fields_and_index(self):
         result = response(

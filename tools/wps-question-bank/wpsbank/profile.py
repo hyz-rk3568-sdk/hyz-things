@@ -101,6 +101,7 @@ class Profile:
     ocr_dpi: int = 220
     ocr_badge: str = r"练习题\s*(\d+)\s*套"
     ocr_replacements: tuple[tuple[str, str], ...] = ()
+    ocr_squeeze_han_spaces: bool = False
     title_re: re.Pattern = field(init=False, compare=False)
 
     def __post_init__(self) -> None:
@@ -197,6 +198,9 @@ class Profile:
             isinstance(k, str) and isinstance(v, str) for k, v in replacements.items()
         ):
             raise ValueError("ocr.replacements must map strings to strings")
+        squeeze_han_spaces = ocr.get("squeeze_han_spaces", False)
+        if not isinstance(squeeze_han_spaces, bool):
+            raise ValueError("ocr.squeeze_han_spaces must be a boolean")
         badge = ocr.get("badge", r"练习题\s*(\d+)\s*套")
         if not isinstance(badge, str) or not badge:
             raise ValueError("ocr.badge must be a non-empty regex")
@@ -340,4 +344,5 @@ class Profile:
             ocr_dpi=ocr_dpi,
             ocr_badge=badge,
             ocr_replacements=tuple(sorted(replacements.items())),
+            ocr_squeeze_han_spaces=squeeze_han_spaces,
         )

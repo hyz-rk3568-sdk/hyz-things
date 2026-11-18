@@ -2454,3 +2454,633 @@ S_{\triangle POA}=S_{\triangle QOB}
 遇到“**三角形两边中点＋连线相交**”，先找中线平分面积；需要比较交点附近的区域时，可以连接**第三个顶点与交点**，再用等底同高把面积分成份数。注意题目要求的是**两块阴影之和**。
 
 ---
+
+## Card
+<!-- hyz-card-id: 01a1e8ae-72fd-7230-89db-6e02fddfedca -->
+<!-- hyz-source-question-id: 01a1af25-d036-7523-9552-d300d3e4a2e6 -->
+<!-- hyz-correct-answer: [] -->
+### Front
+
+如图，在 △ABC 中，点 D 是 AC 的中点，点 E 是 BC 的三等分点，连接 AE 和 BD 交于点 F，连接 DE，若 △ABC 面积为 36，则下列说法正确的是（ ）。
+
+![配图](../../../../images/a45d12859907b8c443995f0141d2845d62b9061f39c1067b944e9820e8b06ecd.png)
+
+- A. △DEF 的面积小于 3
+- B. △CDE 的面积大于 6
+- C. △BAF 的面积等于 △BDE 的面积
+- D. △ABF 的面积等于 △ACE 的面积
+
+### Back
+
+## 答案
+
+**选 A。** 独立计算得 \(\triangle DEF\) 的面积为 **2.4**，小于 3。
+
+## 判型与所用套路
+
+这是**三角形面积比**问题。用“**同高三角形，面积比等于底边比**”：
+
+先求两块大三角形的面积比，再转换成交点 \(F\) 处分出的线段比，最后求小三角形的面积。
+
+## 关键条件
+
+- \(D\) 是 \(AC\) 的中点，所以 \(AD:DC=1:1\)。
+- 按原图位置，\(E\) 靠近 \(C\)，所以 \(BE:EC=2:1\)。
+- \(\triangle ABC\) 面积为 \(36\)。
+
+```svg
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 570 365">
+  <title>三角形面积分割示意图</title>
+  <desc>ABC 面积为 36，D 是 AC 中点，BE 与 EC 之比为二比一。图中数字为各区域面积。</desc>
+  <polygon points="170,30 50,300 500,300" fill="white" stroke="#263746" stroke-width="3"/>
+  <polygon points="278,192 335,165 350,300" fill="#b9dceb" stroke="#263746" stroke-width="2"/>
+  <line x1="170" y1="30" x2="350" y2="300" stroke="#263746" stroke-width="2"/>
+  <line x1="50" y1="300" x2="335" y2="165" stroke="#263746" stroke-width="2"/>
+  <line x1="335" y1="165" x2="350" y2="300" stroke="#263746" stroke-width="2"/>
+  <text x="165" y="22" font-family="sans-serif" fill="#172536">A</text>
+  <text x="30" y="320" font-family="sans-serif" fill="#172536">B</text>
+  <text x="505" y="320" font-family="sans-serif" fill="#172536">C</text>
+  <text x="340" y="157" font-family="sans-serif" fill="#172536">D</text>
+  <text x="345" y="324" font-family="sans-serif" fill="#172536">E</text>
+  <text x="262" y="184" font-family="sans-serif" fill="#172536">F</text>
+  <text x="155" y="175" font-family="sans-serif" fill="#172536">14.4</text>
+  <text x="225" y="258" font-family="sans-serif" fill="#172536">9.6</text>
+  <text x="242" y="120" font-family="sans-serif" fill="#172536">3.6</text>
+  <text x="308" y="224" font-family="sans-serif" fill="#172536">2.4</text>
+  <text x="385" y="260" font-family="sans-serif" fill="#172536">6</text>
+  <text x="200" y="344" text-anchor="middle" font-family="sans-serif" fill="#172536">BE：2 份</text>
+  <text x="425" y="344" text-anchor="middle" font-family="sans-serif" fill="#172536">EC：1 份</text>
+</svg>
+```
+
+## 按套路分步求解
+
+以下用 \(S_{ABC}\) 表示 \(\triangle ABC\) 的面积。
+
+### 第一步：求 \(S_{ABE}\) 和 \(S_{ADE}\)
+
+\(\triangle ABE\) 和 \(\triangle ACE\) 以 \(BE、EC\) 为底，高相同，面积比为 \(2:1\)。总面积为 36，所以：
+
+\[
+S_{ABE}=36\times\frac23=24，
+\qquad
+S_{ACE}=36\times\frac13=12。
+\]
+
+再看 \(\triangle ADE\) 和 \(\triangle CDE\)：它们以 \(AD、DC\) 为底，高相同，底又相等，因此各占 \(\triangle ACE\) 的一半：
+
+\[
+S_{ADE}=S_{CDE}=12\div2=6。
+\]
+
+于是得到两块大三角形的面积比：
+
+\[
+S_{ABE}:S_{ADE}=24:6=\boxed{4:1}。
+\]
+
+### 第二步：把面积比转换成 \(BF:FD\)
+
+两块大三角形都被交叉线拆成两部分：
+
+\[
+S_{ABE}=S_{ABF}+S_{BEF}，
+\]
+
+\[
+S_{ADE}=S_{ADF}+S_{DEF}。
+\]
+
+分别比较对应的小三角形：
+
+- \(\triangle ABF\) 和 \(\triangle ADF\) 对底边 \(BF、FD\) **高相同**，所以面积比是 \(BF:FD\)。
+- \(\triangle BEF\) 和 \(\triangle DEF\) 对底边 \(BF、FD\) **高也相同**，所以面积比还是 \(BF:FD\)。
+
+两组面积的比例相同，合起来比例也相同，因此：
+
+\[
+S_{ABE}:S_{ADE}=BF:FD。
+\]
+
+代入第一步的结果：
+
+\[
+\boxed{BF:FD=4:1}。
+\]
+
+所以 \(DF\) 占整条 \(DB\) 的 \(\frac15\)。
+
+### 第三步：求 \(\triangle DEF\) 的面积
+
+\(\triangle BDE\) 和 \(\triangle CDE\) 以 \(BE、EC\) 为底，高相同，底边比是 \(2:1\)。因此：
+
+\[
+S_{BDE}=2S_{CDE}=2\times6=12。
+\]
+
+\(\triangle DEF\) 和 \(\triangle DEB\) 以 \(DF、DB\) 为底，高相同，所以：
+
+\[
+S_{DEF}=S_{DEB}\times\frac{DF}{DB}
+=12\times\frac15
+=\boxed{2.4}。
+\]
+
+故 **A 正确**。
+
+## 快速验算与排除干扰项
+
+| 选项 | 计算结果 | 判断 |
+|---|---:|---|
+| A | \(S_{DEF}=2.4<3\) | 正确 |
+| B | \(S_{CDE}=6\) | 等于 6，并非大于 6 |
+| C | \(S_{BAF}=14.4\)，\(S_{BDE}=12\) | 不相等 |
+| D | \(S_{ABF}=14.4\)，\(S_{ACE}=12\) | 不相等 |
+
+其中，因 \(D\) 是中点，\(S_{ABD}=36\div2=18\)；再由 \(BF:BD=4:5\)，得 \(S_{ABF}=18\times\frac45=14.4\)。
+
+图中五块面积相加也恰好是 \(36\)。
+
+## 与原卷参考对照
+
+原卷 **Answer 和 Explanation 均为空**。选 A 是独立求解的结果，无法与原卷答案核对。
+
+## 复盘提醒
+
+看到交叉线，先找**同高三角形**：把已知边长比换成面积比，再把面积比换成交点处的线段比。
+
+本题尤其要看清 \(E\) 的位置：**\(BE:EC=2:1\)**；另外，“等于 6”和“大于 6”要严格区分。
+
+---
+
+## Card
+<!-- hyz-card-id: 01a1e8dc-c61c-73b0-9ea1-8678bdb33eae -->
+<!-- hyz-source-question-id: 01a1af25-d036-7523-9552-d31331810a9c -->
+<!-- hyz-correct-answer: [] -->
+### Front
+
+如图，一块正方形的花园 ABCD 的面积是 120 平方米，为了种植不同种类的花将其划分成一些小区域，其中，E 是 AB 的中点，F 是 BC 的中点，则四边形区域 BGHF 的面积是（）平方米。
+
+![配图](../../../../images/401f1eb6eb6e804929ffbd51563b47e8ca46c44b162851d89c100b570d0c04cb.png)
+
+- A. 14
+- B. 16
+- C. 18
+- D. 20
+
+### Back
+
+## 答案
+
+**A．14 平方米。**这是独立求解的结果。
+
+## 判型与所用套路
+
+这是**平面几何面积比题**。图中有平行边与交叉线，可先用“蝴蝶模型”找线段比，再用**同高三角形面积比等于底边比**，通过割补求目标面积。
+
+## 关键条件
+
+- 正方形面积为 \(120\) 平方米。
+- \(E\) 是 \(AB\) 中点，\(F\) 是 \(BC\) 中点。
+- \(G\) 是 \(BD\) 与 \(EC\) 的交点，\(H\) 是 \(DF\) 与 \(EC\) 的交点。
+- 图中蓝色部分是所求的四边形 \(BGHF\)。
+
+```svg
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 460 360">
+  <title>正方形花园面积割补图</title>
+  <rect x="60" y="30" width="300" height="300" fill="white" stroke="#222222" stroke-width="2"/>
+  <polygon points="60,330 160,230 240,270 210,330" fill="#a9d5f5" stroke="none"/>
+  <line x1="60" y1="330" x2="360" y2="30" stroke="#333333" stroke-width="2"/>
+  <line x1="60" y1="180" x2="360" y2="330" stroke="#333333" stroke-width="2"/>
+  <line x1="210" y1="330" x2="360" y2="30" stroke="#333333" stroke-width="2"/>
+  <text x="42" y="25" font-family="sans-serif" fill="#222222">A</text>
+  <text x="42" y="348" font-family="sans-serif" fill="#222222">B</text>
+  <text x="366" y="348" font-family="sans-serif" fill="#222222">C</text>
+  <text x="366" y="25" font-family="sans-serif" fill="#222222">D</text>
+  <text x="39" y="185" font-family="sans-serif" fill="#222222">E</text>
+  <text x="204" y="352" font-family="sans-serif" fill="#222222">F</text>
+  <text x="144" y="225" font-family="sans-serif" fill="#222222">G</text>
+  <text x="245" y="265" font-family="sans-serif" fill="#222222">H</text>
+  <text x="91" y="302" font-family="sans-serif" fill="#12476b">所求</text>
+</svg>
+```
+
+## 按套路分步求解
+
+### 1. 先求大三角形 \(BGC\)
+
+\(EB\parallel DC\)，交叉线 \(EC\) 与 \(BD\) 构成蝴蝶模型，所以
+
+\[
+\triangle EBG\sim\triangle CDG。
+\]
+
+又因为 \(EB\) 是正方形边长的一半，
+
+\[
+EG:GC=EB:DC=1:2，
+\qquad \frac{GC}{EC}=\frac23。
+\]
+
+\(\triangle BGC\) 和 \(\triangle BEC\) 以 \(GC、EC\) 为底，有共同的高，因此
+
+\[
+S_{BGC}=\frac23S_{BEC}
+=\frac23\times\left(120\times\frac14\right)
+=20。
+\]
+
+### 2. 求右下角三角形 \(FHC\)
+
+先看以 \(EC\) 为底的两个三角形：
+
+- \(\triangle DEC\) 的面积为正方形的一半，即 \(60\)；
+- \(\triangle FEC\) 的底 \(FC\) 是 \(BC\) 的一半，所以面积为 \(\triangle BEC\) 的一半，即 \(15\)。
+
+它们以 \(EC\) 为共同底，顶点 \(D、F\) 位于经过 \(H\) 的同一直线上，因此
+
+\[
+DH:HF=S_{DEC}:S_{FEC}=60:15=4:1。
+\]
+
+于是 \(H\) 到 \(BC\) 的距离是正方形边长的 \(\frac15\)。而 \(FC\) 是边长的一半，所以
+
+\[
+S_{FHC}
+=120\times\frac12\times\frac15\times\frac12
+=6。
+\]
+
+### 3. 割补得到目标面积
+
+由图可见，\(\triangle BGC\) 减去 \(\triangle FHC\)，正好是四边形 \(BGHF\)：
+
+\[
+S_{BGHF}=20-6=\boxed{14\text{ 平方米}}。
+\]
+
+## 快速验算与排除干扰项
+
+目标面积占正方形的
+
+\[
+\frac16-\frac1{20}=\frac7{60}，
+\]
+
+故 \(120\times\frac7{60}=14\)。对应 **A**，排除 B、C、D。
+
+## 与原卷参考对照
+
+原卷的 **Answer 和 Explanation 均为空**，因此上述结果未经原卷答案核对。
+
+## 复盘提醒
+
+遇到交叉线面积题，先找**平行线＋对顶角**得到线段比；再找同高三角形转换为面积比。本题的割补入口是：
+
+\[
+\boxed{\text{目标四边形}=\triangle BGC-\triangle FHC}。
+\]
+
+---
+
+## Card
+<!-- hyz-card-id: 01a1e985-5edb-7470-b73e-d86a5210156c -->
+<!-- hyz-source-question-id: 01a1af25-d036-7523-9552-d36664b85fd2 -->
+<!-- hyz-correct-answer: [] -->
+### Front
+
+下图中，阴影部分的面积大还是条纹部分的面积大？
+
+![配图](../../../../images/c41a5b0da1fda85461c26d12aa8a01310426578eda61c73409cc31033bd54e1a.png)
+
+- A. 阴影部分面积大
+- B. 条纹部分面积大
+- C. 两个部分一样大
+- D. 无法确定
+
+### Back
+
+## 答案
+
+**选 A，阴影部分面积大。** 这是独立求解的结果。
+
+## 判型与所用套路
+
+这是平面几何中的**面积割补与比较**问题。按照“先看图形关系，再求面积”的套路，利用对称性，只计算一块条纹，再与正方形内、大圆外的阴影比较。
+
+## 关键条件
+
+按原图所示的对称、相切关系理解：
+
+- 大圆内切于正方形；上、下、左、右四个小圆全等。
+- 每个小圆的直径等于大圆的半径。
+- 四块条纹全等，每块都是相邻两个小圆的重叠部分。
+
+## 按套路分步求解
+
+设小圆半径为 \(r\)，则大圆半径为 \(2r\)，正方形边长为 \(4r\)。
+
+**1. 求阴影面积。**
+
+阴影是正方形面积减去大圆面积：
+
+\[
+S_{\text{阴影}}=(4r)^2-\pi(2r)^2
+=(16-4\pi)r^2。
+\]
+
+**2. 求条纹面积。**
+
+看其中一块条纹：它由两个相同的弓形拼成。每个弓形等于一个 \(90^\circ\) 扇形减去一个直角三角形，因此一块条纹的面积为
+
+\[
+2\left(\frac{\pi r^2}{4}-\frac{r^2}{2}\right)
+=\left(\frac{\pi}{2}-1\right)r^2。
+\]
+
+四块条纹的总面积为
+
+\[
+S_{\text{条纹}}=4\left(\frac{\pi}{2}-1\right)r^2
+=(2\pi-4)r^2。
+\]
+
+取 \(\pi\approx3.14\)，则
+
+\[
+S_{\text{阴影}}\approx3.44r^2，
+\qquad
+S_{\text{条纹}}\approx2.28r^2。
+\]
+
+所以**阴影部分面积更大**。
+
+## 快速验算与排除干扰项
+
+两者之差为
+
+\[
+S_{\text{阴影}}-S_{\text{条纹}}
+=(20-6\pi)r^2
+\approx1.16r^2>0。
+\]
+
+因此排除 B、C；两部分的大小关系与 \(r\) 的具体值无关，排除 D。
+
+## 与原卷参考对照
+
+原卷 **Answer 和 Explanation 均为空**。以上为独立求解，未经原卷答案核对。
+
+## 复盘提醒
+
+看到重复的花瓣形重叠区域，先找**一个扇形减三角形**，再利用对称性乘块数。比较面积时，先统一半径；本题大圆半径是小圆的 **2 倍**，面积因此是小圆的 **4 倍**。
+
+---
+
+## Card
+<!-- hyz-card-id: 01a1e988-6e27-77c1-96b2-58db1955343c -->
+<!-- hyz-source-question-id: 01a1af25-d036-7523-9552-d375949126b8 -->
+<!-- hyz-correct-answer: [] -->
+### Front
+
+正方形 ABCD，其边长为 4 米，分别以顶点 A、B 为圆心，4 米为半径画圆弧。如图所示，那么下面阴影部分的面积比上面阴影部分多多少平方米？
+
+![配图](../../../../images/48728a555dfa209d50e0f7c1364940c69cd835a9a0fdc2b4737b93c4c1013786.png)
+
+- A. 16-8π
+- B. 16-16π
+- C. 8π-16
+- D. 16π-16
+
+### Back
+
+## 答案
+
+**C．\(8\pi-16\) 平方米。**这是独立求解的结果。
+
+## 判型与所用套路
+
+这是平面几何中的**面积割补题**。按照“先观察图形关系，再用割补求差”的思路，把两个四分之一圆的面积相加，利用重叠部分抵消，直接求出两块阴影的面积差。
+
+## 关键条件
+
+- 正方形边长为 \(4\) 米，面积为 \(16\) 平方米。
+- 图中两条圆弧各对应一个半径为 \(4\) 米的**四分之一圆**。
+- **下方阴影**是两个四分之一圆的重叠部分；**上方阴影**是正方形内、两个四分之一圆都没有覆盖的部分。
+
+## 按套路分步求解
+
+设下方阴影面积为 \(S_{\text{下}}\)，上方阴影面积为 \(S_{\text{上}}\)。
+
+**第一步：求两个四分之一圆的面积之和。**
+
+每个四分之一圆的面积为
+
+\[
+\frac14\pi\times4^2=4\pi。
+\]
+
+两个合计：
+
+\[
+4\pi+4\pi=8\pi。
+\]
+
+**第二步：观察重复计算和遗漏的部分。**
+
+两个四分之一圆相加时，下方阴影被计算了两次；上方阴影一次都没有算进。因此：
+
+\[
+\text{两个四分之一圆面积之和}
+=\text{正方形面积}+S_{\text{下}}-S_{\text{上}}。
+\]
+
+所以所求面积差为
+
+\[
+S_{\text{下}}-S_{\text{上}}
+=8\pi-16。
+\]
+
+即 **\(8\pi-16\) 平方米，选 C**。
+
+## 快速验算与排除干扰项
+
+取 \(\pi\approx3.14\)，得到
+
+\[
+8\pi-16\approx9.12\text{ 平方米}，
+\]
+
+为正数且小于正方形面积 \(16\)，符合图示和面积范围。
+
+A、B 两项为负数，不符合“下面多多少”；D 项 \(16\pi-16>16\)，超过整个正方形的面积。
+
+## 与原卷参考对照
+
+原卷的 **Answer 和 Explanation 均为空**，因此上述答案未经原卷参考核对。
+
+## 复盘提醒
+
+遇到两个图形重叠，问“重叠部分比空白部分多多少”，可以先看：
+
+\[
+\boxed{\text{重叠面积}-\text{空白面积}
+=\text{两个图形面积之和}-\text{整体面积}}
+\]
+
+本题无需分别计算上下阴影，也无需计算圆弧交点的位置。
+
+---
+
+## Card
+<!-- hyz-card-id: 01a1e993-c4cd-7dd0-ae43-81ba1fedabc3 -->
+<!-- hyz-source-question-id: 01a1af25-d036-7523-9552-d38e59cc52dc -->
+<!-- hyz-correct-answer: [] -->
+### Front
+
+如图，一长方形内切有 5 个完全相同的小圆，且小圆间彼此相切。已知小圆直径为 4，则阴影部分的面积分别为多少？
+
+![配图](../../../../images/5365da8648acec3b11996a42480ede135f34d9090f40aef2c316b30c6787047d.png)
+
+- A. 12√3-6π
+- B. 48√3-24π
+- C. 12√3-24π
+- D. 48√3-6π
+
+### Back
+
+## 答案
+
+**选 A，三块阴影的总面积为 \(12\sqrt3-6\pi\)**，约为 \(1.94\) 平方单位。
+
+三块阴影面积相等，**每一块**的面积是 \(4\sqrt3-2\pi\)。
+
+## 判型与所用套路
+
+这是平面几何中的**相切圆与面积割补**题。采用“先找图形关系，再割补求面积”的套路：连接相邻圆的圆心，将一块阴影转化为**等边三角形面积减去三个扇形面积**，最后乘以阴影块数。
+
+## 关键条件
+
+- 小圆直径为 \(4\)，半径为 \(2\)。
+- 图中每块阴影都由三个两两相切的等圆围成；这三个圆心之间的距离均为 \(4\)。
+- 三块阴影形状、面积相同。
+
+## 按套路分步求解
+
+**1. 连接一块阴影周围的三个圆心。**
+
+因为等圆外切时圆心距等于直径，三个圆心构成边长为 \(4\) 的等边三角形，其面积为
+
+\[
+S_{\triangle}=\frac{\sqrt3}{4}\times4^2=4\sqrt3。
+\]
+
+**2. 从三角形中减去三个扇形。**
+
+等边三角形的每个角都是 \(60^\circ\)，三个扇形的圆心角合计为 \(180^\circ\)，面积相当于半个半径为 \(2\) 的圆：
+
+\[
+S_{\text{扇形合计}}=\frac12\pi\times2^2=2\pi。
+\]
+
+因此，一块阴影的面积为
+
+\[
+4\sqrt3-2\pi。
+\]
+
+**3. 三块阴影合计：**
+
+\[
+S=3(4\sqrt3-2\pi)
+=\boxed{12\sqrt3-6\pi}。
+\]
+
+## 快速验算与排除干扰项
+
+取 \(\sqrt3\approx1.732\)、\(\pi\approx3.14\)，则总面积约为
+
+\[
+12\times1.732-6\times3.14=1.944>0。
+\]
+
+C 的值为负，直接排除；B、D 与“三个等边三角形减去三个半圆”的结果不符。注意不要把一块阴影误当作三块的总面积。
+
+## 与原卷参考对照
+
+原卷的 Answer 和 Explanation 均为空。以上为**独立求解，未经原卷答案核对**。
+
+## 复盘提醒
+
+看到三个相同的圆两两相切，优先**连接圆心**：圆心组成等边三角形，圆间空隙就能用“三角形减三个扇形”计算。最后看清题目和选项要求的是单块面积还是总面积。
+
+---
+
+## Card
+<!-- hyz-card-id: 01a1e9a0-87c7-7ef1-81c8-fd94bd6db550 -->
+<!-- hyz-source-question-id: 01a1af25-d036-7523-9552-d39ba273a763 -->
+<!-- hyz-correct-answer: [] -->
+### Front
+
+下面图形阴影部分面积是多少？
+
+![配图](../../../../images/24b14b467fe3c3f7fa5a3be584637c3576b2aefabb6dbdad22061199b0b8269a.png)
+
+- A. 12.5π
+- B. 25
+- C. 50-12.5π
+- D. 25π-50
+
+### Back
+
+对，**阴影被线和圆弧分成了好几块，题目问的是这些阴影的总面积**。上次图里把它们合成一种蓝色，你不容易看出每一块，这次分开标记：
+
+```svg
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 620 320">
+  <title>把阴影分成上、中、下三块</title>
+  <desc>正方形中，阴影被对角线和圆弧分成三块，分别标为上、中、下。三块与白色部分一起组成整个半圆。</desc>
+
+  <rect x="30" y="35" width="200" height="200" fill="white" stroke="#333333" stroke-width="2"/>
+  <path d="M 30 35 A 100 100 0 0 1 30 235 Z" fill="#a9cce3" stroke="#24557a" stroke-width="2"/>
+  <path d="M 30 35 A 200 200 0 0 0 88.58 176.42 L 30 235 Z" fill="white"/>
+  <path d="M 30 35 A 200 200 0 0 0 230 235" fill="none" stroke="#333333" stroke-width="2"/>
+  <line x1="30" y1="235" x2="230" y2="35" stroke="#333333" stroke-width="2"/>
+
+  <text x="16" y="29" font-family="sans-serif" fill="#222222">A</text>
+  <text x="235" y="29" font-family="sans-serif" fill="#222222">B</text>
+  <text x="235" y="252" font-family="sans-serif" fill="#222222">C</text>
+  <text x="16" y="252" font-family="sans-serif" fill="#222222">D</text>
+  <text x="70" y="176" font-family="sans-serif" fill="#222222">E</text>
+  <text x="127" y="131" font-family="sans-serif" fill="#222222">P</text>
+
+  <text x="82" y="101" font-family="sans-serif" fill="#173e59">上</text>
+  <text x="105" y="166" font-family="sans-serif" fill="#173e59">中</text>
+  <text x="66" y="220" font-family="sans-serif" fill="#173e59">下</text>
+  <text x="43" y="153" font-family="sans-serif" fill="#222222">白色</text>
+
+  <text x="285" y="70" font-family="sans-serif" fill="#222222">三块蓝色都是题目的阴影</text>
+  <text x="285" y="110" font-family="sans-serif" fill="#222222">上 + 中 + 下 + 白色</text>
+  <text x="285" y="140" font-family="sans-serif" fill="#222222">＝整个半圆</text>
+  <text x="285" y="195" font-family="sans-serif" fill="#222222">所以，三块阴影的总和</text>
+  <text x="285" y="225" font-family="sans-serif" fill="#222222">＝整个半圆 − 白色部分</text>
+</svg>
+```
+
+这里不用分别计算“上、中、下”三块：它们和图中的白色部分拼起来，**恰好就是整个半圆**。因此只要从半圆里减去白色部分，就把三块阴影都算进去了。
+
+再看白色部分：它是直角三角形 \(ABD\) 除去扇形 \(ABE\) 后剩下的部分。所以：
+
+\[
+\begin{aligned}
+\text{三块阴影之和}
+&=\text{半圆}-\text{白色部分}\\
+&=\text{半圆}-(\text{三角形}-\text{扇形})\\
+&=12.5\pi-(50-12.5\pi)\\
+&=\boxed{25\pi-50}
+\end{aligned}
+\]
+
+也就是说，**图中划线方向不同的部分都计入了**；割补法只是把它们作为整体一起求出来。
+
+---
