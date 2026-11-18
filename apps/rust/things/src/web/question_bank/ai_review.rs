@@ -4,12 +4,6 @@ use super::ai_review_api::*;
 use super::*;
 use hyz_things::domain::question_bank::AiReviewState;
 
-#[wasm_bindgen::prelude::wasm_bindgen(module = "/src/web/ai_diagram.js")]
-extern "C" {
-    #[wasm_bindgen::prelude::wasm_bindgen(js_name = renderAiDiagrams)]
-    fn render_ai_diagrams(root: &HtmlElement);
-}
-
 #[derive(Properties, PartialEq)]
 pub(crate) struct QuestionAiReviewProps {
     pub csrf: String,
@@ -273,7 +267,7 @@ pub(crate) fn question_ai_review(props: &QuestionAiReviewProps) -> Html {
         use_effect_with(key, move |_| {
             if let Some(root) = diagram_root.cast::<HtmlElement>() {
                 hydrate_math_element(&root);
-                render_ai_diagrams(&root);
+                render_markdown_diagrams(&root);
             }
             || ()
         });

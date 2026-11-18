@@ -6,7 +6,15 @@ use pulldown_cmark::{
 #[wasm_bindgen::prelude::wasm_bindgen(module = "/src/web/ai_diagram.js")]
 extern "C" {
     #[wasm_bindgen::prelude::wasm_bindgen(js_name = renderAiDiagrams)]
-    fn render_markdown_diagrams(root: &HtmlElement);
+    fn render_diagrams_js(root: &HtmlElement, validate: &js_sys::Function);
+}
+
+pub(crate) fn render_markdown_diagrams(root: &HtmlElement) {
+    let validate =
+        wasm_bindgen::closure::Closure::<dyn Fn(String) -> bool>::new(|source: String| {
+            hyz_things::domain::svg::safe_svg(&source)
+        });
+    render_diagrams_js(root, validate.as_ref().unchecked_ref());
 }
 
 #[derive(Properties, PartialEq)]

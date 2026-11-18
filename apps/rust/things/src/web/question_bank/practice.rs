@@ -14,12 +14,6 @@ extern "C" {
     fn restore_review_scroll(element: &HtmlElement, offset: i32) -> js_sys::Function;
 }
 
-#[wasm_bindgen::prelude::wasm_bindgen(module = "/src/web/ai_diagram.js")]
-extern "C" {
-    #[wasm_bindgen::prelude::wasm_bindgen(js_name = renderAiDiagrams)]
-    fn render_ai_diagrams(root: &HtmlElement);
-}
-
 #[derive(Default)]
 struct ReviewScrollMemory {
     session: Option<String>,

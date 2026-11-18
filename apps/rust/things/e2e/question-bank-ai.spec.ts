@@ -441,6 +441,18 @@ test(`AI analysis displays a safe SVG diagram at ${viewport.width}px`,async({pag
 });
 }
 
+test('AI SVG supports gradients, styles and local references',async({page})=>{
+  const svg='<svg xmlns="http://www.w3.org/2000/svg" width="200" height="100"><defs><linearGradient id="g"><stop offset="0%" stop-color="red"/><stop offset="100%" stop-color="blue"/></linearGradient></defs><style>.shape { fill: url(#g); }</style><rect class="shape" width="100" height="80" transform="translate(10 5)"/></svg>';
+  await page.route('**/api/v1/question-bank/practice/questions/*/ai',async route=>{
+    const question_id=new URL(route.request().url()).pathname.split('/').at(-2)!;
+    await route.fulfill({json:{question_id,status:'complete',error:null,messages:[{role:'assistant',content:'```svg\n'+svg+'\n```',created_at:1}]}});
+  });
+  await openFixtureReview(page);
+  const diagram=page.getByTestId('question-bank-ai-diagram');
+  await expect(diagram).toBeVisible();
+  await expect.poll(()=>diagram.evaluate((img:HTMLImageElement)=>img.complete&&img.naturalWidth>0)).toBe(true);
+});
+
 test('AI SVG diagrams reject unsafe or oversized markup and preserve its source',async({page})=>{
   const open='<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 100">';
   const unsafe=[
@@ -448,6 +460,12 @@ test('AI SVG diagrams reject unsafe or oversized markup and preserve its source'
     `${open}<script>alert(1)</script></svg>`,
     `${open}<foreignObject><div xmlns="http://www.w3.org/1999/xhtml">bad</div></foreignObject></svg>`,
     `${open}<image href="https://example.invalid/private"/></svg>`,
+    `${open}<style>@import "https://example.invalid/a";</style></svg>`,
+    `${open}<style>rect { fill: url(https://example.invalid/a) }</style></svg>`,
+    `${open}<style>rect { fill: u<![CDATA[rl(https://example.invalid/a)]]> }</style></svg>`,
+    `${open}<g xml:base="https://example.invalid/"><use href="#x"/></g></svg>`,
+    `${open}<rect style="fill: image-set('https://example.invalid/a' 1x)"/></svg>`,
+    `${open}<rect style="fill: image('private.png')"/></svg>`,
     `${open}<rect x="0" y="0" width="20" height="20" fill="url(https://example.invalid/a)"/></svg>`,
     `<!DOCTYPE svg [<!ENTITY x "bad">]>${open}<text x="1" y="10">&x;</text></svg>`,
     `${open}<rect constructor="bad"/></svg>`,

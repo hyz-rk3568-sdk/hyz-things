@@ -53,105 +53,18 @@ pub fn validate_shape(question: &GeneratedQuestion) -> Result<(), String> {
 }
 
 fn validate_diagram(source: &str) -> Result<(), String> {
-    let invalid = || "几何图不符合安全格式，请重新出题".to_owned();
-    if source.is_empty() || source.len() > 32_768 || source.contains("<!") || source.contains("<?")
-    {
-        return Err(invalid());
+    if !super::svg::safe_svg(source) {
+        return Err("几何图不符合安全格式，请重新出题".into());
     }
-    let doc = roxmltree::Document::parse(source).map_err(|_| invalid())?;
-    let root = doc.root_element();
-    if root.tag_name().name() != "svg"
-        || root.tag_name().namespace() != Some("http://www.w3.org/2000/svg")
-    {
-        return Err(invalid());
-    }
-    let numeric = |value: &str| {
-        value
-            .parse::<f64>()
-            .is_ok_and(|number| number.is_finite() && number.abs() <= 10_000.0)
-    };
-    let list = |value: &str| {
-        let parts = value
-            .split(|ch: char| ch.is_ascii_whitespace() || ch == ',')
-            .filter(|part| !part.is_empty())
-            .collect::<Vec<_>>();
-        !parts.is_empty() && parts.len() <= 2048 && parts.iter().all(|part| numeric(part))
-    };
-    let mut count = 0;
-    let mut has_shape = false;
-    for node in root.descendants().filter(|node| node.is_element()) {
-        count += 1;
-        if count > 256
-            || node
-                .ancestors()
-                .filter(|ancestor| ancestor.is_element())
-                .count()
-                > 16
-            || node.tag_name().namespace() != Some("http://www.w3.org/2000/svg")
-        {
-            return Err(invalid());
-        }
-        let name = node.tag_name().name();
-        has_shape |= ["line", "polyline", "polygon", "rect", "circle", "ellipse"].contains(&name);
-        if ![
-            "svg", "g", "line", "polyline", "polygon", "rect", "circle", "ellipse", "text",
-            "tspan", "title", "desc",
-        ]
-        .contains(&name)
-            || (name == "svg" && node != root)
-        {
-            return Err(invalid());
-        }
-        for attr in node.attributes() {
-            if attr.namespace().is_some() {
-                return Err(invalid());
-            }
-            let value = attr.value();
-            let valid = match attr.name() {
-                "viewBox" if node == root => {
-                    let parts = value
-                        .split(|ch: char| ch.is_ascii_whitespace() || ch == ',')
-                        .filter(|part| !part.is_empty())
-                        .collect::<Vec<_>>();
-                    parts.len() == 4
-                        && list(value)
-                        && parts[2].parse::<f64>().is_ok_and(|v| v > 0.0)
-                        && parts[3].parse::<f64>().is_ok_and(|v| v > 0.0)
-                }
-                "x" | "y" | "x1" | "y1" | "x2" | "y2" | "cx" | "cy" | "r" | "rx" | "ry"
-                | "width" | "height" | "stroke-width" | "font-size" | "opacity"
-                | "fill-opacity" | "stroke-opacity" => numeric(value),
-                "fill" | "stroke" => {
-                    value == "none"
-                        || value == "currentColor"
-                        || value == "transparent"
-                        || (value.starts_with('#')
-                            && (4..=9).contains(&value.len())
-                            && value[1..].bytes().all(|b| b.is_ascii_hexdigit()))
-                        || ((3..=20).contains(&value.len())
-                            && value.bytes().all(|b| b.is_ascii_alphabetic()))
-                }
-                "text-anchor" => ["start", "middle", "end"].contains(&value),
-                "dominant-baseline" => {
-                    ["auto", "middle", "central", "hanging", "alphabetic"].contains(&value)
-                }
-                "stroke-linecap" => ["butt", "round", "square"].contains(&value),
-                "stroke-linejoin" => ["miter", "round", "bevel"].contains(&value),
-                "font-weight" => [
-                    "normal", "bold", "100", "200", "300", "400", "500", "600", "700", "800", "900",
-                ]
-                .contains(&value),
-                "font-family" => ["sans-serif", "serif", "monospace"].contains(&value),
-                "points" if name == "polygon" || name == "polyline" => list(value),
-                _ => false,
-            };
-            if !valid {
-                return Err(invalid());
-            }
-        }
-    }
-    if root.attribute("viewBox").is_none() || !has_shape {
-        return Err(invalid());
+    let doc = roxmltree::Document::parse(source).map_err(|_| "几何图不符合安全格式，请重新出题")?;
+    if !doc.descendants().any(|node| {
+        node.is_element()
+            && [
+                "line", "polyline", "polygon", "rect", "circle", "ellipse", "path",
+            ]
+            .contains(&node.tag_name().name())
+    }) {
+        return Err("几何图缺少图形，请重新出题".into());
     }
     Ok(())
 }
@@ -176,6 +89,14 @@ mod tests {
     fn accepts_complete_payload_without_semantic_review() {
         let mut q = question();
         q.options[1] = q.options[0].clone();
+        assert!(validate_shape(&q).is_ok());
+    }
+
+    #[test]
+    fn accepts_safe_svg_with_gradients_and_styles() {
+        let mut q = question();
+        q.diagram_required = true;
+        q.question = "几何题\n```svg\n<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"100\" height=\"100\"><defs><linearGradient id=\"g\"><stop offset=\"0%\" stop-color=\"red\"/></linearGradient></defs><style>.shape { fill: url(#g); }</style><rect class=\"shape\" width=\"80\" height=\"80\" transform=\"translate(5 5)\"/></svg>\n```".into();
         assert!(validate_shape(&q).is_ok());
     }
 

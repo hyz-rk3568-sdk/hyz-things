@@ -332,12 +332,8 @@ const AI_REVIEW_ENVELOPE: &str =
 const AI_SVG_INSTRUCTIONS: &str = concat!(
     "当图形有助理解时，用独立的 ```svg 代码块绘制线段图、数轴、对比图或流程图；\n",
     "图形应简洁并有中文文字标注。根元素示例：<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 600 240\">。\n",
-    "只使用 svg、g、path、line、polyline、polygon、rect、circle、ellipse、text、tspan、title、desc；\n",
-    "使用纯数字坐标，颜色用颜色名或十六进制。允许的属性是 viewBox、x、y、x1、y1、x2、y2、cx、cy、r、rx、ry、width、height、\n",
-    "stroke-width、fill、stroke、opacity、fill-opacity、stroke-opacity、d、points、text-anchor、dominant-baseline、\n",
-    "stroke-linecap、stroke-linejoin、font-weight、font-family；字体只用 sans-serif、serif 或 monospace。\n",
-    "禁止 script、style、class、id、transform、href、外部资源、动画、foreignObject、DOCTYPE 和 XML 声明；\n",
-    "不要使用渐变、滤镜或箭头 marker，箭头可用 line 和 polygon 绘制。每图最多 256 个元素、源码不超过 32768 字符。\n",
+    "可使用渐变、样式、变换、滤镜及 #id 内部引用，保持 SVG 结构简洁。\n",
+    "禁止脚本、事件处理器、foreignObject、外部资源和外部引用；每图最多 256 个元素、源码不超过 32768 字符。\n",
     "图形显示在白色背景上，请使用深色文字和线条。无需画图时直接使用文字、表格或公式，不必强制绘图。\n",
 );
 
