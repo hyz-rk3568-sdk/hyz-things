@@ -653,6 +653,64 @@ test('starts an AI review with Ctrl+Enter but not plain Enter',async({page})=>{
   await expect(page.getByTestId('question-bank-ai-status')).toContainText('正在生成');
 });
 
+test('streamed SVG at the start survives subsequent updates and completion',async({page})=>{
+  const errors:string[]=[];
+  page.on('pageerror',error=>errors.push(error.message));
+  await page.addInitScript(()=>{
+    const streams:any[]=[];
+    (window as any).__svgStreams=streams;
+    class FakeEventSource extends EventTarget {
+      onmessage:((event:MessageEvent)=>void)|null=null;
+      onerror:((event:Event)=>void)|null=null;
+      closed=false;
+      constructor(public url:string){super();streams.push(this)}
+      close(){this.closed=true}
+      emit(type:string,data:unknown){
+        if(this.closed)return;
+        const event=new MessageEvent(type,{data:JSON.stringify(data)});
+        if(type==='message')this.onmessage?.(event);else this.dispatchEvent(event);
+      }
+    }
+    (window as any).EventSource=FakeEventSource;
+  });
+  const svg='<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 100"><rect width="100" height="100" fill="blue"/></svg>';
+  const answer='```svg\n'+svg+'\n```\n\n第一段';
+  let final=false;
+  await page.route('**/api/v1/question-bank/practice/questions/*/ai/runs**',route=>route.fulfill({json:{items:[],next_after:null,has_more:false}}));
+  await page.route('**/api/v1/question-bank/practice/questions/*/ai',route=>{
+    const question_id=new URL(route.request().url()).pathname.split('/').at(-2)!;
+    return route.fulfill({json:{question_id,status:final?'complete':'running',error:null,messages:final?[{id:1,role:'assistant',content:answer+'\n\n后续内容',created_at:1}]:[]}});
+  });
+  await openFixtureReview(page);
+  await page.getByTestId('question-bank-ai-tab').click();
+  await expect.poll(()=>page.evaluate(()=>(window as any).__svgStreams.length)).toBeGreaterThan(0);
+  const emit=(type:string,data:Record<string,unknown>)=>page.evaluate(({type,data})=>(window as any).__svgStreams.at(-1).emit(type,data),{type,data});
+  const question_id=await page.evaluate(()=>new URL((window as any).__svgStreams.at(-1).url,location.origin).pathname.split('/').at(-3));
+  await emit('snapshot',{version:1,question_id,stem_fingerprint:'fingerprint',run_id:'run-1',seq:1,status:'running',text:answer,progress:[]});
+  await expect(page.getByTestId('question-bank-ai-stream-text').getByTestId('question-bank-ai-diagram')).toBeVisible();
+  await page.getByTestId('question-bank-ai-diagram').evaluate(node=>{(window as any).__originalDiagram=node});
+  await emit('message',{version:1,run_id:'run-1',seq:2,kind:'text_delta',timestamp_ms:1,payload:{text:'\n\n后续内容\n\n```text\n尚未结束'}});
+  await expect(page.getByTestId('question-bank-ai-stream-text')).toContainText('尚未结束');
+  await expect(page.getByTestId('question-bank-ai-stream-text').getByTestId('question-bank-ai-diagram')).toBeVisible();
+  expect(await page.getByTestId('question-bank-ai-diagram').evaluate(node=>node===(window as any).__originalDiagram)).toBe(true);
+  await emit('message',{version:1,run_id:'run-1',seq:3,kind:'text_delta',timestamp_ms:1,payload:{text:'\n```'}});
+  await expect(page.getByTestId('question-bank-ai-stream-text').locator('code.language-text')).toContainText('尚未结束');
+  expect(await page.getByTestId('question-bank-ai-diagram').evaluate(node=>node===(window as any).__originalDiagram)).toBe(true);
+  await emit('message',{version:1,run_id:'run-1',seq:4,kind:'text_delta',timestamp_ms:1,payload:{text:'\n\n公式 \\(x+'}});
+  await expect(page.getByTestId('question-bank-ai-stream-text')).toContainText('x+');
+  expect(await page.getByTestId('question-bank-ai-diagram').evaluate(node=>node===(window as any).__originalDiagram)).toBe(true);
+  await emit('message',{version:1,run_id:'run-1',seq:5,kind:'text_delta',timestamp_ms:1,payload:{text:'1\\)'}});
+  await expect(page.getByTestId('question-bank-ai-stream-text').locator('.katex')).toBeVisible();
+  expect(await page.getByTestId('question-bank-ai-diagram').evaluate(node=>node===(window as any).__originalDiagram)).toBe(true);
+  final=true;
+  await emit('message',{version:1,run_id:'run-1',seq:6,kind:'run_finished',timestamp_ms:1,payload:{}});
+  await expect(page.getByTestId('question-bank-ai-message')).toContainText('后续内容');
+  await expect(page.getByTestId('question-bank-ai-message').getByTestId('question-bank-ai-diagram')).toBeVisible();
+  await page.getByRole('button',{name:'下一题'}).click();
+  await expect(page.getByTestId('question-bank-practice-heading')).toContainText('原卷第 27 题');
+  expect(errors).toEqual([]);
+});
+
 test('AI SSE replaces snapshots, ignores duplicates, reconnects on gaps and refreshes terminal history',async({page})=>{
   await page.addInitScript(()=>{
     const streams: any[]=[];

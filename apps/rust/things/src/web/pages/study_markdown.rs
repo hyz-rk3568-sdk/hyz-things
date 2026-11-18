@@ -17,6 +17,38 @@ pub(crate) fn render_markdown_diagrams(root: &HtmlElement) {
     render_diagrams_js(root, validate.as_ref().unchecked_ref());
 }
 
+#[wasm_bindgen::prelude::wasm_bindgen(module = "/src/web/streaming_markdown.js")]
+extern "C" {
+    #[wasm_bindgen::prelude::wasm_bindgen(js_name = updateStreamingMarkdown)]
+    fn update_streaming_markdown(root: &HtmlElement, html: &str);
+}
+
+#[derive(Properties, PartialEq)]
+pub(crate) struct StreamingMarkdownProps {
+    pub markdown: String,
+    pub complete: bool,
+}
+
+#[function_component(StreamingMarkdown)]
+pub(crate) fn streaming_markdown(props: &StreamingMarkdownProps) -> Html {
+    let root = use_node_ref();
+    {
+        let root = root.clone();
+        let html = question_bank_markdown_html(&props.markdown);
+        use_effect_with((html, props.complete), move |(html, complete)| {
+            if let Some(element) = root.cast::<HtmlElement>() {
+                update_streaming_markdown(&element, html);
+                if *complete {
+                    render_markdown_diagrams(&element);
+                    hydrate_math_element(&element);
+                }
+            }
+            || ()
+        });
+    }
+    html! { <div ref={root} class="study-markdown text-base leading-7" data-ai-diagram-source={props.complete.to_string()}/> }
+}
+
 #[derive(Properties, PartialEq)]
 struct MarkdownViewProps {
     html: String,
@@ -41,9 +73,10 @@ fn markdown_view(props: &MarkdownViewProps) -> Html {
             },
         );
     }
+    // Hydration may replace Markdown children; Yew must retain an untouched root node.
     html! {
         <div ref={root}>
-            <div data-ai-diagram-source={props.diagrams.to_string()}>{Html::from_html_unchecked(AttrValue::from(props.html.clone()))}</div>
+            <div data-ai-diagram-source={props.diagrams.to_string()}>{Html::from_html_unchecked(AttrValue::from(format!("<div>{}</div>", props.html)))}</div>
         </div>
     }
 }

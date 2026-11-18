@@ -40,6 +40,20 @@ CHAOGE_PATH = TOOL / "profiles" / "chaoge-2026-yanyu-jinjie-600.json"
 
 
 class ProfileTests(unittest.TestCase):
+    def test_huasheng_logical_cloze_classification_and_blanks(self):
+        loaded = profile_module.Profile.load(HUASHENG_PATH)
+        self.assertEqual(loaded.module, "言语理解与表达")
+        self.assertEqual(loaded.category, "逻辑填空")
+        root = TOOL.parents[1] / "question_bank/collections/huasheng-2026-luojitiankong-600"
+        files = sorted(root.glob("*.md"))
+        self.assertEqual(len(files), 30)
+        for path in files:
+            text = path.read_text(encoding="utf-8")
+            self.assertNotIn("module: 逻辑填空", text, str(path))
+            self.assertEqual(text.count("module: 言语理解与表达"), 20, str(path))
+            self.assertEqual(text.count("category: 逻辑填空"), 20, str(path))
+            self.assertNotRegex(text, r"(?<!\\)_{2,}", str(path))
+
     def test_shipped_profile_describes_the_sihai_book(self):
         loaded = profile_module.Profile.load(PROFILE_PATH)
         self.assertEqual(loaded.collection_id, "sihai-2026-haihaishua-ziliao")
@@ -183,7 +197,7 @@ class HuashengProfileTests(unittest.TestCase):
             ],
         }
         markdown = emit.paper_markdown(paper, {("练习题", 1): {1: "A"}}, loaded)
-        self.assertIn("成为成长的美好 ______。\n", markdown)
+        self.assertIn("成为成长的美好 " + r"\_" * 6 + "。\n", markdown)
 
     def test_scanned_stem_ending_in_text_gets_a_period(self):
         loaded = profile_module.Profile.load(HUASHENG_PATH)
@@ -231,7 +245,7 @@ class HuashengProfileTests(unittest.TestCase):
             ],
         }
         markdown = emit.paper_markdown(paper, {("练习题", 1): {1: "A"}}, loaded)
-        self.assertIn("始终______，以礼相待。\n", markdown)
+        self.assertIn("始终" + r"\_" * 6 + "，以礼相待。\n", markdown)
 
     def test_text_layer_stem_keeps_its_exact_tail(self):
         loaded = profile_module.Profile.load(PROFILE_PATH)
@@ -532,6 +546,14 @@ class EmitTests(unittest.TestCase):
                 }
             ],
         }
+
+    def test_logical_cloze_emits_category_and_literal_blanks(self):
+        profile = dataclasses.replace(self.profile, module="言语理解与表达", category="逻辑填空")
+        paper = self.paper()
+        paper["questions"][0]["stem"][0]["text"] = "甲 ______。乙 ______。"
+        markdown = emit.paper_markdown(paper, {("套题训练", 1): {1: "A"}}, profile)
+        self.assertIn("module: 言语理解与表达\ncategory: 逻辑填空\n", markdown)
+        self.assertNotRegex(markdown, r"(?<!\\)_{2,}")
 
     def test_markdown_has_no_generated_ids(self):
         markdown = emit.paper_markdown(

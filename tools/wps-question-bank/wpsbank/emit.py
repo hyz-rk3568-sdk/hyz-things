@@ -464,6 +464,8 @@ def paper_markdown(
             "```yaml",
             f"module: {profile.module}",
         ]
+        if profile.category:
+            lines.append(f"category: {profile.category}")
         if profile.schema == "hyz-paper/v2":
             lines += ["answer_type: objective", "grading_mode: exact"]
         if used_materials:
@@ -481,6 +483,8 @@ def paper_markdown(
                 # A printed full stop that lands on its own line is easy for
                 # the scan OCR to miss; the sentence still needs its period.
                 stem += "。"
+        if profile.category == "逻辑填空":
+            stem = re.sub(r"(?<!\\)_{2,}", lambda match: "\\_" * len(match.group()), stem)
         lines += [stem, "", "### Options"]
         for option in question["options"]:
             replacement = patch.get("options", {}).get(option["label"])

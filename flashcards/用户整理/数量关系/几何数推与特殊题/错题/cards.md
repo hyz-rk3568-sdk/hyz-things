@@ -3084,3 +3084,89 @@ C 的值为负，直接排除；B、D 与“三个等边三角形减去三个半
 也就是说，**图中划线方向不同的部分都计入了**；割补法只是把它们作为整体一起求出来。
 
 ---
+
+## Card
+<!-- hyz-card-id: 01a1ee60-d02b-7391-8cfa-af8d41e22817 -->
+<!-- hyz-source-question-id: 01a1af25-d01f-7921-b061-efc87063a179 -->
+<!-- hyz-correct-answer: [] -->
+### Front
+
+甲乙两地间的纵横道路网如下图所示，若从甲地到乙地沿道路铺设电缆，要使铺设的电缆长度最短，则电缆经过丙地的情况数为：
+
+![配图](../../../../images/dace3a61356866e69411692dc3e20b7a8356f44dffef744e8e8c53d1f2c434ab.png)
+
+- A. 12 种
+- B. 16 种
+- C. 20 种
+- D. 24 种
+
+### Back
+
+**答案：B．16 种。**
+
+最短路线从甲出发只能**向左或向下**。要求经过丙，就把路线分成两段，分别从甲、乙向丙逐层计数。
+
+**标数规则：每个路口的路径数，等于能到达它的上一层路口的路径数之和。**
+
+```svg
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 760 380">
+  <rect width="760" height="380" fill="white"/>
+  <text x="55" y="40" font-size="20" font-weight="bold" fill="#1e293b">① 从甲数到丙</text>
+  <text x="405" y="40" font-size="20" font-weight="bold" fill="#1e293b">② 从乙数到丙</text>
+
+  <path d="M100 90 H220 M100 150 H220 M100 210 H220 M100 270 H220 M100 90 V270 M220 90 V270" fill="none" stroke="#64748b" stroke-width="3"/>
+  <circle cx="100" cy="90" r="5" fill="#334155"/>
+  <circle cx="220" cy="90" r="5" fill="#dc2626"/>
+  <circle cx="100" cy="150" r="5" fill="#334155"/>
+  <circle cx="220" cy="150" r="5" fill="#334155"/>
+  <circle cx="100" cy="210" r="5" fill="#334155"/>
+  <circle cx="220" cy="210" r="5" fill="#334155"/>
+  <circle cx="100" cy="270" r="5" fill="#dc2626"/>
+  <circle cx="220" cy="270" r="5" fill="#334155"/>
+  <text x="80" y="82" font-size="20" fill="#2563eb">1</text>
+  <text x="230" y="82" font-size="20" fill="#2563eb">1</text>
+  <text x="75" y="156" font-size="20" fill="#2563eb">2</text>
+  <text x="230" y="156" font-size="20" fill="#2563eb">1</text>
+  <text x="75" y="216" font-size="20" fill="#2563eb">3</text>
+  <text x="230" y="216" font-size="20" fill="#2563eb">1</text>
+  <text x="75" y="276" font-size="20" font-weight="bold" fill="#dc2626">4</text>
+  <text x="230" y="276" font-size="20" fill="#2563eb">1</text>
+  <text x="240" y="105" font-size="18" fill="#1e293b">甲</text>
+  <text x="110" y="296" font-size="18" fill="#1e293b">丙</text>
+  <text x="55" y="325" font-size="17" fill="#475569">向左或向下：4 条</text>
+
+  <path d="M410 150 H680 M410 240 H680 M410 150 V240 M500 150 V240 M590 150 V240 M680 150 V240" fill="none" stroke="#64748b" stroke-width="3"/>
+  <circle cx="410" cy="150" r="5" fill="#334155"/>
+  <circle cx="500" cy="150" r="5" fill="#334155"/>
+  <circle cx="590" cy="150" r="5" fill="#334155"/>
+  <circle cx="680" cy="150" r="5" fill="#dc2626"/>
+  <circle cx="410" cy="240" r="5" fill="#dc2626"/>
+  <circle cx="500" cy="240" r="5" fill="#334155"/>
+  <circle cx="590" cy="240" r="5" fill="#334155"/>
+  <circle cx="680" cy="240" r="5" fill="#334155"/>
+  <text x="402" y="138" font-size="20" fill="#2563eb">1</text>
+  <text x="492" y="138" font-size="20" fill="#2563eb">2</text>
+  <text x="582" y="138" font-size="20" fill="#2563eb">3</text>
+  <text x="672" y="138" font-size="20" font-weight="bold" fill="#dc2626">4</text>
+  <text x="402" y="268" font-size="20" fill="#2563eb">1</text>
+  <text x="492" y="268" font-size="20" fill="#2563eb">1</text>
+  <text x="582" y="268" font-size="20" fill="#2563eb">1</text>
+  <text x="672" y="268" font-size="20" fill="#2563eb">1</text>
+  <text x="382" y="247" font-size="18" fill="#1e293b">乙</text>
+  <text x="692" y="156" font-size="18" fill="#1e293b">丙</text>
+  <text x="405" y="305" font-size="17" fill="#475569">向右或向上：4 条</text>
+  <text x="405" y="330" font-size="17" fill="#475569">反向即丙到乙的路线数</text>
+
+  <text x="260" y="365" font-size="22" font-weight="bold" fill="#b45309">经过丙：4 × 4 = 16 条</text>
+</svg>
+```
+
+甲到丙有 **4 条**；乙到丙有 **4 条**，反过来走，丙到乙也是 **4 条**。每条甲到丙的路线都能接上任意一条丙到乙的路线，因此：
+
+\[
+4\times4=\boxed{16\text{ 条}}
+\]
+
+**复盘：逐点相加，两段相乘。** 路口标的是“路线数”，不是“走了几步”；本题丙处恰好都是 4，不要因此混淆。
+
+---

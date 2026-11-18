@@ -971,11 +971,7 @@ pub(crate) fn question_ai_review(props: &QuestionAiReviewProps) -> Html {
                 if active.status == "running" && !active.text.is_empty() {
                     <div class="py-2" data-testid="question-bank-ai-stream-text">
                         <div class="mb-2 text-xs font-semibold text-base-content/60">{"AI 正在回复"}</div>
-                        if streaming_markdown_complete(&active.text) {
-                            <div class="study-markdown text-base leading-7" data-ai-diagram-source="true">{render_question_bank_markdown(&active.text)}</div>
-                        } else {
-                            <div class="whitespace-pre-wrap break-words text-base leading-7">{active.text.clone()}</div>
-                        }
+                        <StreamingMarkdown markdown={active.text.clone()} complete={streaming_markdown_complete(&active.text)}/>
                     </div>
                 }
             }

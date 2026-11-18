@@ -69,6 +69,7 @@ class Profile:
     region: str
     variant: str
     module: str
+    category: str | None
     role: str
     paper_kind: str
     option_labels: str
@@ -162,6 +163,9 @@ class Profile:
         for label in ("module", "region", "variant", "role", "paper_kind"):
             if not isinstance(data.get(label), str) or not data[label].strip():
                 raise ValueError(f"missing {label} in profile")
+
+        if data.get("category") is not None and (not isinstance(data["category"], str) or not data["category"].strip()):
+            raise ValueError("invalid category in profile")
 
         patterns = data.get("patterns") or {}
         noise = data.get("noise") or {}
@@ -306,6 +310,7 @@ class Profile:
             region=data["region"],
             variant=data["variant"],
             module=data["module"],
+            category=data.get("category"),
             role=data["role"],
             paper_kind=data["paper_kind"],
             schema=_parse_schema(data.get("schema")),
