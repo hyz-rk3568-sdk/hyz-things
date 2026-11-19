@@ -48,7 +48,7 @@ for (const [prefix, mode, endpoint, module] of [
       const body = route.request().postDataJSON();
       if (url.pathname.endsWith('/messages')) {
         sentMessages.push(body);
-        conversations.set(key(body.id), [...(conversations.get(key(body.id)) ?? []), {role:'user',content:body.message}, {role:'assistant',content:'',tool:{name:'command',status:'completed',detail:'rg 卡片'}}, {role:'assistant',content:'按关联方法卡解题'}]);
+        conversations.set(key(body.id), [...(conversations.get(key(body.id)) ?? []), {role:'user',content:body.message}, {role:'assistant',content:'',tool:{name:'command',status:'completed',detail:'rg 卡片'}}, {role:'assistant',content:'按关联方法卡解题。\n\n**关键条件： **三种方式走的是同一段路程。\n\n$$\n\\binom{9}{2}=36\n$$'}]);
       }
       return route.fulfill({json:{accepted:true}});
     });
@@ -60,7 +60,7 @@ for (const [prefix, mode, endpoint, module] of [
       else if (path.endsWith('/user-prompt')) data={user_prompt:'',customized:false};
       else if (path.endsWith('/history')) data=[{id:session,correct:10,total:10,answered:10,ended_at_ms:Date.now(),started_at_ms:Date.now(),elapsed_ms:1000,topics:['材料']}];
       else if (path.endsWith('/result')) {
-        const questions=Array.from({length:prefix==='analysis'?20:10},(_,i)=>({number:i+1,question:`题目 ${i+1}`,options:['甲','乙','丙','丁'],chosen:0,correct_index:0,explanation:'解析',skill:'方法',evidence:'材料',card_id:i===1?otherCard:card,card_path:`用户整理/资料分析/方法${i===1?'B':'A'}/cards.md`,front:'旧卡',back:'旧卡'}));
+        const questions=Array.from({length:prefix==='analysis'?20:10},(_,i)=>({number:i+1,question:`题目 ${i+1}`,options:['甲','乙','丙','丁'],chosen:0,correct_index:0,explanation:'**关键条件： **\\(x=1\\)，因此 $\\binom{9}{2}=36$。',skill:'方法',evidence:'材料',card_id:i===1?otherCard:card,card_path:`用户整理/资料分析/方法${i===1?'B':'A'}/cards.md`,front:'旧卡',back:'旧卡'}));
         data={id:session,correct:10,total:questions.length,answered:10,questions,materials:Array.from({length:4},()=>({topic:'材料',text:'统计材料'}))};
       }
       await route.fulfill({json:data});
@@ -74,6 +74,16 @@ for (const [prefix, mode, endpoint, module] of [
     await expect(answerPane.getByTestId('ai-practice-agent-tab')).toBeVisible();
     await expect(page.getByTestId(`ai-practice-favorite-${prefix === 'analysis' ? 'material' : 'stem'}`)).toHaveCount(0);
     await expect(page.getByTestId('training-workspace-header').getByTestId('ai-practice-favorite')).toHaveCount(0);
+    const reviewTimer = page.getByTestId('training-workspace-header')
+      .getByTestId(prefix === 'analysis' ? 'analysis-review-timer' : `${prefix}-review-timer`);
+    await expect(reviewTimer).toBeDisabled();
+    await expect(reviewTimer).toHaveClass(/btn-ghost/);
+    await expect(reviewTimer).toHaveText(/^\d{2}:\d{2}:\d{2}$/);
+    const explanation = page.getByTestId(prefix === 'analysis' ? 'analysis-explanation' : `${prefix}-explanation`);
+    await expect(explanation).toHaveClass(/text-base-content\/75/);
+    await expect(explanation.locator('strong')).toHaveText('关键条件');
+    await expect(explanation).not.toContainText('**关键条件');
+    await expect(explanation.locator('.katex').first()).toBeVisible();
     const star = page.getByTestId('ai-practice-favorite');
     await expect(star).toHaveAttribute('aria-label','收藏题目');
     await star.click();
@@ -105,6 +115,9 @@ for (const [prefix, mode, endpoint, module] of [
     await expect(finalReply).toContainText('按关联方法卡解题');
     await expect(finalReply).toHaveClass(/study-markdown/);
     await expect(finalReply).toHaveClass(/text-base/);
+    await expect(finalReply.locator('strong')).toHaveText('关键条件');
+    await expect(finalReply).not.toContainText('**关键条件');
+    await expect(finalReply.locator('.katex').first()).toBeVisible();
     await expect(page.getByTestId('ai-practice-agent-page')).toContainText('按关联方法卡解题');
     await page.getByTestId('ai-practice-agent-input-field').fill('为什么这样计算？');
     await page.getByTestId('ai-practice-agent-send').click();

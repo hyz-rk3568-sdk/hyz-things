@@ -751,10 +751,10 @@ pub(crate) fn logic_judgment_training(props: &LogicJudgmentProps) -> Html {
                 actions={html! {
                     <div class="ml-auto flex flex-wrap items-center justify-end gap-2">
                         <TrainingStatusBar prefix={format!("{prefix}-result")} counts={review_status} mode={TrainingStatusMode::Review}/>
-                        <span class="btn btn-ghost px-2 font-mono text-xl font-semibold tabular-nums" role="timer"
-                            data-testid={format!("{prefix}-review-timer")} title="训练已结束">
+                        <button type="button" class="btn btn-ghost px-2 font-mono text-xl font-semibold tabular-nums" role="timer"
+                            data-testid={format!("{prefix}-review-timer")} title="训练已结束" disabled=true>
                             {format!("{:02}:{:02}:{:02}", review_elapsed_seconds / 3600, review_elapsed_seconds / 60 % 60, review_elapsed_seconds % 60)}
-                        </span>
+                        </button>
                         <button class="btn btn-outline btn-sm" data-testid={format!("{prefix}-records")} onclick={show_records}>{"查看练习记录"}</button>
                         <button class="btn btn-primary btn-sm" data-testid={format!("{prefix}-retry")} disabled={*busy} onclick={invoke(LogicAction::Retry(score.id.clone()))}>{"重做原题"}</button>
                     </div>
@@ -775,8 +775,8 @@ pub(crate) fn logic_judgment_training(props: &LogicJudgmentProps) -> Html {
                                     <div class="grid gap-2">{for review_options.iter().cloned()}</div>
                                     <div class="mt-5 border-t border-base-content/10 pt-4">
                                         {answer_stats.clone()}
-                                        <h3 class="mt-3 font-semibold">{"原始解析"}</h3>
-                                        <div class="study-markdown mt-2 whitespace-pre-wrap text-base leading-7">{render_markdown(&q.explanation, "")}</div>
+                                        <h3 class="mt-3 font-bold">{"原始解析"}</h3>
+                                        <div class="study-markdown mt-2 whitespace-pre-wrap text-base leading-7 text-base-content/75" data-testid={format!("{prefix}-explanation")}>{render_markdown(&q.explanation, "")}</div>
                                         <RelatedMethodCard key={format!("{prefix}-{}-{index}", score.id)}
                                             card_id={Some(q.card_id.clone())} test_id={format!("{prefix}-related-card")} />
                                     </div>

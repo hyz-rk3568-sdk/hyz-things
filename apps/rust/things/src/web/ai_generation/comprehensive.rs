@@ -966,8 +966,10 @@ pub(crate) fn comprehensive_training(props: &ComprehensiveProps) -> Html {
                 <div class="grid gap-2">{for review_options.iter().cloned()}</div>
                 <div class="border-t border-base-content/10 pt-4">
                     {answer_stats.clone()}
-                    <h3 class="mt-3 text-base font-semibold">{"原始解析"}</h3>
-                    <p class="mt-2 whitespace-pre-wrap text-base leading-7" data-testid="analysis-explanation">{q.explanation.clone()}</p>
+                    <h3 class="mt-3 font-bold">{"原始解析"}</h3>
+                    <div class="study-markdown mt-2 whitespace-pre-wrap text-base leading-7 text-base-content/75" data-testid="analysis-explanation">
+                        {render_markdown(&q.explanation, "")}
+                    </div>
                     <RelatedMethodCard key={format!("analysis-{}-{index}", score.id)}
                         card_id={q.card_id.clone()}
                         test_id="analysis-related-card" />
@@ -1054,10 +1056,10 @@ pub(crate) fn comprehensive_training(props: &ComprehensiveProps) -> Html {
                 actions={html! {
                     <div class="flex min-w-0 flex-wrap items-center gap-2 sm:justify-end">
                         <TrainingStatusBar prefix="analysis-result" counts={review_status} mode={TrainingStatusMode::Review}/>
-                        <span class="btn btn-ghost px-2 font-mono text-xl font-semibold tabular-nums" role="timer"
-                            data-testid="analysis-review-timer" title="训练已结束">
+                        <button type="button" class="btn btn-ghost px-2 font-mono text-xl font-semibold tabular-nums" role="timer"
+                            data-testid="analysis-review-timer" title="训练已结束" disabled=true>
                             {format!("{:02}:{:02}:{:02}", review_elapsed_seconds / 3600, review_elapsed_seconds / 60 % 60, review_elapsed_seconds % 60)}
-                        </span>
+                        </button>
                         <button type="button" class="btn btn-outline btn-sm" onclick={show_history}>{"查看练习记录"}</button>
                         <button type="button" class="btn btn-outline btn-sm" data-testid="analysis-retry-result" disabled={*busy} onclick={redo_from_result}>{"重做原题"}</button>
                         <button type="button" class="btn btn-primary btn-sm" onclick={again}>{"再出一套"}</button>

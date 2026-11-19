@@ -224,10 +224,98 @@ fn normalize_latex_delimiters(markdown: &str) -> String {
         if line.starts_with("    ") || line.starts_with('\t') {
             output.push_str(line);
         } else {
-            output.push_str(&normalize_inline_latex(line));
+            output.push_str(&normalize_emphasis(&normalize_inline_latex(line)));
         }
     }
     output
+}
+
+/// AI replies often write `**关键条件： **`. CommonMark rejects the closing
+/// marker because the preceding full-width colon is punctuation and CJK text
+/// follows directly. Move that punctuation outside the emphasis run and drop
+/// whitespace that sits just inside the marker so the label still renders bold.
+fn normalize_emphasis(line: &str) -> String {
+    let chars = line.chars().collect::<Vec<_>>();
+    let mut output = String::with_capacity(line.len());
+    let mut code_ticks = 0usize;
+    let mut index = 0;
+    while index < chars.len() {
+        if chars[index] == '`' {
+            let mut end = index;
+            while end < chars.len() && chars[end] == '`' {
+                end += 1;
+            }
+            let run = end - index;
+            if code_ticks == 0 {
+                code_ticks = run;
+            } else if code_ticks == run {
+                code_ticks = 0;
+            }
+            output.extend(chars[index..end].iter());
+            index = end;
+            continue;
+        }
+        if code_ticks == 0 && chars[index] == '*' && chars.get(index + 1) == Some(&'*') {
+            if let Some(close) = (index + 2..chars.len().saturating_sub(1))
+                .find(|candidate| chars[*candidate] == '*' && chars[candidate + 1] == '*')
+            {
+                let content = chars[index + 2..close].iter().collect::<String>();
+                let trimmed = content.trim_end();
+                let after = chars.get(close + 2).copied();
+                let needs_punctuation_moved = after
+                    .is_some_and(|next| !next.is_whitespace() && !is_emphasis_punctuation(next));
+                let mut body = trimmed;
+                let mut punctuation = String::new();
+                if needs_punctuation_moved {
+                    while let Some(last) = body.chars().last() {
+                        if is_emphasis_punctuation(last) {
+                            punctuation.insert(0, last);
+                            body = &body[..body.len() - last.len_utf8()];
+                        } else {
+                            break;
+                        }
+                    }
+                }
+                output.push_str("**");
+                output.push_str(body);
+                output.push_str("**");
+                output.push_str(&punctuation);
+                index = close + 2;
+                continue;
+            }
+        }
+        output.push(chars[index]);
+        index += 1;
+    }
+    output
+}
+
+fn is_emphasis_punctuation(character: char) -> bool {
+    matches!(
+        character,
+        '：' | '，'
+            | '。'
+            | '；'
+            | '！'
+            | '？'
+            | '、'
+            | '）'
+            | '】'
+            | '》'
+            | '”'
+            | '’'
+            | ':'
+            | ','
+            | '.'
+            | ';'
+            | '!'
+            | '?'
+            | ')'
+            | ']'
+            | '}'
+            | '"'
+            | '\''
+    )
 }
 
 fn opens_fence(line: &str) -> Option<(char, usize)> {
@@ -414,5 +502,15 @@ mod question_bank_markdown_tests {
         let html = question_bank_markdown_html("`\\(x\\)`\n\n```\n\\(y\\)\n```");
         assert!(!html.contains("math-inline"), "{html}");
         assert!(!html.contains("math-display"), "{html}");
+    }
+
+    #[test]
+    fn emphasis_tolerates_space_before_the_closing_marker() {
+        let html = question_bank_markdown_html(
+            "**关键条件： **三种方式走的是同一段路程。\n\n**排除干扰项： **10 分钟是公交单程用时。",
+        );
+        assert!(html.contains("<strong>关键条件</strong>："), "{html}");
+        assert!(html.contains("<strong>排除干扰项</strong>："), "{html}");
+        assert!(!html.contains("**"), "{html}");
     }
 }

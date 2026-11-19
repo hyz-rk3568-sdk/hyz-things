@@ -12,6 +12,19 @@ pub(crate) fn ai_reply(props: &AiReplyProps) -> Html {
         render_cached_ai_markdown(content)
     });
     let showing_source = use_state(|| false);
+    let math_root = use_node_ref();
+    {
+        let math_root = math_root.clone();
+        let content = props.content.clone();
+        use_effect_with((content, *showing_source), move |(_, showing_source)| {
+            if !*showing_source {
+                if let Some(element) = math_root.cast::<HtmlElement>() {
+                    hydrate_math_element(&element);
+                }
+            }
+            || ()
+        });
+    }
     let menu_open = use_state(|| false);
     let notice = use_state(|| None::<String>);
     let trigger_ref = use_node_ref();
@@ -81,7 +94,7 @@ pub(crate) fn ai_reply(props: &AiReplyProps) -> Html {
             if *showing_source {
                 <pre class="whitespace-pre-wrap break-words text-sm" data-testid="question-bank-ai-source">{props.content.clone()}</pre>
             }
-            <div hidden={*showing_source} class="study-markdown text-base leading-7" data-ai-diagram-source="true">
+            <div hidden={*showing_source} ref={math_root} class="study-markdown text-base leading-7" data-ai-diagram-source="true">
                 {(*rendered).clone()}
             </div>
             <div class="relative flex justify-end items-center gap-2">
