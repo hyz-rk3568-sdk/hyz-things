@@ -1,6 +1,7 @@
 //! 20 questions / 20 minutes. Immersive iPad workspace with 60:40 material/question panes.
 use super::*;
 use gloo_timers::{callback::Interval, future::TimeoutFuture};
+use hyz_things::domain::ai_practice::{AiPracticeModule, AiPracticeQuestionId};
 use js_sys::Date;
 use serde::Serialize;
 
@@ -26,6 +27,12 @@ struct AnalysisPanesProps {
     question_index: usize,
     #[prop_or("题目与选项")]
     right_title: &'static str,
+    #[prop_or_default]
+    material_actions: Html,
+    #[prop_or_default]
+    header_actions: Html,
+    #[prop_or_default]
+    ai_page: Option<Html>,
 }
 
 // Match the material's `leading-8` (2rem = 32 CSS px) so each click
@@ -59,14 +66,17 @@ fn analysis_panes(props: &AnalysisPanesProps) -> Html {
             separator_label="调整材料与题目比例"
             left={html! {
                 <article class="flex min-h-0 min-w-0 flex-col overflow-hidden rounded-box bg-base-100" data-testid="analysis-material">
-                <div class={TRAINING_PANE_HEADER}>
+                <div class={TRAINING_PANE_HEADER} data-testid="analysis-material-header">
                     <div class="min-w-0 text-sm font-semibold">{props.material.topic.clone()}</div>
-                    if scratchpad_open {
-                        <div class="relative z-30 flex shrink-0 gap-1" role="group" aria-label="材料滚动">
-                            <MaterialScrollButton passage={passage.clone()} up={true} disabled={!scroll_state.can_scroll_up} question_index={props.question_index} />
-                            <MaterialScrollButton passage={passage.clone()} up={false} disabled={!scroll_state.can_scroll_down} question_index={props.question_index} />
-                        </div>
-                    }
+                    <div class="flex shrink-0 items-center gap-1">
+                        {props.material_actions.clone()}
+                        if scratchpad_open {
+                            <div class="relative z-30 flex shrink-0 gap-1" role="group" aria-label="材料滚动">
+                                <MaterialScrollButton passage={passage.clone()} up={true} disabled={!scroll_state.can_scroll_up} question_index={props.question_index} />
+                                <MaterialScrollButton passage={passage.clone()} up={false} disabled={!scroll_state.can_scroll_down} question_index={props.question_index} />
+                            </div>
+                        }
+                    </div>
                 </div>
                 <div ref={passage} onscroll={on_scroll.clone()} class="min-h-0 flex-1 overflow-y-auto overscroll-contain touch-pan-y scroll-auto" data-testid="analysis-material-scroll" data-ink-pane="material">
                     <div class="whitespace-pre-wrap px-4 pb-4 pt-2 text-base leading-8">{props.material.text.clone()}</div>
@@ -78,7 +88,8 @@ fn analysis_panes(props: &AnalysisPanesProps) -> Html {
                     <div class={classes!(TRAINING_PANE_HEADER, "flex-wrap")} data-testid="analysis-answer-header">
                         <span class="text-sm font-semibold">{props.right_title}</span>
                         <div class="ml-auto flex shrink-0 items-center gap-1">
-                            if scratchpad_open {
+                            {props.header_actions.clone()}
+                            if scratchpad_open && props.ai_page.is_none() {
                                 <div class="flex gap-1" role="group" aria-label="题目滚动">
                                     <MaterialScrollButton passage={question_scroll.clone()} up={true} disabled={!question_edges.can_scroll_up} question_index={props.question_index} target="题目" />
                                     <MaterialScrollButton passage={question_scroll.clone()} up={false} disabled={!question_edges.can_scroll_down} question_index={props.question_index} target="题目" />
@@ -87,7 +98,11 @@ fn analysis_panes(props: &AnalysisPanesProps) -> Html {
                             <InkToolbarSlot />
                         </div>
                     </div>
-                    <article ref={question_scroll} onscroll={on_scroll} class="min-h-0 flex-1 overflow-y-auto overscroll-contain touch-pan-y" data-testid="analysis-question" data-ink-pane="answer">{props.question.clone()}</article>
+                    <article ref={question_scroll} onscroll={on_scroll}
+                        class={classes!("min-h-0", "flex-1", "touch-pan-y", if props.ai_page.is_some() {"flex flex-col overflow-hidden"} else {"overflow-y-auto overscroll-contain"})}
+                        data-testid="analysis-question" data-ink-pane="answer">
+                        {props.ai_page.clone().unwrap_or_else(|| props.question.clone())}
+                    </article>
                 </section>
             }}
         />
@@ -202,6 +217,12 @@ pub(crate) fn comprehensive_training(props: &ComprehensiveProps) -> Html {
     let run = use_state(|| None::<AnalysisRun>);
     let result = use_state(|| None::<AnalysisResult>);
     let current = use_state(|| 0usize);
+    let practice_id = result.as_ref().as_ref().map(|score| AiPracticeQuestionId {
+        module: AiPracticeModule::DataAnalysis,
+        session_id: score.id.clone(),
+        question: (*current).min(score.questions.len().saturating_sub(1)),
+    });
+    let practice = use_ai_practice_review(practice_id, props.csrf.clone());
     let busy = use_state(|| false);
     let preparing = use_state(|| false);
     let ready_id = use_state(|| None::<String>);
@@ -1002,6 +1023,27 @@ pub(crate) fn comprehensive_training(props: &ComprehensiveProps) -> Html {
                 progress.set(None);
             })
         };
+        let agent_question = html! {
+            <div class="space-y-3" data-testid="ai-practice-agent-question">
+                <h2 class="text-base font-normal leading-8">{q.question.clone()}</h2>
+                <div class="grid gap-2">{for q.options.iter().enumerate().map(|(choice, option)| html! {
+                    <div class="rounded-box border border-base-content/15 p-3">
+                        {format!("{}. {}", ["A", "B", "C", "D"][choice], option)}
+                    </div>
+                })}</div>
+            </div>
+        };
+        let answer_actions = html! {
+            <AiPracticeHeaderControls review={practice.clone()}/>
+        };
+        let material_actions = html! {
+            <AiPracticeHeaderControls review={practice.clone()} favorite_test_id="ai-practice-favorite-material" original_test_id="ai-practice-answer-tab-material" tab_test_id="ai-practice-agent-tab-material"/>
+        };
+        let ai_page = practice.active.then(|| {
+            html! {
+                <AiPracticeAgentPage review={practice.clone()} question={agent_question}/>
+            }
+        });
         return html! {
             <TrainingDetailLayout root_class="analysis-fullscreen fixed inset-0 z-[70] flex h-dvh w-screen min-w-0 flex-col overflow-hidden bg-base-200" test_id="analysis-result" view={Some("review")}
                 leading={html! {
@@ -1015,7 +1057,6 @@ pub(crate) fn comprehensive_training(props: &ComprehensiveProps) -> Html {
                 actions={html! {
                     <div class="flex min-w-0 flex-wrap items-center gap-2 sm:justify-end">
                         <TrainingStatusBar prefix="analysis-result" counts={review_status} mode={TrainingStatusMode::Review}/>
-                        <AiPracticeActions key={format!("analysis-{}-{index}",score.id)} csrf={props.csrf.clone()} id={hyz_things::domain::ai_practice::AiPracticeQuestionId { module:hyz_things::domain::ai_practice::AiPracticeModule::DataAnalysis, session_id:score.id.clone(), question:index }}/>
                         <button type="button" class="btn btn-outline btn-sm" onclick={show_history}>{"查看练习记录"}</button>
                         <button type="button" class="btn btn-outline btn-sm" data-testid="analysis-retry-result" disabled={*busy} onclick={redo_from_result}>{"重做原题"}</button>
                         <button type="button" class="btn btn-primary btn-sm" onclick={again}>{"再出一套"}</button>
@@ -1028,7 +1069,8 @@ pub(crate) fn comprehensive_training(props: &ComprehensiveProps) -> Html {
                 }}
                 content={html! {
                     <InkOverlay question_index={index} persist_key={format!("{}-workspace-{}",review_id,index)} responsive={true} scroll_linked={true}><TrainingSwipeSurface current={current.clone()} total={score.questions.len()}>
-                        <AnalysisPanes material={score.materials[group_index].clone()} question={review_question} question_index={index} right_title="答案与解析" />
+                        <AnalysisPanes material={score.materials[group_index].clone()} question={review_question} question_index={index} right_title="答案与解析"
+                            material_actions={material_actions} header_actions={answer_actions} ai_page={ai_page}/>
                     </TrainingSwipeSurface></InkOverlay>
                 }}
                 navigation={analysis_navigation(current.clone(),index,&marks,true)}

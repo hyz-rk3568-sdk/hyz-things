@@ -2559,6 +2559,55 @@ pub(crate) fn question_bank_training(props: &QuestionBankTrainingProps) -> Html 
         .filter(|part| !part.is_empty())
         .collect::<Vec<_>>()
         .join(" · ");
+    let browser_targets = rows_filtered
+        .iter()
+        .take(if *cards_open { usize::MAX } else { 100 })
+        .map(|row| (row.key.clone(), row.question_id.clone()))
+        .collect::<Vec<_>>();
+    let browser_rows = rows_filtered
+        .iter()
+        .take(if *cards_open { usize::MAX } else { 100 })
+        .map(|row| CollectionBrowserRow {
+            title: row.title.clone(),
+            subtitle: row.subtitle.clone(),
+            badge: row.badge.clone(),
+            disabled: *cards_open && *cards_busy,
+        })
+        .collect::<Vec<_>>();
+    let browser_open = {
+        let cards_open = *cards_open;
+        let open_card = open_card.clone();
+        let collection_review = collection_review.clone();
+        let items = review_items.clone();
+        let scope = review_scope.clone();
+        Callback::from(move |position: usize| {
+            let Some((card_id, question_id)) = browser_targets.get(position) else {
+                return;
+            };
+            if cards_open {
+                open_card.emit((card_id.clone(), question_id.clone()));
+            } else {
+                collection_review.set(Some(CollectionReviewTarget {
+                    scope: scope.clone(),
+                    items: items.clone(),
+                    index: position,
+                    initial_card_id: None,
+                    card_ids: Vec::new(),
+                    scope_label: None,
+                }));
+            }
+        })
+    };
+    let collection_browser_groups = collection_groups
+        .iter()
+        .map(|group| CollectionBrowserGroup {
+            name: group.name.clone(),
+            summary: format!("{} {}", group.count, if *cards_open { "张" } else { "题" }),
+            value: group.count,
+            max: rows.len(),
+            categories: group.categories.clone(),
+        })
+        .collect::<Vec<_>>();
     let setup_heading = if *cards_open {
         "我的卡片"
     } else {
@@ -2972,95 +3021,32 @@ pub(crate) fn question_bank_training(props: &QuestionBankTrainingProps) -> Html 
                     if let Some(message) = card_open_error.as_ref().filter(|_| *cards_open) {
                         <p class="text-sm text-error" role="alert" data-testid="question-bank-cards-open-error">{message.clone()}</p>
                     }
-                    <div class="question-bank-collections-layout">
-                        <div class="space-y-3">
-                            <div class="flex items-center justify-between gap-2">
-                            <h3 class="font-semibold">{"按模块查看"}</h3>
-                            <button type="button" class="btn btn-ghost btn-xs" data-testid="question-bank-collection-module"
-                                aria-pressed={selected_module.is_empty().to_string()}
-                                onclick={Callback::from({let selected_module=selected_module.clone();let selected_category=selected_category.clone();move |_|{selected_module.set(String::new());selected_category.set(String::new());}})}>
-                                {format!("{} {}",if *cards_open {"全部卡片"} else {"全部题目"},if rows_loaded {rows.len().to_string()} else {"…".into()})}
-                            </button>
-                            </div>
-                            <div class="question-bank-collection-grid">
-                            {for collection_groups.iter().map(|module| {
-                                let selected=*selected_module==module.name;
-                                let unit=if *cards_open {"张"} else {"题"};
-                                html! {
-                                    <QuestionBankModuleCard name={module.name.clone()} summary={format!("{} {unit}",module.count)}
-                                        value={module.count} max={rows.len()} selected={selected}
-                                        test_id="question-bank-collection-module"
-                                        on_select={Callback::from({
-                                            let selected_module=selected_module.clone();let selected_category=selected_category.clone();
-                                            let name=module.name.clone();
-                                            move |_|{selected_module.set(name.clone());selected_category.set(String::new());}
-                                        })}>
-                                        <QuestionBankCategoryButton label="全部" count={module.count.to_string()}
-                                            selected={selected && selected_category.is_empty()} test_id="question-bank-collection-category"
-                                            on_select={Callback::from({
-                                                let selected_module=selected_module.clone();let selected_category=selected_category.clone();
-                                                let name=module.name.clone();
-                                                move |_|{selected_module.set(name.clone());selected_category.set(String::new());}
-                                            })}/>
-                                        {for module.categories.iter().map(|(category,count)|html! {
-                                            <QuestionBankCategoryButton label={category.clone()} count={count.to_string()}
-                                                selected={selected && *selected_category==*category} test_id="question-bank-collection-category"
-                                                on_select={Callback::from({
-                                                    let selected_module=selected_module.clone();let selected_category=selected_category.clone();
-                                                    let name=module.name.clone();let category=category.clone();
-                                                    move |_|{selected_module.set(name.clone());selected_category.set(category.clone());}
-                                                })}/>
-                                        })}
-                                    </QuestionBankModuleCard>
-                                }
-                            })}
-                            </div>
-                        </div>
-                        <div class="space-y-3 min-w-0">
-                            <div class="flex min-h-6 items-center justify-between gap-2">
-                                <h3 class="font-semibold">{"筛选结果"}</h3>
-                                <span class="text-xs text-base-content/50" data-testid="question-bank-browse-count">
-                                    {if rows_loaded {
-                                        format!("{}{}{}{}",selection_scope,if selection_scope.is_empty() {""} else {" · "},rows_filtered.len(),if *cards_open {"张"} else {"题"})
-                                    } else {"数量待加载".into()}}
-                                </span>
-                            </div>
-                            <div class="question-bank-results">
-                            if !rows_loaded {
-                                if !rows_loading {
-                                    <p class="p-4 text-sm text-base-content/60">{"尚未加载，请重试。"}</p>
-                                }
-                            } else if rows_filtered.is_empty() {
-                                <p class="p-4 text-sm text-base-content/60">{if *cards_open {"还没有可直接打开的行测卡片。"} else {"这个分类还没有题目。"}}</p>
-                            } else {
-                                <div class="question-bank-results-list" data-testid="question-bank-browse-list">
-                                    {for rows_filtered.iter().take(if *cards_open {usize::MAX} else {100}).enumerate().map(|(position,row)| {
-                                        let disabled=*cards_open && *cards_busy;
-                                        let on_open = if *cards_open {
-                                            let open=open_card.clone();
-                                            let card_id=row.key.clone();
-                                            let question_id=row.question_id.clone();
-                                            Callback::from(move |_| open.emit((card_id.clone(),question_id.clone())))
-                                        } else {
-                                            let collection_review=collection_review.clone();
-                                            let items=review_items.clone();
-                                            let scope=review_scope.clone();
-                                            Callback::from(move |_| collection_review.set(Some(CollectionReviewTarget{
-                                                scope:scope.clone(),items:items.clone(),index:position,
-                                                initial_card_id:None,card_ids:Vec::new(),scope_label:None
-                                            })))
-                                        };
-                                        html! {
-                                            <QuestionCollectionRow title={row.title.clone()} subtitle={row.subtitle.clone()} badge={row.badge.clone()}
-                                                test_id={if *cards_open {"question-bank-card-item"} else {"question-bank-collection-item"}}
-                                                disabled={disabled} on_open={on_open}/>
-                                        }
-                                    })}
-                                </div>
-                            }
-                            </div>
-                        </div>
-                    </div>
+                    <QuestionCollectionBrowser
+                        groups={collection_browser_groups}
+                        rows={browser_rows}
+                        selected_group={(*selected_module).clone()}
+                        selected_category={(*selected_category).clone()}
+                        groups_label="按模块查看"
+                        all_label={format!("{} {}", if *cards_open {"全部卡片"} else {"全部题目"},
+                            if rows_loaded {rows.len().to_string()} else {"…".into()})}
+                        all_selected={selected_module.is_empty()}
+                        result_label="筛选结果"
+                        result_count={if rows_loaded {
+                            format!("{}{}{}{}",selection_scope,if selection_scope.is_empty() {""} else {" · "},rows_filtered.len(),if *cards_open {"张"} else {"题"})
+                        } else {"数量待加载".into()}}
+                        empty_label={if !rows_loaded {"尚未加载，请重试。"}
+                            else if *cards_open {"还没有可直接打开的行测卡片。"}
+                            else {"这个分类还没有题目。"}}
+                        pending={!rows_loaded && rows_loading}
+                        group_test_id="question-bank-collection-module"
+                        category_test_id="question-bank-collection-category"
+                        item_test_id={if *cards_open {"question-bank-card-item"} else {"question-bank-collection-item"}}
+                        list_test_id={Some::<AttrValue>("question-bank-browse-list".into())}
+                        count_test_id={Some::<AttrValue>("question-bank-browse-count".into())}
+                        on_select_all={Callback::from({let selected_module=selected_module.clone();let selected_category=selected_category.clone();move |_|{selected_module.set(String::new());selected_category.set(String::new());}})}
+                        on_select_group={Callback::from({let selected_module=selected_module.clone();let selected_category=selected_category.clone();move |name: String|{selected_module.set(name);selected_category.set(String::new());}})}
+                        on_select_category={Callback::from({let selected_module=selected_module.clone();let selected_category=selected_category.clone();move |(name, category): (String, String)|{selected_module.set(name);selected_category.set(category);}})}
+                        on_open={browser_open}/>
                 </section>
             }
             if let Some(target) = &*collection_review {

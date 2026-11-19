@@ -25,6 +25,7 @@ pub(crate) use shenlun::*;
 
 use ai_composer::*;
 pub(crate) use ai_reply::*;
+pub(crate) use ai_review_api::streaming_markdown_complete;
 use ai_review_api::*;
 use ai_review_recovery::*;
 use setup::*;

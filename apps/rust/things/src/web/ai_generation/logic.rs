@@ -1,6 +1,7 @@
 //! Independent logic drills use server-owned answers and deadlines.
 use super::*;
 use gloo_timers::callback::Interval;
+use hyz_things::domain::ai_practice::{AiPracticeModule, AiPracticeQuestionId};
 
 #[derive(Properties, PartialEq)]
 pub(crate) struct LogicJudgmentProps {
@@ -39,6 +40,12 @@ struct LogicScrollPaneProps {
     right_title: &'static str,
     question: Html,
     answers: Html,
+    #[prop_or_default]
+    question_actions: Html,
+    #[prop_or_default]
+    header_actions: Html,
+    #[prop_or_default]
+    ai_page: Option<Html>,
 }
 
 #[function_component(LogicScrollPane)]
@@ -85,14 +92,17 @@ fn logic_scroll_pane(props: &LogicScrollPaneProps) -> Html {
                         <span>{format!("第 {}/10 题", props.question_index + 1)}</span>
                         <span>{props.status}</span>
                     </div>
-                    if scratchpad_open {
-                        <div class="flex shrink-0 gap-1" role="group" aria-label="题目滚动" data-testid={format!("{prefix}-scroll-buttons")}>
-                            <MaterialScrollButton passage={question_scroll.clone()} up={true}
-                                disabled={!question_edges.can_scroll_up} question_index={props.question_index} target="题目" />
-                            <MaterialScrollButton passage={question_scroll.clone()} up={false}
-                                disabled={!question_edges.can_scroll_down} question_index={props.question_index} target="题目" />
-                        </div>
-                    }
+                    <div class="flex shrink-0 items-center gap-1">
+                        {props.question_actions.clone()}
+                        if scratchpad_open {
+                            <div class="flex shrink-0 gap-1" role="group" aria-label="题目滚动" data-testid={format!("{prefix}-scroll-buttons")}>
+                                <MaterialScrollButton passage={question_scroll.clone()} up={true}
+                                    disabled={!question_edges.can_scroll_up} question_index={props.question_index} target="题目" />
+                                <MaterialScrollButton passage={question_scroll.clone()} up={false}
+                                    disabled={!question_edges.can_scroll_down} question_index={props.question_index} target="题目" />
+                            </div>
+                        }
+                    </div>
                 </div>
                 <article ref={question_scroll} onscroll={on_scroll.clone()}
                     class="min-h-0 flex-1 overflow-y-auto overscroll-contain touch-pan-y px-4 pb-8 sm:px-6"
@@ -107,7 +117,8 @@ fn logic_scroll_pane(props: &LogicScrollPaneProps) -> Html {
                 <div class={classes!(TRAINING_PANE_HEADER, "flex-wrap")}>
                     <span class="text-xs font-semibold text-base-content/60">{props.right_title}</span>
                     <div class="ml-auto flex shrink-0 items-center gap-1">
-                    if scratchpad_open {
+                    {props.header_actions.clone()}
+                    if scratchpad_open && props.ai_page.is_none() {
                         <div class="flex shrink-0 gap-1" role="group" aria-label="选项滚动" data-testid={format!("{prefix}-answer-scroll-buttons")}>
                             <MaterialScrollButton passage={answer_scroll.clone()} up={true}
                                 disabled={!answer_edges.can_scroll_up} question_index={props.question_index} target="选项" />
@@ -119,9 +130,9 @@ fn logic_scroll_pane(props: &LogicScrollPaneProps) -> Html {
                     </div>
                 </div>
                 <article ref={answer_scroll} onscroll={on_scroll}
-                    class="min-h-0 flex-1 overflow-y-auto overscroll-contain touch-pan-y px-4 pb-8 sm:px-6"
+                    class={classes!("min-h-0", "flex-1", "touch-pan-y", if props.ai_page.is_some() {"flex flex-col overflow-hidden"} else {"overflow-y-auto overscroll-contain px-4 pb-8 sm:px-6"})}
                     data-testid={format!("{prefix}-answer-scroll")} data-ink-pane="answer">
-                    {props.answers.clone()}
+                    {props.ai_page.clone().unwrap_or_else(|| props.answers.clone())}
                 </article>
                 </section>
             }}
@@ -179,6 +190,16 @@ pub(crate) fn logic_judgment_training(props: &LogicJudgmentProps) -> Html {
     let busy = use_state(|| false);
     let lock = use_mut_ref(|| false);
     let current = use_state(|| 0usize);
+    let practice_id = result.as_ref().as_ref().map(|score| AiPracticeQuestionId {
+        module: if props.quantitative {
+            AiPracticeModule::QuantitativeRelations
+        } else {
+            AiPracticeModule::LogicJudgment
+        },
+        session_id: score.id.clone(),
+        question: (*current).min(score.questions.len().saturating_sub(1)),
+    });
+    let practice = use_ai_practice_review(practice_id, props.csrf.clone());
     let reload = use_state(|| 0u32);
     let clock = use_state(Date::now);
     let offset = use_state(|| 0f64);
@@ -694,6 +715,28 @@ pub(crate) fn logic_judgment_training(props: &LogicJudgmentProps) -> Html {
             let history_forced = history_forced.clone();
             Callback::from(move |_| history_forced.set(true))
         };
+        let agent_question = html! {
+            <div class="space-y-3" data-testid="ai-practice-agent-question">
+                <div class="study-markdown whitespace-pre-wrap break-words text-base font-normal leading-8">{render_markdown(&q.question, "")}</div>
+                <div class="grid gap-2">{for q.options.iter().enumerate().map(|(choice, option)| html! {
+                    <div class="rounded-box border border-base-content/15 p-3">
+                        <span class="mr-2 shrink-0">{format!("{}.", (b'A' + choice as u8) as char)}</span>
+                        <span class="study-markdown">{render_markdown(option, "")}</span>
+                    </div>
+                })}</div>
+            </div>
+        };
+        let answer_actions = html! {
+            <AiPracticeHeaderControls review={practice.clone()}/>
+        };
+        let question_actions = html! {
+            <AiPracticeHeaderControls review={practice.clone()} favorite_test_id="ai-practice-favorite-stem" original_test_id="ai-practice-answer-tab-stem" tab_test_id="ai-practice-agent-tab-stem"/>
+        };
+        let ai_page = practice.active.then(|| {
+            html! {
+                <AiPracticeAgentPage review={practice.clone()} question={agent_question}/>
+            }
+        });
         return html! {
             <TrainingDetailLayout root_class="analysis-fullscreen fixed inset-0 z-[70] flex h-dvh w-screen min-w-0 flex-col overflow-hidden bg-base-200" test_id={format!("{prefix}-result")}
                 leading={html! {
@@ -702,7 +745,6 @@ pub(crate) fn logic_judgment_training(props: &LogicJudgmentProps) -> Html {
                 actions={html! {
                     <div class="ml-auto flex flex-wrap items-center justify-end gap-2">
                         <TrainingStatusBar prefix={format!("{prefix}-result")} counts={review_status} mode={TrainingStatusMode::Review}/>
-                        <AiPracticeActions key={format!("{prefix}-{}-{index}",score.id)} csrf={props.csrf.clone()} id={hyz_things::domain::ai_practice::AiPracticeQuestionId { module: if props.quantitative {hyz_things::domain::ai_practice::AiPracticeModule::QuantitativeRelations} else {hyz_things::domain::ai_practice::AiPracticeModule::LogicJudgment}, session_id:score.id.clone(), question:index }}/>
                         <button class="btn btn-outline btn-sm" data-testid={format!("{prefix}-records")} onclick={show_records}>{"查看练习记录"}</button>
                         <button class="btn btn-primary btn-sm" data-testid={format!("{prefix}-retry")} disabled={*busy} onclick={invoke(LogicAction::Retry(score.id.clone()))}>{"重做原题"}</button>
                     </div>
@@ -711,6 +753,7 @@ pub(crate) fn logic_judgment_training(props: &LogicJudgmentProps) -> Html {
                 content={html! {
                     <TrainingSwipeSurface current={current.clone()} total={score.questions.len()}><InkOverlay question_index={index} responsive={true} scroll_linked={true} persist_key={format!("{prefix}-{}-{index}",score.id)}>
                         <LogicScrollPane prefix={prefix} question_index={index} status={grade} right_title="答案与解析"
+                            question_actions={question_actions} header_actions={answer_actions} ai_page={ai_page}
                             question={html! {
                                 <div class="study-markdown whitespace-pre-wrap break-words text-base font-normal leading-8" data-testid={format!("{prefix}-question")}>
                                     {render_markdown(&q.question, "")}

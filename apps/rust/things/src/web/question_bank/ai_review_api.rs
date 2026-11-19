@@ -105,7 +105,7 @@ pub(super) fn new_ai_request_id() -> Result<String, String> {
     ))
 }
 
-pub(super) fn streaming_markdown_complete(text: &str) -> bool {
+pub(crate) fn streaming_markdown_complete(text: &str) -> bool {
     let fences = text
         .lines()
         .filter(|line| {
