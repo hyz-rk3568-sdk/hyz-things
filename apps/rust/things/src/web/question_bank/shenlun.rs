@@ -968,7 +968,7 @@ pub(crate) fn question_bank_shenlun(props: &QuestionBankShenlunProps) -> Html {
         // This shared answer sheet is the sole question switcher in review mode.
         let answered = vec![false; current.questions.len()];
         html! {
-            <TrainingDetailLayout root_class={classes!(super::practice::WORKSPACE, "gap-2")} test_id="shenlun-workspace"
+            <TrainingDetailLayout root_class={classes!(TRAINING_WORKSPACE_ROOT, "z-[70]", "question-bank-workspace", "gap-2")} test_id="shenlun-workspace"
                 leading={html! {<>
                     <button type="button" class="btn btn-ghost btn-sm" onclick={close}>{"← 返回选题"}</button>
                     <div class="min-w-0 flex-1">

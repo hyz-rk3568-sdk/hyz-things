@@ -151,10 +151,19 @@ async fn run_daemon() -> Result<(), Box<dyn Error>> {
             let agent_backend = ai_config
                 .clone()
                 .map(|config| Arc::new(config) as Arc<dyn AiReviewBackend>);
-            let agent = Arc::new(SqliteAiPracticeAgent::new(
-                repository.pool().clone(),
-                agent_backend,
-            ));
+            let attachment_relay = load_attachment_relay()
+                .unwrap_or(None)
+                .map(|relay| Arc::new(relay) as Arc<dyn AiAttachmentRelay>);
+            let attachment_upload_root = ai_config
+                .as_ref()
+                .map(|config| format!("{}/tmp/hyz-ai-uploads", config.cwd()));
+            let agent = Arc::new(
+                SqliteAiPracticeAgent::new(repository.pool().clone(), agent_backend)
+                    .with_attachment_relay(
+                        attachment_relay.clone(),
+                        attachment_upload_root.clone(),
+                    ),
+            );
             let ai_practice_agent = match agent.recover_interrupted().await {
                 Ok(()) => Some(Arc::new(AiPracticeAgent::new(agent))),
                 Err(_) => {

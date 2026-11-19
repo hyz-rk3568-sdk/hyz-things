@@ -208,8 +208,6 @@ fn browse_filter_url(
     format!("{ROOT}/practice/questions?{}", query.finish())
 }
 
-pub(crate) const WORKSPACE: &str = "question-bank-workspace training-workspace fixed inset-0 z-[70] flex h-dvh w-screen flex-col overflow-hidden bg-base-200 px-3 py-2";
-
 #[derive(Properties, PartialEq)]
 pub(crate) struct QuestionBankChoicesProps {
     pub options: Vec<(String, String)>,
@@ -660,27 +658,35 @@ pub(crate) struct QuestionBankQuestionHeaderProps {
 #[function_component(QuestionBankQuestionHeader)]
 pub(crate) fn question_bank_question_header(props: &QuestionBankQuestionHeaderProps) -> Html {
     let scratch_open = use_context::<bool>().unwrap_or(false);
+    let scroll = if scratch_open {
+        props
+            .passage
+            .as_ref()
+            .map(|passage| {
+                html! {
+                    <QuestionBankScrollButtons passage={passage.clone()} can_scroll_up={props.can_scroll_up}
+                        can_scroll_down={props.can_scroll_down} question_index={props.question_index} target={props.target} label={props.label}/>
+                }
+            })
+            .unwrap_or_default()
+    } else {
+        Html::default()
+    };
+    let actions = if scratch_open {
+        Html::default()
+    } else {
+        html! {<>{props.leading.clone()}{props.tabs.clone()}{props.trailing.clone()}</>}
+    };
     html! {
-        <div class={classes!(QUESTION_BANK_PANE_HEADER,"question-bank-pane-header")}>
-            <div class="min-w-0 flex-1">
+        <TrainingPaneHeader wrap={true} ink={true}
+            class={classes!(QUESTION_BANK_PANE_HEADER,"question-bank-pane-header")}
+            title={html!{<>
                 <strong class="block truncate text-sm" data-testid={props.title_test_id}>{props.title.clone()}</strong>
                 if let Some(subtitle) = props.subtitle.as_ref().filter(|value| !value.is_empty()) {
                     <span class="block truncate text-[11px] text-base-content/45">{subtitle.clone()}</span>
                 }
-            </div>
-            <div class="ml-auto flex shrink-0 items-center gap-0">
-                if scratch_open {
-                    if let Some(passage) = &props.passage {
-                        <QuestionBankScrollButtons passage={passage.clone()} can_scroll_up={props.can_scroll_up}
-                            can_scroll_down={props.can_scroll_down} question_index={props.question_index} target={props.target} label={props.label}/>
-                    }
-                    <QuestionInkControls />
-                } else {
-                    {props.leading.clone()}{props.tabs.clone()}{props.trailing.clone()}
-                }
-                <QuestionInkToggle />
-            </div>
-        </div>
+            </>}}
+            {scroll} {actions}/>
     }
 }
 
@@ -714,7 +720,7 @@ pub(crate) fn question_ai_mode_tabs(props: &QuestionAiModeTabsProps) -> Html {
             <button type="button" class={classes!(QUESTION_HEADER_ICON_BUTTON, if props.active {"btn-active"} else {""}, if props.active {"text-primary"} else {""})}
                 aria-label={props.ai_label} title={props.ai_label}
                 data-testid={props.ai_test_id} aria-pressed={props.active.to_string()} onclick={props.ai.clone()}>
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m12 3 1.5 4.5L18 9l-4.5 1.5L12 15l-1.5-4.5L6 9l4.5-1.5zM19 14l.8 2.2L22 17l-2.2.8L19 20l-.8-2.2L16 17l2.2-.8z"/></svg>
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v3"/><rect x="4" y="6" width="16" height="12" rx="2"/><path d="M8 18v3M16 18v3"/><circle cx="9" cy="11.5" r="1" fill="currentColor" stroke="none"/><circle cx="15" cy="11.5" r="1" fill="currentColor" stroke="none"/></svg>
             </button>
         </div>
     }
@@ -2195,7 +2201,7 @@ pub(crate) fn question_bank_training(props: &QuestionBankTrainingProps) -> Html 
             );
             if !*history_forced {
                 return html! {
-                    <TrainingDetailLayout root_class={classes!(WORKSPACE)} test_id="question-bank-practice-workspace"
+                    <TrainingDetailLayout root_class={classes!(TRAINING_WORKSPACE_ROOT, "z-[70]", "question-bank-workspace")} test_id="question-bank-practice-workspace"
                         leading={html! {<>
                                 <button class="btn btn-ghost btn-sm" disabled={*busy} onclick={Callback::from({let invoke=invoke.clone();move |_|invoke.emit(Action::Exit)})}>
                                     {if completed {"← 返回训练"} else {"← 暂停并退出"}}
@@ -3065,7 +3071,7 @@ pub(crate) fn question_bank_training(props: &QuestionBankTrainingProps) -> Html 
                     })}/>
             }
             if *settings_open && *mode == PracticeMode::Module {
-                <section class="training-workspace fixed inset-0 z-[85] flex h-dvh flex-col overflow-hidden bg-base-200"
+                <section class="training-workspace fixed inset-0 z-[85] flex h-dvh flex-col overflow-hidden bg-base-200 pb-2"
                     data-testid="module-drill-settings" role="dialog" aria-label="自定义刷题设置" aria-modal="true">
                     <header class="flex shrink-0 items-center gap-3 border-b border-base-content/10 px-4 py-3">
                         <button type="button" class="btn btn-ghost btn-sm" onclick={Callback::from({

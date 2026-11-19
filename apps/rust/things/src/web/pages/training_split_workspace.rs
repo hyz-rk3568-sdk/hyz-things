@@ -15,6 +15,47 @@ extern "C" {
 pub(crate) const TRAINING_PANE_HEADER: &str =
     "relative z-30 flex min-h-12 shrink-0 items-center justify-between gap-2 px-3 py-2";
 
+/// Fullscreen, fixed-height workspace shell shared by Question Bank and AI
+/// practice. `training-safe-area` owns every safe-area inset and
+/// `training-workspace` follows the measured `.training-shell` viewport, so
+/// callers only add their own prefix class and stacking level.
+pub(crate) const TRAINING_WORKSPACE_ROOT: &str =
+    "training-safe-area training-workspace fixed inset-0 flex h-dvh w-screen min-w-0 flex-col overflow-hidden bg-base-200";
+
+#[derive(Properties, PartialEq)]
+pub(crate) struct TrainingPaneHeaderProps {
+    #[prop_or_default]
+    pub(crate) title: Html,
+    #[prop_or_default]
+    pub(crate) scroll: Html,
+    #[prop_or_default]
+    pub(crate) actions: Html,
+    #[prop_or_default]
+    pub(crate) ink: bool,
+    #[prop_or_default]
+    pub(crate) wrap: bool,
+    #[prop_or_default]
+    pub(crate) class: Classes,
+    #[prop_or_default]
+    pub(crate) test_id: Option<AttrValue>,
+}
+
+/// One title/action/scroll/ink header for both panes of every review workspace.
+#[function_component(TrainingPaneHeader)]
+pub(crate) fn training_pane_header(props: &TrainingPaneHeaderProps) -> Html {
+    html! {
+        <div class={classes!(TRAINING_PANE_HEADER, props.wrap.then_some("flex-wrap"), props.class.clone())}
+            data-testid={props.test_id.clone()}>
+            <div class="min-w-0 flex-1">{props.title.clone()}</div>
+            <div class="ml-auto flex shrink-0 items-center gap-0">
+                {props.scroll.clone()}
+                {props.actions.clone()}
+                if props.ink { <InkToolbarSlot /> }
+            </div>
+        </div>
+    }
+}
+
 #[derive(Properties, PartialEq)]
 pub(crate) struct TrainingHeaderProps {
     pub(crate) class: Classes,

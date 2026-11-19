@@ -84,7 +84,18 @@ pub trait AiPracticeAgentPort: Send + Sync {
         &self,
         id: &AiPracticeQuestionId,
     ) -> Result<crate::domain::ai_practice::AiPracticeAgentState, AiPracticeError>;
-    async fn send(&self, id: &AiPracticeQuestionId, message: &str) -> Result<(), AiPracticeError>;
+    async fn attach(
+        &self,
+        id: &AiPracticeQuestionId,
+        media_type: &str,
+        bytes: &[u8],
+    ) -> Result<String, AiPracticeError>;
+    async fn send(
+        &self,
+        id: &AiPracticeQuestionId,
+        message: &str,
+        attachments: &[String],
+    ) -> Result<(), AiPracticeError>;
     async fn stop(&self, id: &AiPracticeQuestionId) -> Result<(), AiPracticeError>;
 }
 
@@ -104,16 +115,37 @@ impl AiPracticeAgent {
         }
         self.port.state(id).await
     }
+    pub async fn attach(
+        &self,
+        id: &AiPracticeQuestionId,
+        media_type: &str,
+        bytes: &[u8],
+    ) -> Result<String, AiPracticeError> {
+        if !id.is_valid() || !matches!(media_type, "image/png" | "image/jpeg") {
+            return Err(AiPracticeError::Invalid);
+        }
+        self.port.attach(id, media_type, bytes).await
+    }
     pub async fn send(
         &self,
         id: &AiPracticeQuestionId,
         message: &str,
+        attachments: &[String],
     ) -> Result<(), AiPracticeError> {
         let message = message.trim();
-        if !id.is_valid() || message.is_empty() || message.len() > 8000 {
+        if !id.is_valid()
+            || (message.is_empty() && attachments.is_empty())
+            || message.len() > 8000
+            || attachments.len() > 3
+        {
             return Err(AiPracticeError::Invalid);
         }
-        self.port.send(id, message).await
+        let message = if message.is_empty() {
+            "请解析图片并说明思路"
+        } else {
+            message
+        };
+        self.port.send(id, message, attachments).await
     }
     pub async fn stop(&self, id: &AiPracticeQuestionId) -> Result<(), AiPracticeError> {
         if !id.is_valid() {
@@ -154,10 +186,19 @@ mod agent_tests {
                 error: None,
             })
         }
+        async fn attach(
+            &self,
+            _: &AiPracticeQuestionId,
+            _: &str,
+            _: &[u8],
+        ) -> Result<String, AiPracticeError> {
+            Ok("attachment".into())
+        }
         async fn send(
             &self,
             id: &AiPracticeQuestionId,
             message: &str,
+            _: &[String],
         ) -> Result<(), AiPracticeError> {
             self.0.lock().unwrap().push((id.clone(), message.into()));
             Ok(())
@@ -174,10 +215,24 @@ mod agent_tests {
             session_id: "019a31b7-8c42-7c16-a6d1-0c1f0f34c821".into(),
             question: 0,
         };
-        app.send(&id, "请解题").await.unwrap();
+        app.send(&id, "请解题", &[]).await.unwrap();
         assert_eq!(app.state(&id).await.unwrap().messages[0].content, "请解题");
         let mut other = id.clone();
         other.question = 1;
         assert!(app.state(&other).await.unwrap().messages.is_empty());
+    }
+    #[tokio::test]
+    async fn agent_accepts_an_image_without_text() {
+        let app = AiPracticeAgent::new(Arc::new(Fake::default()));
+        let id = AiPracticeQuestionId {
+            module: AiPracticeModule::DataAnalysis,
+            session_id: "019a31b7-8c42-7c16-a6d1-0c1f0f34c821".into(),
+            question: 0,
+        };
+        app.send(&id, "", &["attachment".into()]).await.unwrap();
+        assert_eq!(
+            app.state(&id).await.unwrap().messages[0].content,
+            "请解析图片并说明思路"
+        );
     }
 }

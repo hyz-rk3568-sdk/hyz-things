@@ -61,26 +61,21 @@ nav.tabs > button.tab:not(.tab-active) {
     -webkit-line-clamp: 2;
   }
 
-  .analysis-fullscreen {
-    --analysis-gutter: 0.5rem;
-    padding-top: calc(var(--app-safe-top) + var(--analysis-gutter));
-    padding-bottom: var(--app-safe-bottom);
-    padding-left: calc(var(--app-safe-left) + var(--analysis-gutter));
-    padding-right: calc(var(--app-safe-right) + var(--analysis-gutter));
+  /* One safe-area contract for every fullscreen training workspace, shared by
+     Question Bank and AI practice. The bottom keeps a minimum gutter so the
+     fixed navigation never sits on the screen edge on devices without an inset. */
+  .training-safe-area {
+    --training-safe-gutter: 0.5rem;
+    padding: calc(var(--app-safe-top) + var(--training-safe-gutter))
+      calc(var(--app-safe-right) + var(--training-safe-gutter))
+      max(var(--app-safe-bottom), var(--training-safe-gutter))
+      calc(var(--app-safe-left) + var(--training-safe-gutter));
   }
 
   @media (min-width: 640px) {
-    .analysis-fullscreen {
-      --analysis-gutter: 0.75rem;
+    .training-safe-area {
+      --training-safe-gutter: 0.75rem;
     }
-  }
-
-  .analysis-fullscreen.analysis-paused {
-    --analysis-gutter: 1.5rem;
-  }
-  .analysis-fullscreen.analysis-paused > .rounded-box {
-    max-height: calc(100% - var(--app-safe-top) - var(--app-safe-bottom));
-    overflow-y: auto;
   }
 
   .analysis-header,
@@ -298,7 +293,6 @@ nav.tabs > button.tab:not(.tab-active) {
     height: var(--training-viewport-height, 100dvh);
     min-height: 0;
     overscroll-behavior: none;
-    padding-bottom: max(.5rem, env(safe-area-inset-bottom));
   }
   .training-swipe-surface {
     touch-action: pan-y;

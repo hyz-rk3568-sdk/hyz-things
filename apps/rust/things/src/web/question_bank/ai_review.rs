@@ -888,22 +888,95 @@ pub(crate) fn question_ai_review(props: &QuestionAiReviewProps) -> Html {
             Some(&info.request_id) == (*request_id).as_ref()
                 && matches!(info.status.as_str(), "failed" | "stopped" | "unknown")
         });
-    html! {
-        <section class="flex min-h-0 min-w-0 flex-1 flex-col" data-testid="question-bank-ai-review" ref={diagram_root}>
-            <div class="min-h-0 flex-1 space-y-3 overflow-y-auto overscroll-contain touch-pan-y p-4" ref={messages_ref} onscroll={on_messages_scroll} data-testid="question-bank-ai-messages" data-ink-pane="answer" role="log" aria-label="AI 对话记录" aria-live="polite">
-            <div class="space-y-4" data-testid="question-bank-ai-question-content">{props.question_content.clone()}</div>
-            <div class="flex items-center justify-between gap-2">
-                <strong>{if props.mode=="grade" {"AI 批改与追问"} else {"AI 解析与追问"}}</strong>
-                <span class="text-xs text-base-content/60" data-testid="question-bank-ai-status">
-                    {if running { "正在生成" } else { match stream.as_ref().as_ref().map(|v| v.status.as_str()).or_else(|| current.as_ref().map(|v| v.status.as_str())) {
-                        Some("complete") => "已完成",
-                        Some("stopped") => "已停止",
-                        Some("failed") => "生成失败",
-                        Some(_) => "未生成",
-                        None => "正在加载",
-                    } }}
-                </span>
+    let status_label = if running {
+        "正在生成".to_owned()
+    } else {
+        match stream
+            .as_ref()
+            .as_ref()
+            .map(|v| v.status.as_str())
+            .or_else(|| current.as_ref().map(|v| v.status.as_str()))
+        {
+            Some("complete") => "已完成".to_owned(),
+            Some("stopped") => "已停止".to_owned(),
+            Some("failed") => "生成失败".to_owned(),
+            Some(_) => "未生成".to_owned(),
+            None => "正在加载".to_owned(),
+        }
+    };
+    let composer = html! {
+        <AiComposerArea test_id="question-bank-ai-composer-area">
+        if *new_content {
+            <button type="button" class="btn btn-circle btn-sm absolute bottom-full left-1/2 z-10 -translate-x-1/2 border border-base-content/15 bg-base-100 shadow-md" aria-label="有新内容，回到底部" data-testid="question-bank-ai-scroll-bottom" onclick={scroll_to_bottom}>{"↓"}</button>
+        }
+        if can_start {
+            <div class="space-y-1">
+                <label class="sr-only" for="question-ai-instruction">{"可选要求"}</label>
+                {ai_composer(AiComposer {
+                    id: "question-ai-instruction", input_ref: start_input_ref.clone(),
+                    compose_testid: "question-bank-ai-requirements-compose",
+                    input_testid: "question-bank-ai-instruction",
+                    button_testid: "question-bank-ai-start",
+                    value: start_instruction.as_str(), max_length: if props.mode=="grade" {50_000} else {2000}, read_only: false,
+                    placeholder: if props.mode=="grade" {"粘贴申论作答，或上传手写图片…"} else {"输入解析要求（可选）…"},
+                    button_label: if props.mode=="grade" {"发送批改"} else {"开始 AI 解析"}, is_stop: false,
+                    disabled: *submitting || *uploading_start || request_unresolved || request_uncertain || (props.mode=="grade" && start_instruction.trim().is_empty() && start_images.is_empty()),
+                    endpoint: ai_scope_url(&endpoint, "/attachments", scope, None), csrf: props.csrf.clone(),
+                    attachments: start_images.clone(), uploading: uploading_start.clone(),
+                    picker_disabled: *submitting, picker_testid: "question-bank-ai-start-images",
+                    oninput: Callback::from({
+                        let start_instruction=start_instruction.clone();
+                        let start_key=start_key.clone();
+                        move |event: InputEvent| {
+                            let input: web_sys::HtmlTextAreaElement = event.target_unchecked_into();
+                            ai_draft_write(&start_key, &input.value());
+                            start_instruction.set(input.value());
+                        }
+                    }),
+                    onkeydown: on_start_key.clone(),
+                    onclick: on_start.clone(),
+                })}
             </div>
+        }
+        if has_answer || running {
+            <div class="space-y-2">
+                <label class="sr-only" for="question-ai-follow-up">{"继续追问"}</label>
+                {ai_composer(AiComposer {
+                    id: "question-ai-follow-up", input_ref: follow_input_ref.clone(),
+                    compose_testid: "question-bank-ai-compose",
+                    input_testid: "question-bank-ai-input",
+                    button_testid: if running {"question-bank-ai-stop"} else {"question-bank-ai-send"},
+                    value: follow_up.as_str(), max_length: if props.mode=="grade" {50_000} else {2000}, read_only: false,
+                    placeholder: if props.mode=="grade" {"追问扣分原因，或发送修改后的答案…"} else {"输入消息…"},
+                    button_label: if running {"停止生成"} else {"发送追问"}, is_stop: running,
+                    disabled: *submitting || (!running && (*uploading_follow || request_unresolved || request_uncertain || (follow_up.trim().is_empty() && follow_images.is_empty()))),
+                    endpoint: ai_scope_url(&endpoint, "/attachments", scope, None), csrf: props.csrf.clone(),
+                    attachments: follow_images.clone(), uploading: uploading_follow.clone(),
+                    picker_disabled: *submitting, picker_testid: "question-bank-ai-follow-up-images",
+                    oninput: Callback::from({
+                        let follow_up=follow_up.clone();
+                        let follow_key=follow_key.clone();
+                        move |event: InputEvent| {
+                            let input: web_sys::HtmlTextAreaElement = event.target_unchecked_into();
+                            ai_draft_write(&follow_key, &input.value());
+                            follow_up.set(input.value());
+                        }
+                    }),
+                    onkeydown: on_follow_up_key.clone(),
+                    onclick: if running {on_stop.clone()} else {on_follow_up.clone()},
+                })}
+            </div>
+        }
+        </AiComposerArea>
+    };
+    html! {
+        <AiReviewPanel
+            section_test_id="question-bank-ai-review" messages_test_id="question-bank-ai-messages"
+            question_test_id="question-bank-ai-question-content" status_test_id="question-bank-ai-status"
+            section_ref={diagram_root} messages_ref={messages_ref} on_messages_scroll={on_messages_scroll}
+            question={props.question_content.clone()}
+            title={if props.mode=="grade" {"AI 批改与追问"} else {"AI 解析与追问"}}
+            status={status_label} composer={composer}>
             if *disconnected {
                 <p class="text-xs text-warning" role="status" data-testid="question-bank-ai-disconnected">{"连接中断，正在重新连接…"}</p>
             }
@@ -997,70 +1070,6 @@ pub(crate) fn question_ai_review(props: &QuestionAiReviewProps) -> Html {
                     "AI 根据原题、相关给定材料和你的要求进行解析，来源参考答案仅作参考。"
                 }}</p>
             }
-            </div>
-            <div class="relative shrink-0 bg-base-100 px-2 pb-3 pt-2" data-testid="question-bank-ai-composer-area">
-            if *new_content {
-                <button type="button" class="btn btn-circle btn-sm absolute bottom-full left-1/2 z-10 -translate-x-1/2 border border-base-content/15 bg-base-100 shadow-md" aria-label="有新内容，回到底部" data-testid="question-bank-ai-scroll-bottom" onclick={scroll_to_bottom}>{"↓"}</button>
-            }
-            if can_start {
-                <div class="space-y-1">
-                    <label class="sr-only" for="question-ai-instruction">{"可选要求"}</label>
-                    {ai_composer(AiComposer {
-                        id: "question-ai-instruction", input_ref: start_input_ref.clone(),
-                        compose_testid: "question-bank-ai-requirements-compose",
-                        input_testid: "question-bank-ai-instruction",
-                        button_testid: "question-bank-ai-start",
-                        value: start_instruction.as_str(), max_length: if props.mode=="grade" {50_000} else {2000}, read_only: false,
-                        placeholder: if props.mode=="grade" {"粘贴申论作答，或上传手写图片…"} else {"输入解析要求（可选）…"},
-                        button_label: if props.mode=="grade" {"发送批改"} else {"开始 AI 解析"}, is_stop: false,
-                        disabled: *submitting || *uploading_start || request_unresolved || request_uncertain || (props.mode=="grade" && start_instruction.trim().is_empty() && start_images.is_empty()),
-                        endpoint: ai_scope_url(&endpoint, "/attachments", scope, None), csrf: props.csrf.clone(),
-                        attachments: start_images.clone(), uploading: uploading_start.clone(),
-                        picker_disabled: *submitting, picker_testid: "question-bank-ai-start-images",
-                        oninput: Callback::from({
-                            let start_instruction=start_instruction.clone();
-                            let start_key=start_key.clone();
-                            move |event: InputEvent| {
-                                let input: web_sys::HtmlTextAreaElement = event.target_unchecked_into();
-                                ai_draft_write(&start_key, &input.value());
-                                start_instruction.set(input.value());
-                            }
-                        }),
-                        onkeydown: on_start_key.clone(),
-                        onclick: on_start.clone(),
-                    })}
-                </div>
-            }
-            if has_answer || running {
-                <div class="space-y-2">
-                    <label class="sr-only" for="question-ai-follow-up">{"继续追问"}</label>
-                    {ai_composer(AiComposer {
-                        id: "question-ai-follow-up", input_ref: follow_input_ref.clone(),
-                        compose_testid: "question-bank-ai-compose",
-                        input_testid: "question-bank-ai-input",
-                        button_testid: if running {"question-bank-ai-stop"} else {"question-bank-ai-send"},
-                        value: follow_up.as_str(), max_length: if props.mode=="grade" {50_000} else {2000}, read_only: false,
-                        placeholder: if props.mode=="grade" {"追问扣分原因，或发送修改后的答案…"} else {"输入消息…"},
-                        button_label: if running {"停止生成"} else {"发送追问"}, is_stop: running,
-                        disabled: *submitting || (!running && (*uploading_follow || request_unresolved || request_uncertain || (follow_up.trim().is_empty() && follow_images.is_empty()))),
-                        endpoint: ai_scope_url(&endpoint, "/attachments", scope, None), csrf: props.csrf.clone(),
-                        attachments: follow_images.clone(), uploading: uploading_follow.clone(),
-                        picker_disabled: *submitting, picker_testid: "question-bank-ai-follow-up-images",
-                        oninput: Callback::from({
-                            let follow_up=follow_up.clone();
-                            let follow_key=follow_key.clone();
-                            move |event: InputEvent| {
-                                let input: web_sys::HtmlTextAreaElement = event.target_unchecked_into();
-                                ai_draft_write(&follow_key, &input.value());
-                                follow_up.set(input.value());
-                            }
-                        }),
-                        onkeydown: on_follow_up_key.clone(),
-                        onclick: if running {on_stop.clone()} else {on_follow_up.clone()},
-                    })}
-                </div>
-            }
-            </div>
-        </section>
+        </AiReviewPanel>
     }
 }

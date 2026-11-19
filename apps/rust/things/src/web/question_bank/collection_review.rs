@@ -405,7 +405,7 @@ pub(crate) fn collection_question_review(props: &CollectionQuestionReviewProps) 
         }
     };
     html! {
-        <TrainingDetailLayout root_class="question-bank-workspace training-workspace fixed inset-0 z-[80] flex h-dvh w-screen flex-col overflow-hidden bg-base-200 px-3 py-2"
+        <TrainingDetailLayout root_class={classes!(TRAINING_WORKSPACE_ROOT, "z-[80]", "question-bank-workspace")}
             test_id="collection-review" label={Some(AttrValue::from(format!("{scope_label}题目")))}
             leading={html! {<>
                 <button class="btn btn-ghost btn-sm" data-testid="collection-review-back" onclick={back}>

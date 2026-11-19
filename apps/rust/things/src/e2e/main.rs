@@ -1688,6 +1688,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
             ),
         )),
     );
+    let ai_upload_observation = Arc::new(Mutex::new(None));
     let ai_practice_agent = Arc::new(hyz_things::application::ai_practice::AiPracticeAgent::new(
         Arc::new(
             hyz_things::adapters::outbound::ai_practice_agent::SqliteAiPracticeAgent::new(
@@ -1695,6 +1696,12 @@ async fn main() -> Result<(), Box<dyn Error>> {
                 Some(Arc::new(FixturePracticeBackend {
                     prompts: practice_prompts.clone(),
                 })),
+            )
+            .with_attachment_relay(
+                Some(Arc::new(FixtureAiAttachmentRelay {
+                    observation: Arc::clone(&ai_upload_observation),
+                })),
+                Some("/fixture/ai-uploads".to_owned()),
             ),
         ),
     ));
@@ -1747,7 +1754,6 @@ async fn main() -> Result<(), Box<dyn Error>> {
     bank.sync()
         .await
         .map_err(|error| std::io::Error::other(error.to_string()))?;
-    let ai_upload_observation = Arc::new(Mutex::new(None));
     let ai = Arc::new(
         QuestionBankAiService::new(bank.clone(), bank_repository.pool().clone(), None)
             .with_attachment_relay(

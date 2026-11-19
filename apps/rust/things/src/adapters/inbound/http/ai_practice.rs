@@ -124,7 +124,10 @@ pub(super) async fn agent_state(
 #[serde(deny_unknown_fields)]
 pub(super) struct AgentMessage {
     id: AiPracticeQuestionId,
+    #[serde(default)]
     message: String,
+    #[serde(default)]
+    attachments: Vec<String>,
 }
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -148,8 +151,55 @@ pub(super) async fn agent_message(
     let Some(Extension(service)) = service else {
         return failure(AiPracticeError::Unavailable);
     };
-    match service.send(&request.id, &request.message).await {
+    match service
+        .send(&request.id, &request.message, &request.attachments)
+        .await
+    {
         Ok(()) => Json(serde_json::json!({"accepted":true})).into_response(),
+        Err(error) => failure(error),
+    }
+}
+
+pub(super) async fn agent_attachment(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    service: Agent,
+    query: Result<
+        axum::extract::Query<AiPracticeQuestionId>,
+        axum::extract::rejection::QueryRejection,
+    >,
+    payload: Result<axum::body::Bytes, axum::extract::rejection::BytesRejection>,
+) -> Response {
+    if let Err(response) = authorize_sensitive_image_admin(&state, &headers).await {
+        return response;
+    }
+    let media_type = headers
+        .get(header::CONTENT_TYPE)
+        .and_then(|value| value.to_str().ok())
+        .map(str::trim)
+        .unwrap_or_default();
+    if !matches!(media_type, "image/png" | "image/jpeg") {
+        return error_json(
+            StatusCode::BAD_REQUEST,
+            "ai_practice_attachment_type",
+            "仅支持 JPG 或 PNG 图片",
+        );
+    }
+    let bytes = match payload {
+        Ok(bytes) => bytes,
+        Err(error) if error.status() == StatusCode::PAYLOAD_TOO_LARGE => {
+            return payload_too_large_json();
+        }
+        Err(_) => return invalid_request_json(),
+    };
+    let Ok(axum::extract::Query(id)) = query else {
+        return failure(AiPracticeError::Invalid);
+    };
+    let Some(Extension(service)) = service else {
+        return failure(AiPracticeError::Unavailable);
+    };
+    match service.attach(&id, media_type, &bytes).await {
+        Ok(id) => Json(serde_json::json!({"id": id})).into_response(),
         Err(error) => failure(error),
     }
 }

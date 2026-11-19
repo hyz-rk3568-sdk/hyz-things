@@ -2,21 +2,39 @@ use super::ai_practice::module_key;
 use crate::{
     application::{
         ai_practice::{AiPracticeAgentPort, AiPracticeError},
-        question_bank::practice::{AiReviewBackend, AiReviewEventSink, AiReviewProgress},
+        question_bank::{
+            attachments::{validate_image, MAX_IMAGES_PER_MESSAGE},
+            practice::{AiAttachmentRelay, AiReviewBackend, AiReviewEventSink, AiReviewProgress},
+        },
     },
     domain::ai_practice::{
         AiPracticeAgentState, AiPracticeMessage, AiPracticeModule, AiPracticeQuestionId,
     },
 };
 use sqlx::{Row, SqlitePool};
-use std::{collections::HashMap, sync::Arc};
+use std::{
+    collections::HashMap,
+    sync::Arc,
+    time::{Duration, Instant},
+};
 use tokio::sync::{watch, Mutex, Semaphore};
 
 const MAX_OUTPUT: usize = 128 * 1024;
+const ATTACHMENT_TTL: Duration = Duration::from_secs(6 * 60 * 60);
+const MAX_ATTACHMENT_PATH: usize = 1024;
+
+struct AgentAttachment {
+    path: String,
+    id: AiPracticeQuestionId,
+    expires_at: Instant,
+}
 #[derive(Clone)]
 pub struct SqliteAiPracticeAgent {
     pool: SqlitePool,
     backend: Option<Arc<dyn AiReviewBackend>>,
+    relay: Option<Arc<dyn AiAttachmentRelay>>,
+    upload_root: Option<String>,
+    uploads: Arc<Mutex<HashMap<String, AgentAttachment>>>,
     active: Arc<Mutex<HashMap<AiPracticeQuestionId, watch::Sender<bool>>>>,
     capacity: Arc<Semaphore>,
 }
@@ -25,9 +43,73 @@ impl SqliteAiPracticeAgent {
         Self {
             pool,
             backend,
+            relay: None,
+            upload_root: None,
+            uploads: Arc::new(Mutex::new(HashMap::new())),
             active: Arc::new(Mutex::new(HashMap::new())),
             capacity: Arc::new(Semaphore::new(2)),
         }
+    }
+    /// Temporary images come from the same PC-side receiver as Question Bank
+    /// AI. Without a relay the text-only agent keeps working.
+    pub fn with_attachment_relay(
+        mut self,
+        relay: Option<Arc<dyn AiAttachmentRelay>>,
+        upload_root: Option<String>,
+    ) -> Self {
+        self.relay = relay;
+        self.upload_root = upload_root.map(|root| {
+            if root.ends_with('/') {
+                root
+            } else {
+                format!("{root}/")
+            }
+        });
+        self
+    }
+    fn valid_upload_path(&self, path: &str) -> bool {
+        let Some(root) = self.upload_root.as_deref() else {
+            return false;
+        };
+        path.len() <= MAX_ATTACHMENT_PATH
+            && path.starts_with(root)
+            && !path.chars().any(char::is_control)
+            && path[root.len()..]
+                .split('/')
+                .all(|part| !part.is_empty() && part != "." && part != "..")
+    }
+    async fn resolve_attachments(
+        &self,
+        id: &AiPracticeQuestionId,
+        attachment_ids: &[String],
+    ) -> Result<Vec<String>, AiPracticeError> {
+        if attachment_ids.len() > MAX_IMAGES_PER_MESSAGE {
+            return Err(AiPracticeError::Invalid);
+        }
+        if attachment_ids.is_empty() {
+            return Ok(Vec::new());
+        }
+        if attachment_ids
+            .iter()
+            .collect::<std::collections::BTreeSet<_>>()
+            .len()
+            != attachment_ids.len()
+        {
+            return Err(AiPracticeError::Invalid);
+        }
+        let now = Instant::now();
+        let mut uploads = self.uploads.lock().await;
+        uploads.retain(|_, entry| entry.expires_at > now);
+        attachment_ids
+            .iter()
+            .map(|attachment| {
+                uploads
+                    .get(attachment)
+                    .filter(|entry| entry.id == *id)
+                    .map(|entry| entry.path.clone())
+                    .ok_or(AiPracticeError::Invalid)
+            })
+            .collect()
     }
     pub async fn recover_interrupted(&self) -> Result<(), AiPracticeError> {
         sqlx::query("UPDATE ai_practice_agent_threads SET status='failed',error='服务重启，任务已中断' WHERE status='running'")
@@ -141,7 +223,42 @@ impl AiPracticeAgentPort for SqliteAiPracticeAgent {
         })
     }
 
-    async fn send(&self, id: &AiPracticeQuestionId, message: &str) -> Result<(), AiPracticeError> {
+    async fn attach(
+        &self,
+        id: &AiPracticeQuestionId,
+        media_type: &str,
+        bytes: &[u8],
+    ) -> Result<String, AiPracticeError> {
+        let image = validate_image(bytes, media_type).map_err(|_| AiPracticeError::Invalid)?;
+        let relay = self.relay.as_ref().ok_or(AiPracticeError::Unavailable)?;
+        let path = relay
+            .upload(image.media_type, bytes)
+            .await
+            .map_err(|_| AiPracticeError::Unavailable)?;
+        if !self.valid_upload_path(&path) {
+            return Err(AiPracticeError::Unavailable);
+        }
+        let attachment_id = uuid::Uuid::now_v7().to_string();
+        let now = Instant::now();
+        let mut uploads = self.uploads.lock().await;
+        uploads.retain(|_, entry| entry.expires_at > now);
+        uploads.insert(
+            attachment_id.clone(),
+            AgentAttachment {
+                path,
+                id: id.clone(),
+                expires_at: now + ATTACHMENT_TTL,
+            },
+        );
+        Ok(attachment_id)
+    }
+    async fn send(
+        &self,
+        id: &AiPracticeQuestionId,
+        message: &str,
+        attachments: &[String],
+    ) -> Result<(), AiPracticeError> {
+        let images = self.resolve_attachments(id, attachments).await?;
         let backend = self.backend.clone().ok_or(AiPracticeError::Unavailable)?;
         let permit = self
             .capacity
@@ -201,7 +318,7 @@ impl AiPracticeAgentPort for SqliteAiPracticeAgent {
                         Ok(())
                     })
                 });
-                turn.turn_stream(&prompt, &[], cancel.clone(), sink).await
+                turn.turn_stream(&prompt, &images, cancel.clone(), sink).await
             }.await;
             let stopped = *cancel.subscribe().borrow();
             let (status, content, error) = match run {

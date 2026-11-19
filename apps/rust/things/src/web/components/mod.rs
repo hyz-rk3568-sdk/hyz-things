@@ -1,5 +1,6 @@
 use super::*;
 
+mod ai_review_panel;
 mod app_shell;
 mod countdown_card;
 mod feedback;
@@ -14,6 +15,7 @@ mod states;
 mod status_badge;
 mod tool_execution;
 
+pub(crate) use ai_review_panel::*;
 pub(crate) use app_shell::*;
 pub(crate) use countdown_card::*;
 pub(crate) use feedback::*;

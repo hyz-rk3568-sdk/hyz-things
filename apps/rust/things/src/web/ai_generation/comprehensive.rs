@@ -25,10 +25,8 @@ struct AnalysisPanesProps {
     material: hyz_things::domain::data_analysis::Material,
     question: Html,
     question_index: usize,
-    #[prop_or("题目与选项")]
-    right_title: &'static str,
-    #[prop_or_default]
-    material_actions: Html,
+    #[prop_or_else(|| AttrValue::from("题目与选项"))]
+    right_title: AttrValue,
     #[prop_or_default]
     header_actions: Html,
     #[prop_or_default]
@@ -66,18 +64,14 @@ fn analysis_panes(props: &AnalysisPanesProps) -> Html {
             separator_label="调整材料与题目比例"
             left={html! {
                 <article class="flex min-h-0 min-w-0 flex-col overflow-hidden rounded-box bg-base-100" data-testid="analysis-material">
-                <div class={TRAINING_PANE_HEADER} data-testid="analysis-material-header">
-                    <div class="min-w-0 text-sm font-semibold">{props.material.topic.clone()}</div>
-                    <div class="flex shrink-0 items-center gap-1">
-                        {props.material_actions.clone()}
-                        if scratchpad_open {
-                            <div class="relative z-30 flex shrink-0 gap-1" role="group" aria-label="材料滚动">
-                                <MaterialScrollButton passage={passage.clone()} up={true} disabled={!scroll_state.can_scroll_up} question_index={props.question_index} />
-                                <MaterialScrollButton passage={passage.clone()} up={false} disabled={!scroll_state.can_scroll_down} question_index={props.question_index} />
-                            </div>
-                        }
-                    </div>
-                </div>
+                <TrainingPaneHeader test_id="analysis-material-header"
+                    title={html!{<div class="min-w-0 text-sm font-semibold">{props.material.topic.clone()}</div>}}
+                    scroll={if scratchpad_open {html!{
+                        <div class="relative z-30 flex shrink-0 gap-1" role="group" aria-label="材料滚动">
+                            <MaterialScrollButton passage={passage.clone()} up={true} disabled={!scroll_state.can_scroll_up} question_index={props.question_index} />
+                            <MaterialScrollButton passage={passage.clone()} up={false} disabled={!scroll_state.can_scroll_down} question_index={props.question_index} />
+                        </div>
+                    }} else {Html::default()}}/>
                 <div ref={passage} onscroll={on_scroll.clone()} class="min-h-0 flex-1 overflow-y-auto overscroll-contain touch-pan-y scroll-auto" data-testid="analysis-material-scroll" data-ink-pane="material">
                     <div class="whitespace-pre-wrap px-4 pb-4 pt-2 text-base leading-8">{props.material.text.clone()}</div>
                 </div>
@@ -85,9 +79,9 @@ fn analysis_panes(props: &AnalysisPanesProps) -> Html {
             }}
             right={html! {
                 <section class="flex min-h-0 min-w-0 flex-col overflow-hidden rounded-box bg-base-100" data-testid="analysis-answer-pane">
-                    <div class={classes!(TRAINING_PANE_HEADER, "flex-wrap")} data-testid="analysis-answer-header">
-                        <span class="text-sm font-semibold">{props.right_title}</span>
-                        <div class="ml-auto flex shrink-0 items-center gap-1">
+                    <TrainingPaneHeader test_id="analysis-answer-header" wrap={true} ink={true}
+                        title={html!{<span class="text-sm font-semibold">{props.right_title.clone()}</span>}}
+                        actions={html!{<div class="flex shrink-0 items-center gap-1">
                             {props.header_actions.clone()}
                             if scratchpad_open && props.ai_page.is_none() {
                                 <div class="flex gap-1" role="group" aria-label="题目滚动">
@@ -95,9 +89,7 @@ fn analysis_panes(props: &AnalysisPanesProps) -> Html {
                                     <MaterialScrollButton passage={question_scroll.clone()} up={false} disabled={!question_edges.can_scroll_down} question_index={props.question_index} target="题目" />
                                 </div>
                             }
-                            <InkToolbarSlot />
-                        </div>
-                    </div>
+                        </div>}}/>
                     <article ref={question_scroll} onscroll={on_scroll}
                         class={classes!("min-h-0", "flex-1", "touch-pan-y", if props.ai_page.is_some() {"flex flex-col overflow-hidden"} else {"overflow-y-auto overscroll-contain"})}
                         data-testid="analysis-question" data-ink-pane="answer">
@@ -231,6 +223,7 @@ pub(crate) fn comprehensive_training(props: &ComprehensiveProps) -> Html {
     let tick = use_state(|| 0_u64);
     let history = use_state(Vec::<ComprehensiveHistoryEntry>::new);
     let history_open = use_state(|| props.show_history);
+    let favorites_open = use_state(|| false);
     let generation_prompt = use_generation_prompt();
     let reviewing_history = use_state(|| false);
     let review_run_id = use_state(String::new);
@@ -936,20 +929,33 @@ pub(crate) fn comprehensive_training(props: &ComprehensiveProps) -> Html {
             score.total.saturating_sub(answered),
             0,
         );
-        let review_options = q.options.iter().enumerate().map(|(i, option)| {
-            let state = ReviewChoiceState::for_single_choice(i, q.correct_index, q.chosen);
-            let hint = match state {
-                ReviewChoiceState::Correct => "✓ 正确答案",
-                ReviewChoiceState::Wrong => "✕ 你的错选",
-                ReviewChoiceState::Neutral => "",
-            };
-            html! {
-                <TrainingReviewChoice class={classes!("flex", "items-center", "justify-between", "gap-3", "rounded-box", "border", "p-3", (state != ReviewChoiceState::Neutral).then_some("font-medium"))} test_id="analysis-review-choice" {state}>
-                    <span>{format!("{}. {}",["A", "B", "C", "D"][i],option)}</span>
-                    <span class="shrink-0 text-xs">{hint}</span>
-                </TrainingReviewChoice>
-            }
-        });
+        let review_options = q
+            .options
+            .iter()
+            .enumerate()
+            .map(|(i, option)| {
+                let state = ReviewChoiceState::for_single_choice(i, q.correct_index, q.chosen);
+                let hint = match state {
+                    ReviewChoiceState::Correct => "✓ 正确答案",
+                    ReviewChoiceState::Wrong => "✕ 你的错选",
+                    ReviewChoiceState::Neutral => "",
+                };
+                html! {
+                    <TrainingReviewChoice class={classes!("flex", "items-center", "justify-between", "gap-3", "rounded-box", "border", "p-3", (state != ReviewChoiceState::Neutral).then_some("font-medium"))} test_id="analysis-review-choice" {state}>
+                        <span>{format!("{}. {}",["A", "B", "C", "D"][i],option)}</span>
+                        <span class="shrink-0 text-xs">{hint}</span>
+                    </TrainingReviewChoice>
+                }
+            })
+            .collect::<Vec<_>>();
+        let answer_stats = html! {
+            <ReviewAnswerStats
+                correct_answer={vec![["A", "B", "C", "D"][q.correct_index].to_owned()]}
+                answer={q.chosen.map(|i| vec![["A", "B", "C", "D"][i].to_owned()])}
+                correct_count={0} wrong_count={0}
+                answer_test_id="ai-practice-agent-answer"
+                counts_test_id="ai-practice-agent-counts"/>
+        };
         let review_question = html! {
             <div class="space-y-4 p-4" data-testid="analysis-review-content">
                 <div class="flex items-center justify-between gap-2 text-xs text-base-content/60">
@@ -957,11 +963,10 @@ pub(crate) fn comprehensive_training(props: &ComprehensiveProps) -> Html {
                     <span data-testid="analysis-review-status">{grade}</span>
                 </div>
                 <h2 class="text-base font-normal leading-8">{q.question.clone()}</h2>
-                <div class="grid gap-2">{for review_options}</div>
+                <div class="grid gap-2">{for review_options.iter().cloned()}</div>
                 <div class="border-t border-base-content/10 pt-4">
-                    <p class="text-base font-semibold">{format!("你的答案：{}",
-                        q.chosen.and_then(|i| ["A","B","C","D"].get(i).copied()).unwrap_or("未答"))}</p>
-                    <h3 class="mt-3 text-base font-semibold">{"解题解析"}</h3>
+                    {answer_stats.clone()}
+                    <h3 class="mt-3 text-base font-semibold">{"原始解析"}</h3>
                     <p class="mt-2 whitespace-pre-wrap text-base leading-7" data-testid="analysis-explanation">{q.explanation.clone()}</p>
                     <RelatedMethodCard key={format!("analysis-{}-{index}", score.id)}
                         card_id={q.card_id.clone()}
@@ -1024,20 +1029,18 @@ pub(crate) fn comprehensive_training(props: &ComprehensiveProps) -> Html {
             })
         };
         let agent_question = html! {
-            <div class="space-y-3" data-testid="ai-practice-agent-question">
+            <div class="space-y-4" data-testid="ai-practice-agent-question">
+                <div class="flex items-center justify-between gap-2 text-xs text-base-content/60">
+                    <span>{format!("本材料第 {}/5 题 · {}",local_index+1,q.skill)}</span>
+                    <span>{grade}</span>
+                </div>
                 <h2 class="text-base font-normal leading-8">{q.question.clone()}</h2>
-                <div class="grid gap-2">{for q.options.iter().enumerate().map(|(choice, option)| html! {
-                    <div class="rounded-box border border-base-content/15 p-3">
-                        {format!("{}. {}", ["A", "B", "C", "D"][choice], option)}
-                    </div>
-                })}</div>
+                <div class="grid gap-2">{for review_options.iter().cloned()}</div>
+                {answer_stats.clone()}
             </div>
         };
         let answer_actions = html! {
             <AiPracticeHeaderControls review={practice.clone()}/>
-        };
-        let material_actions = html! {
-            <AiPracticeHeaderControls review={practice.clone()} favorite_test_id="ai-practice-favorite-material" original_test_id="ai-practice-answer-tab-material" tab_test_id="ai-practice-agent-tab-material"/>
         };
         let ai_page = practice.active.then(|| {
             html! {
@@ -1045,7 +1048,7 @@ pub(crate) fn comprehensive_training(props: &ComprehensiveProps) -> Html {
             }
         });
         return html! {
-            <TrainingDetailLayout root_class="analysis-fullscreen fixed inset-0 z-[70] flex h-dvh w-screen min-w-0 flex-col overflow-hidden bg-base-200" test_id="analysis-result" view={Some("review")}
+            <TrainingDetailLayout root_class={classes!(TRAINING_WORKSPACE_ROOT, "z-[70]")} test_id="analysis-result" view={Some("review")}
                 leading={html! {
                     <div class="flex min-w-0 items-center gap-2">
                         <button type="button" class="btn btn-ghost btn-sm" data-testid="analysis-exit"
@@ -1069,8 +1072,9 @@ pub(crate) fn comprehensive_training(props: &ComprehensiveProps) -> Html {
                 }}
                 content={html! {
                     <InkOverlay question_index={index} persist_key={format!("{}-workspace-{}",review_id,index)} responsive={true} scroll_linked={true}><TrainingSwipeSurface current={current.clone()} total={score.questions.len()}>
-                        <AnalysisPanes material={score.materials[group_index].clone()} question={review_question} question_index={index} right_title="答案与解析"
-                            material_actions={material_actions} header_actions={answer_actions} ai_page={ai_page}/>
+                        <AnalysisPanes material={score.materials[group_index].clone()} question={review_question} question_index={index}
+                            right_title={format!("第 {}/{} 题 · 材料 {}/{}", index+1, score.questions.len(), group_index+1, score.materials.len())}
+                            header_actions={answer_actions} ai_page={ai_page}/>
                     </TrainingSwipeSurface></InkOverlay>
                 }}
                 navigation={analysis_navigation(current.clone(),index,&marks,true)}
@@ -1118,13 +1122,24 @@ pub(crate) fn comprehensive_training(props: &ComprehensiveProps) -> Html {
                 });
             })
         };
+        if *favorites_open {
+            return html! {
+                <AiPracticeFavoritesPage module={AiPracticeModule::DataAnalysis} subject="资料分析"
+                    on_open={Callback::from({let open_result=open_result.clone();let favorites_open=favorites_open.clone(); move |id: AiPracticeQuestionId|{favorites_open.set(false);open_result.emit((id.session_id,id.question));}})}
+                    on_back={Callback::from({let favorites_open=favorites_open.clone(); move |_|favorites_open.set(false)})}/>
+            };
+        }
         return html! {
-            <TrainingSetupLayout test_id="analysis-history" heading={Some(html!{                <div class="flex items-center justify-between">
+            <TrainingSetupLayout test_id="analysis-history" heading={Some(html!{
+                <div class="flex flex-wrap items-center justify-between gap-3">
                     <h2 class="text-xl font-bold">{"综合训练历史"}</h2>
-                    <button class="btn btn-outline btn-sm" onclick={back}>{"返回训练"}</button>
+                    <div class="flex items-center gap-2">
+                        <AiPracticeFavoritesButton module={AiPracticeModule::DataAnalysis} open={false}
+                            onclick={Callback::from({let favorites_open=favorites_open.clone(); move |_|favorites_open.set(true)})}/>
+                        <button class="btn btn-outline btn-sm" onclick={back}>{"返回训练"}</button>
+                    </div>
                 </div>})}>
                 <div class="space-y-4">
-                <AiPracticeFavoritesPanel module={hyz_things::domain::ai_practice::AiPracticeModule::DataAnalysis} on_open={Callback::from({let open_result=open_result.clone(); move |id: hyz_things::domain::ai_practice::AiPracticeQuestionId| open_result.emit((id.session_id,id.question))})}/>
                 {if history.is_empty(){html!{<p class="text-sm text-base-content/60">{"还没有已交卷的综合训练。"}</p>}}else{Html::default()}}
                 {for history.iter().map(|entry|{
                     let id=entry.id.clone();let open_result=open_result.clone();
@@ -1227,7 +1242,7 @@ pub(crate) fn comprehensive_training(props: &ComprehensiveProps) -> Html {
             .map(|answer| answer.map(|_| true))
             .collect::<Vec<_>>();
         return html! {
-            <TrainingDetailLayout root_class="analysis-fullscreen fixed inset-0 z-[70] flex h-dvh w-screen min-w-0 flex-col overflow-hidden bg-base-200" test_id="analysis-run" view={Some("answer")}
+            <TrainingDetailLayout root_class={classes!(TRAINING_WORKSPACE_ROOT, "z-[70]")} test_id="analysis-run" view={Some("answer")}
                 leading={html! {
                     <div class="flex min-w-0 items-center gap-2">
                         <button type="button" class="btn btn-ghost btn-sm" data-testid="analysis-exit"

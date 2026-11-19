@@ -30,6 +30,10 @@ pub(crate) struct AiPracticeReview {
     pub agent_error: Option<String>,
     pub busy: bool,
     pub draft: String,
+    pub csrf: String,
+    pub attachments_endpoint: String,
+    pub attachments: UseStateHandle<Vec<PendingImage>>,
+    pub uploading: UseStateHandle<bool>,
     pub on_favorite: Callback<MouseEvent>,
     pub on_ai: Callback<MouseEvent>,
     pub on_original: Callback<MouseEvent>,
@@ -52,6 +56,8 @@ pub(crate) fn use_ai_practice_review(
     let agent_error = use_state(|| None::<String>);
     let agent_busy = use_state(|| false);
     let draft = use_state(String::new);
+    let attachments = use_state(Vec::<PendingImage>::new);
+    let uploading = use_state(|| false);
     let revision = use_state(|| 0_u64);
     {
         let favorite = favorite.clone();
@@ -77,16 +83,28 @@ pub(crate) fn use_ai_practice_review(
         let agent = agent.clone();
         let agent_error = agent_error.clone();
         let draft = draft.clone();
+        let attachments = attachments.clone();
+        let uploading = uploading.clone();
         use_effect_with(id.clone(), move |_| {
             agent.set(None);
             agent_error.set(None);
             draft.set(String::new());
+            attachments.set(Vec::new());
+            uploading.set(false);
             || ()
         });
     }
     let endpoint = id.as_ref().map(|id| {
         format!(
             "{AGENT}?module={}&session_id={}&question={}",
+            module_key(id.module),
+            id.session_id,
+            id.question
+        )
+    });
+    let attachments_endpoint = id.as_ref().map(|id| {
+        format!(
+            "{AGENT}/attachments?module={}&session_id={}&question={}",
             module_key(id.module),
             id.session_id,
             id.question
@@ -184,6 +202,7 @@ pub(crate) fn use_ai_practice_review(
         let agent_error = agent_error.clone();
         let revision = revision.clone();
         let draft = draft.clone();
+        let attachments = attachments.clone();
         Callback::from(move |_: ()| {
             let Some(id) = id.clone() else {
                 return;
@@ -191,10 +210,18 @@ pub(crate) fn use_ai_practice_review(
             if *busy {
                 return;
             }
+            let images = attachments
+                .iter()
+                .map(|image| image.id.clone())
+                .collect::<Vec<_>>();
             let message = {
                 let text = draft.trim().to_owned();
                 if text.is_empty() {
-                    "请解答本题".to_owned()
+                    if images.is_empty() {
+                        "请解答本题".to_owned()
+                    } else {
+                        "请解析图片并说明思路".to_owned()
+                    }
                 } else {
                     text
                 }
@@ -205,18 +232,20 @@ pub(crate) fn use_ai_practice_review(
             let agent_error = agent_error.clone();
             let revision = revision.clone();
             let draft = draft.clone();
+            let attachments = attachments.clone();
             let csrf = csrf.clone();
             spawn_local(async move {
                 match post_json(
                     &format!("{AGENT}/messages"),
                     &csrf,
-                    &serde_json::json!({"id":id,"message":message}),
+                    &serde_json::json!({"id":id,"message":message,"attachments":images}),
                     "AI 解析",
                 )
                 .await
                 {
                     Ok(_) => {
                         draft.set(String::new());
+                        attachments.set(Vec::new());
                         revision.set(revision.wrapping_add(1));
                     }
                     Err(message) => agent_error.set(Some(message)),
@@ -312,6 +341,10 @@ pub(crate) fn use_ai_practice_review(
             .or_else(|| state.and_then(|state| state.error.clone())),
         busy: *agent_busy,
         draft: (*draft).clone(),
+        csrf,
+        attachments_endpoint: attachments_endpoint.unwrap_or_default(),
+        attachments,
+        uploading,
         on_favorite: toggle_favorite,
         on_ai: show_ai,
         on_original: show_original,
@@ -325,12 +358,6 @@ pub(crate) fn use_ai_practice_review(
 #[derive(Properties, PartialEq)]
 pub(crate) struct AiPracticeHeaderControlsProps {
     pub review: AiPracticeReview,
-    #[prop_or("ai-practice-favorite")]
-    pub favorite_test_id: &'static str,
-    #[prop_or("ai-practice-answer-tab")]
-    pub original_test_id: &'static str,
-    #[prop_or("ai-practice-agent-tab")]
-    pub tab_test_id: &'static str,
 }
 
 #[function_component(AiPracticeHeaderControls)]
@@ -344,13 +371,13 @@ pub(crate) fn ai_practice_header_controls(props: &AiPracticeHeaderControlsProps)
     html! {
         <div class="flex shrink-0 items-center gap-0" role="group" aria-label="AI 解析与收藏">
             <QuestionHeaderActions favorite={review.favorite} favorite_busy={review.favorite_busy}
-                favorite_label={favorite_label} favorite_test_id={props.favorite_test_id}
+                favorite_label={favorite_label} favorite_test_id="ai-practice-favorite"
                 on_favorite={review.on_favorite.clone()}
                 flashcard_count={None::<usize>} flashcard_can_create={false}
                 flashcard_create_test_id="ai-practice-flashcard-create" flashcard_manage_test_id="ai-practice-flashcard-manage"
                 on_flashcard={Callback::noop()}/>
             <QuestionAiModeTabs active={review.active}
-                original_test_id={props.original_test_id} ai_test_id={props.tab_test_id}
+                original_test_id="ai-practice-answer-tab" ai_test_id="ai-practice-agent-tab"
                 original_label="答案与解析" ai_label="AI 解析与追问"
                 original={review.on_original.clone()} ai={review.on_ai.clone()}/>
             if let Some(message) = review.favorite_error.as_ref() {
@@ -396,69 +423,61 @@ pub(crate) fn ai_practice_agent_page(props: &AiPracticeAgentPageProps) -> Html {
             },
         );
     }
-    let can_send = !review.busy && (!has_messages || !review.draft.trim().is_empty());
+    let can_send = !review.busy
+        && (!has_messages || !review.draft.trim().is_empty() || !review.attachments.is_empty());
     let placeholder = if has_messages {
         "输入消息…"
     } else {
         "输入解析要求（可选）…"
     };
+    let composer = html! {
+        <AiComposerArea test_id="ai-practice-agent-composer-area">
+            {ai_composer(AiComposer {
+                id: "ai-practice-agent-input", input_ref: NodeRef::default(),
+                compose_testid: "ai-practice-agent-compose",
+                input_testid: "ai-practice-agent-input-field",
+                button_testid: if running {"ai-practice-agent-stop"} else {"ai-practice-agent-send"},
+                value: review.draft.as_str(), max_length: 8000, read_only: false,
+                placeholder,
+                button_label: if running {"停止生成"} else if has_messages {"发送追问"} else {"开始 AI 解析"},
+                is_stop: running,
+                disabled: !running && !can_send,
+                endpoint: review.attachments_endpoint.clone(), csrf: review.csrf.clone(),
+                attachments: review.attachments.clone(), uploading: review.uploading.clone(),
+                picker_disabled: review.busy || running, picker_testid: "ai-practice-agent-images",
+                oninput: review.on_input.clone(), onkeydown: review.on_keydown.clone(),
+                onclick: if running {review.on_stop.clone()} else {review.on_send.clone()},
+            })}
+        </AiComposerArea>
+    };
     html! {
-        <section class="flex min-h-0 min-w-0 flex-1 flex-col" data-testid="ai-practice-agent-page">
-            <div ref={scroller} class="min-h-0 flex-1 space-y-3 overflow-y-auto overscroll-contain touch-pan-y p-4"
-                role="log" aria-live="polite" aria-label="AI 解析与追问记录" data-testid="ai-practice-agent-messages">
-                <div class="space-y-4" data-testid="ai-practice-agent-question">{props.question.clone()}</div>
-                <div class="flex items-center justify-between gap-2">
-                    <strong>{"AI 解析与追问"}</strong>
-                    <span class="text-xs text-base-content/60" data-testid="ai-practice-agent-status">{status}</span>
+        <AiReviewPanel section_test_id="ai-practice-agent-page" messages_test_id="ai-practice-agent-messages"
+            question_test_id="ai-practice-agent-question" status_test_id="ai-practice-agent-status"
+            messages_ref={scroller} question={props.question.clone()}
+            title="AI 解析与追问" status={status} composer={composer}>
+            if let Some(message) = review.agent_error.as_ref() {
+                <p class="text-sm text-error" role="alert">{message.clone()}</p>
+            }
+            if !has_messages && !running && review.agent_error.is_none() {
+                <p class="text-sm text-base-content/60">{"AI 根据原题、相关给定材料和你的要求进行解析，来源参考答案仅作参考。"}</p>
+            }
+            {for review.messages.iter().map(|message| html! {
+                <div class={if message.role == "user" {"rounded-xl bg-primary/10 p-3"} else {"py-2"}}>
+                    <div class="mb-2 text-xs font-semibold text-base-content/60">{if message.role == "user" {"你的追问"} else {"AI 解析"}}</div>
+                    if message.role == "assistant" {
+                        <AiReply content={message.content.clone()}/>
+                    } else {
+                        <div class="study-markdown">{render_question_bank_markdown(&message.content)}</div>
+                    }
                 </div>
-                if let Some(message) = review.agent_error.as_ref() {
-                    <p class="text-sm text-error" role="alert">{message.clone()}</p>
-                }
-                if !has_messages && !running && review.agent_error.is_none() {
-                    <p class="text-sm text-base-content/60">{"AI 会结合本题与关联方法卡进行解析；可以先输入你的要求，或直接开始。"}</p>
-                }
-                {for review.messages.iter().map(|message| html! {
-                    <div class={if message.role == "user" {"rounded-xl bg-primary/10 p-3"} else {"py-2"}}>
-                        <div class="mb-2 text-xs font-semibold text-base-content/60">{if message.role == "user" {"你的追问"} else {"AI 解析"}}</div>
-                        if message.role == "assistant" {
-                            <AiReply content={message.content.clone()}/>
-                        } else {
-                            <div class="study-markdown">{render_question_bank_markdown(&message.content)}</div>
-                        }
-                    </div>
-                })}
-                if !review.partial.is_empty() {
-                    <div class="py-2" data-testid="ai-practice-agent-stream">
-                        <div class="mb-2 text-xs font-semibold text-base-content/60">{"AI 正在回复"}</div>
-                        <StreamingMarkdown markdown={review.partial.clone()} complete={streaming_markdown_complete(&review.partial)}/>
-                    </div>
-                }
-            </div>
-            <div class="relative shrink-0 bg-base-100 px-2 pb-3 pt-2">
-                <label class="sr-only" for="ai-practice-agent-input">{"AI 解析与追问输入"}</label>
-                <div class="relative rounded-2xl border border-base-content/15 bg-base-100 transition focus-within:border-primary/50 focus-within:ring-2 focus-within:ring-primary/15"
-                    data-testid="ai-practice-agent-compose">
-                    <textarea id="ai-practice-agent-input" rows="1"
-                        class="block h-6 min-w-16 flex-1 resize-none overflow-y-auto border-0 bg-transparent px-1 py-0 pr-12 text-sm leading-6 focus:outline-none focus:ring-0"
-                        data-testid="ai-practice-agent-input-field" maxlength="8000"
-                        value={review.draft.clone()} placeholder={placeholder}
-                        onkeydown={review.on_keydown.clone()} oninput={review.on_input.clone()}/>
-                    <div class="absolute right-2 top-1/2 flex -translate-y-1/2 items-center justify-end">
-                        <button type="button" class="btn btn-primary btn-sm btn-circle"
-                            aria-label={if running {"停止生成"} else if has_messages {"发送追问"} else {"开始 AI 解析"}}
-                            title={if running {"停止生成"} else if has_messages {"发送追问"} else {"开始 AI 解析"}}
-                            data-testid={if running {"ai-practice-agent-stop"} else {"ai-practice-agent-send"}}
-                            disabled={!running && !can_send}
-                            onclick={if running {review.on_stop.clone()} else {review.on_send.clone()}}>
-                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                                if running { <rect x="7" y="7" width="10" height="10" rx="1" fill="currentColor" stroke="none"/> }
-                                else { <path d="M12 19V5M5 12l7-7 7 7"/> }
-                            </svg>
-                        </button>
-                    </div>
+            })}
+            if !review.partial.is_empty() {
+                <div class="py-2" data-testid="ai-practice-agent-stream">
+                    <div class="mb-2 text-xs font-semibold text-base-content/60">{"AI 正在回复"}</div>
+                    <StreamingMarkdown markdown={review.partial.clone()} complete={streaming_markdown_complete(&review.partial)}/>
                 </div>
-            </div>
-        </section>
+            }
+        </AiReviewPanel>
     }
 }
 
@@ -470,14 +489,65 @@ struct AiFavoriteRow {
     category: String,
 }
 
-#[derive(Properties, PartialEq)]
-pub(crate) struct AiPracticeFavoritesPanelProps {
-    pub module: AiPracticeModule,
-    pub on_open: Callback<AiPracticeQuestionId>,
+async fn load_favorite_ids(module: AiPracticeModule) -> Result<Vec<AiPracticeQuestionId>, String> {
+    let items = fetch_json::<Vec<AiPracticeQuestionId>>(FAVORITES, "练习收藏").await?;
+    Ok(items
+        .into_iter()
+        .filter(|item| item.module == module)
+        .collect())
 }
 
-#[function_component(AiPracticeFavoritesPanel)]
-pub(crate) fn ai_practice_favorites_panel(props: &AiPracticeFavoritesPanelProps) -> Html {
+#[derive(Properties, PartialEq)]
+pub(crate) struct AiPracticeFavoritesButtonProps {
+    pub module: AiPracticeModule,
+    pub open: bool,
+    pub onclick: Callback<MouseEvent>,
+}
+
+#[function_component(AiPracticeFavoritesButton)]
+pub(crate) fn ai_practice_favorites_button(props: &AiPracticeFavoritesButtonProps) -> Html {
+    let count = use_state(|| None::<usize>);
+    {
+        let count = count.clone();
+        let module = props.module;
+        use_effect_with(module, move |_| {
+            let alive = Rc::new(Cell::new(true));
+            let pending = alive.clone();
+            spawn_local(async move {
+                if let Ok(items) = load_favorite_ids(module).await {
+                    if pending.get() {
+                        count.set(Some(items.len()));
+                    }
+                }
+            });
+            move || alive.set(false)
+        });
+    }
+    html! {
+        <button type="button"
+            class={classes!("btn","btn-sm",if props.open {"btn-primary"} else {"btn-outline"})}
+            data-testid="ai-practice-favorites" aria-pressed={props.open.to_string()}
+            onclick={props.onclick.clone()}>
+            {"我的收藏"}
+            if let Some(count) = *count {
+                <span class={classes!("question-bank-count","font-bold",
+                    if props.open {"bg-white text-primary"} else {"bg-primary/10 text-primary"})}
+                    data-testid="ai-practice-favorites-count">{count}</span>
+            }
+        </button>
+    }
+}
+
+#[derive(Properties, PartialEq)]
+pub(crate) struct AiPracticeFavoritesPageProps {
+    pub module: AiPracticeModule,
+    pub subject: AttrValue,
+    pub on_open: Callback<AiPracticeQuestionId>,
+    pub on_back: Callback<MouseEvent>,
+}
+
+#[function_component(AiPracticeFavoritesPage)]
+pub(crate) fn ai_practice_favorites_page(props: &AiPracticeFavoritesPageProps) -> Html {
     let entries = use_state(|| None::<Vec<AiFavoriteRow>>);
     let selected_group = use_state(String::new);
     let selected_category = use_state(String::new);
@@ -490,19 +560,15 @@ pub(crate) fn ai_practice_favorites_panel(props: &AiPracticeFavoritesPanelProps)
             let alive = Rc::new(Cell::new(true));
             let pending = alive.clone();
             spawn_local(async move {
-                let items =
-                    match fetch_json::<Vec<AiPracticeQuestionId>>(FAVORITES, "练习收藏").await {
-                        Ok(items) => items
-                            .into_iter()
-                            .filter(|item| item.module == module)
-                            .collect::<Vec<_>>(),
-                        Err(message) => {
-                            if pending.get() {
-                                error.set(Some(message));
-                            }
-                            return;
+                let items = match load_favorite_ids(module).await {
+                    Ok(items) => items,
+                    Err(message) => {
+                        if pending.get() {
+                            error.set(Some(message));
                         }
-                    };
+                        return;
+                    }
+                };
                 let root = match module {
                     AiPracticeModule::DataAnalysis => "/api/v1/study/data-analysis",
                     AiPracticeModule::LogicJudgment => "/api/v1/study/logic-judgment",
@@ -670,15 +736,24 @@ pub(crate) fn ai_practice_favorites_panel(props: &AiPracticeFavoritesPanelProps)
     } else {
         html! { <p class="text-sm text-base-content/60">{"正在加载收藏…"}</p> }
     };
+    let count_label = match (error.as_ref(), entries.as_ref()) {
+        (Some(_), _) => "加载失败".to_owned(),
+        (None, Some(items)) => format!("共 {} 题", items.len()),
+        (None, None) => "正在加载…".to_owned(),
+    };
     html! {
-        <details class="rounded-box bg-base-100" data-testid="ai-practice-favorites">
-            <summary class="flex cursor-pointer items-center gap-2 p-4 font-semibold" data-testid="ai-practice-favorites-summary">
-                <span>{"收藏题目"}</span>
-                if let Some(items) = entries.as_ref() {
-                    <span class="badge badge-ghost badge-sm">{items.len()}</span>
-                }
-            </summary>
-            <div class="space-y-3 px-4 pb-4">{body}</div>
-        </details>
+        <TrainingSetupLayout test_id="ai-practice-favorites-page" wide={true}
+            heading={Some(html! {
+                <div class="flex items-center justify-between gap-3">
+                    <div class="min-w-0">
+                        <h2 class="text-xl font-bold">{"我的收藏"}</h2>
+                        <p class="text-xs text-base-content/60">{props.subject.clone()}{" · "}{count_label}</p>
+                    </div>
+                    <button type="button" class="btn btn-outline btn-sm" data-testid="ai-practice-favorites-back"
+                        onclick={props.on_back.clone()}>{"← 返回练习历史"}</button>
+                </div>
+            })}>
+            <div class="space-y-3" data-testid="ai-practice-favorites-page-content">{body}</div>
+        </TrainingSetupLayout>
     }
 }

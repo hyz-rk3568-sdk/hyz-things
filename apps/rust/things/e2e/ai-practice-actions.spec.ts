@@ -14,6 +14,8 @@ for (const [prefix, mode, endpoint, module] of [
   test(`${prefix} favorites and agent share the exercise session`, async ({ page }) => {
     let favorites: any[] = [];
     const conversations = new Map<string, any[]>();
+    const sentMessages: any[] = [];
+    const uploads: string[] = [];
     const key = (id: any) => `${id.module}:${id.session_id}:${id.question}`;
     await page.route('**/api/v1/study/ai-practice/favorites', async route => {
       if (route.request().method() === 'POST') {
@@ -26,12 +28,17 @@ for (const [prefix, mode, endpoint, module] of [
     });
     await page.route('**/api/v1/study/ai-practice/agent**', async route => {
       const url = new URL(route.request().url());
+      if (url.pathname.endsWith('/attachments')) {
+        uploads.push(route.request().headers()['content-type']);
+        return route.fulfill({json:{id:'attachment-1'}});
+      }
       if (route.request().method() === 'GET') {
         const id = { module:url.searchParams.get('module'), session_id:url.searchParams.get('session_id'), question:Number(url.searchParams.get('question')) };
         return route.fulfill({json:{status:'complete',messages:conversations.get(key(id)) ?? [],partial:'',error:null}});
       }
       const {id, message} = route.request().postDataJSON();
       if (url.pathname.endsWith('/messages')) {
+        sentMessages.push(route.request().postDataJSON());
         conversations.set(key(id), [...(conversations.get(key(id)) ?? []), {role:'user',content:message}, {role:'assistant',content:'按关联方法卡解题'}]);
       }
       return route.fulfill({json:{accepted:true}});
@@ -54,12 +61,9 @@ for (const [prefix, mode, endpoint, module] of [
     await page.getByTestId(`${prefix}-history-open`).click();
     await page.getByRole('button',{name:'查看原题与解析',exact:true}).click();
     const answerPane = page.getByTestId(prefix === 'analysis' ? 'analysis-answer-header' : `${prefix}-answer-pane`);
-    const secondaryPane = page.getByTestId(prefix === 'analysis' ? 'analysis-material-header' : `${prefix}-question-pane`);
-    const secondary = prefix === 'analysis' ? 'material' : 'stem';
     await expect(answerPane.getByTestId('ai-practice-favorite')).toBeVisible();
     await expect(answerPane.getByTestId('ai-practice-agent-tab')).toBeVisible();
-    await expect(secondaryPane.getByTestId(`ai-practice-favorite-${secondary}`)).toBeVisible();
-    await expect(secondaryPane.getByTestId(`ai-practice-agent-tab-${secondary}`)).toBeVisible();
+    await expect(page.getByTestId(`ai-practice-favorite-${prefix === 'analysis' ? 'material' : 'stem'}`)).toHaveCount(0);
     await expect(page.getByTestId('training-workspace-header').getByTestId('ai-practice-favorite')).toHaveCount(0);
     const star = page.getByTestId('ai-practice-favorite');
     await expect(star).toHaveAttribute('aria-label','收藏题目');
@@ -78,6 +82,17 @@ for (const [prefix, mode, endpoint, module] of [
     await page.getByTestId('ai-practice-agent-input-field').fill('为什么这样计算？');
     await page.getByTestId('ai-practice-agent-send').click();
     await expect(page.getByTestId('ai-practice-agent-page')).toContainText('为什么这样计算？');
+    const picker = page.getByTestId('ai-practice-agent-images');
+    await expect(picker).toBeVisible();
+    await picker.locator('input[type=file]').setInputFiles({
+      name: 'note.png',
+      mimeType: 'image/png',
+      buffer: Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==','base64'),
+    });
+    await expect(picker.getByRole('img')).toBeVisible();
+    await page.getByTestId('ai-practice-agent-send').click();
+    await expect.poll(() => sentMessages.at(-1)?.attachments).toEqual(['attachment-1']);
+    expect(uploads).toEqual(['image/png']);
     await page.getByRole('button',{name:'下一题',exact:true}).click();
     await expect(page.getByTestId('ai-practice-favorite')).toHaveAttribute('aria-label','收藏题目');
     await page.getByTestId('ai-practice-favorite').click();
@@ -86,12 +101,19 @@ for (const [prefix, mode, endpoint, module] of [
     await expect(page.getByTestId('ai-practice-favorite')).toHaveAttribute('aria-label','取消收藏');
     await expect(page.getByTestId('ai-practice-agent-page')).toContainText('为什么这样计算？');
     await page.getByRole('button',{name:'查看练习记录',exact:true}).click();
-    const collection=page.getByTestId('ai-practice-favorites');
-    expect(await collection.evaluate((el: HTMLDetailsElement) => el.open)).toBe(false);
-    await page.getByTestId('ai-practice-favorites-summary').click();
-    expect(await collection.evaluate((el: HTMLDetailsElement) => el.open)).toBe(true);
-    await expect(collection).toContainText('题目 1');
+    await expect(page.getByTestId(prefix === 'analysis' ? 'analysis-history' : `${prefix}-history`)).toBeVisible();
+    const favoritesButton=page.getByTestId('ai-practice-favorites');
+    await expect(favoritesButton).toContainText('我的收藏');
+    await expect(page.getByTestId('ai-practice-favorites-count')).toHaveText('2');
+    await favoritesButton.click();
+    const collection=page.getByTestId('ai-practice-favorites-page');
+    await expect(collection).toBeVisible();
+    await expect(page.getByTestId('ai-practice-favorites-page-content')).toContainText('题目 1');
     await expect(collection).toContainText('题目 2');
+    await page.getByTestId('ai-practice-favorites-back').click();
+    await expect(page.getByTestId(prefix === 'analysis' ? 'analysis-history' : `${prefix}-history`)).toBeVisible();
+    await favoritesButton.click();
+    await expect(collection).toBeVisible();
     await collection.getByTestId('ai-practice-favorite-category').filter({hasText:'方法B'}).click();
     await expect(collection.getByTestId('ai-practice-favorite-item')).toHaveCount(1);
     await expect(collection.getByTestId('ai-practice-favorite-item')).toContainText('题目 2');

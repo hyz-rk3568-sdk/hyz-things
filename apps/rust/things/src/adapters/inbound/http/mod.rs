@@ -1208,6 +1208,11 @@ fn app_with_assets(
                 .layer(DefaultBodyLimit::max(16 * 1024)),
         )
         .route(
+            "/api/v1/study/ai-practice/agent/attachments",
+            on(MethodFilter::POST, ai_practice::agent_attachment)
+                .layer(DefaultBodyLimit::max(8 * 1024 * 1024)),
+        )
+        .route(
             "/api/v1/study/ai-practice/agent/stop",
             on(MethodFilter::POST, ai_practice::agent_stop),
         )
@@ -3058,6 +3063,7 @@ fn is_post_path(path: &str) -> bool {
             | "/api/v1/control/proxy/delays"
             | "/api/v1/study/ai-practice/favorites"
             | "/api/v1/study/ai-practice/agent/messages"
+            | "/api/v1/study/ai-practice/agent/attachments"
             | "/api/v1/study/ai-practice/agent/stop"
             | "/api/v1/study/review"
             | "/api/v1/study/training-time/events"

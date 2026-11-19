@@ -3,10 +3,10 @@
 use super::*;
 
 #[derive(Clone, PartialEq, Eq)]
-pub(super) struct PendingImage {
-    pub(super) id: String,
-    pub(super) name: String,
-    pub(super) preview: Option<Rc<String>>,
+pub(crate) struct PendingImage {
+    pub(crate) id: String,
+    pub(crate) name: String,
+    pub(crate) preview: Option<Rc<String>>,
 }
 
 async fn image_preview_data(file: &web_sys::File) -> Option<String> {
@@ -163,32 +163,50 @@ pub(super) fn ai_image_picker(props: &AiImagePickerProps) -> Html {
         </div>
     }
 }
-pub(super) struct AiComposer<'a> {
-    pub(super) id: &'a str,
-    pub(super) input_ref: NodeRef,
-    pub(super) compose_testid: &'a str,
-    pub(super) input_testid: &'a str,
-    pub(super) button_testid: &'a str,
-    pub(super) value: &'a str,
-    pub(super) max_length: usize,
-    pub(super) read_only: bool,
-    pub(super) placeholder: &'a str,
-    pub(super) button_label: &'a str,
-    pub(super) is_stop: bool,
-    pub(super) disabled: bool,
-    pub(super) endpoint: String,
-    pub(super) csrf: String,
-    pub(super) attachments: UseStateHandle<Vec<PendingImage>>,
-    pub(super) uploading: UseStateHandle<bool>,
-    pub(super) picker_disabled: bool,
-    pub(super) picker_testid: &'static str,
-    pub(super) oninput: Callback<InputEvent>,
-    pub(super) onkeydown: Callback<KeyboardEvent>,
-    pub(super) onclick: Callback<MouseEvent>,
+#[derive(Properties, PartialEq)]
+pub(crate) struct AiComposerAreaProps {
+    pub test_id: &'static str,
+    #[prop_or_default]
+    pub children: Children,
+}
+
+/// The docked composer area for every AI review surface. Keeping the padding,
+/// dock position and test id here prevents a caller from inventing a
+/// different-sized composer.
+#[function_component(AiComposerArea)]
+pub(crate) fn ai_composer_area(props: &AiComposerAreaProps) -> Html {
+    html! {
+        <div class="relative shrink-0 bg-base-100 px-2 pb-3 pt-2" data-testid={props.test_id}>
+            {for props.children.iter()}
+        </div>
+    }
+}
+pub(crate) struct AiComposer<'a> {
+    pub(crate) id: &'a str,
+    pub(crate) input_ref: NodeRef,
+    pub(crate) compose_testid: &'a str,
+    pub(crate) input_testid: &'a str,
+    pub(crate) button_testid: &'a str,
+    pub(crate) value: &'a str,
+    pub(crate) max_length: usize,
+    pub(crate) read_only: bool,
+    pub(crate) placeholder: &'a str,
+    pub(crate) button_label: &'a str,
+    pub(crate) is_stop: bool,
+    pub(crate) disabled: bool,
+    pub(crate) endpoint: String,
+    pub(crate) csrf: String,
+    pub(crate) attachments: UseStateHandle<Vec<PendingImage>>,
+    pub(crate) uploading: UseStateHandle<bool>,
+    pub(crate) picker_disabled: bool,
+    pub(crate) picker_testid: &'static str,
+    pub(crate) oninput: Callback<InputEvent>,
+    pub(crate) onkeydown: Callback<KeyboardEvent>,
+    pub(crate) onclick: Callback<MouseEvent>,
 }
 
 /// One shape for both asking Codex to start a review and sending a follow-up.
-pub(super) fn ai_composer(props: AiComposer<'_>) -> Html {
+pub(crate) fn ai_composer(props: AiComposer<'_>) -> Html {
     let oninput = {
         let callback = props.oninput.clone();
         Callback::from(move |event: InputEvent| {
@@ -201,18 +219,21 @@ pub(super) fn ai_composer(props: AiComposer<'_>) -> Html {
             callback.emit(event);
         })
     };
+    let input = html! {
+        <textarea ref={props.input_ref.clone()} id={props.id.to_owned()} rows="1"
+            class="block h-6 min-w-16 flex-1 resize-none overflow-y-auto border-0 bg-transparent px-1 py-0 text-sm leading-6 focus:outline-none focus:ring-0"
+            data-testid={props.input_testid.to_owned()} maxlength={props.max_length.to_string()} readonly={props.read_only}
+            value={props.value.to_owned()}
+            placeholder={props.placeholder.to_owned()}
+            onkeydown={props.onkeydown.clone()}
+            {oninput}/>
+    };
     html! {
         <div class="relative rounded-2xl border border-base-content/15 bg-base-100 transition focus-within:border-primary/50 focus-within:ring-2 focus-within:ring-primary/15"
             data-testid={props.compose_testid.to_owned()}>
             <AiImagePicker endpoint={props.endpoint} csrf={props.csrf} attachments={props.attachments}
                 uploading={props.uploading} disabled={props.picker_disabled} testid={props.picker_testid} compact={true}>
-            <textarea ref={props.input_ref} id={props.id.to_owned()} rows="1"
-                class="block h-6 min-w-16 flex-1 resize-none overflow-y-auto border-0 bg-transparent px-1 py-0 text-sm leading-6 focus:outline-none focus:ring-0"
-                data-testid={props.input_testid.to_owned()} maxlength={props.max_length.to_string()} readonly={props.read_only}
-                value={props.value.to_owned()}
-                placeholder={props.placeholder.to_owned()}
-                onkeydown={props.onkeydown}
-                {oninput}/>
+                {input}
             </AiImagePicker>
             <div class="absolute right-2 top-1/2 flex -translate-y-1/2 items-center justify-end">
                 <button type="button" class="btn btn-primary btn-sm btn-circle" aria-label={props.button_label.to_owned()} title={props.button_label.to_owned()}
