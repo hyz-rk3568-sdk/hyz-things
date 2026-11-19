@@ -16,6 +16,7 @@ mod question_review;
 mod section_card;
 mod states;
 mod status_badge;
+mod tool_activity;
 mod tool_execution;
 
 pub(crate) use ai_composer::*;
@@ -34,4 +35,5 @@ pub(crate) use question_review::*;
 pub(crate) use section_card::*;
 pub(crate) use states::*;
 pub(crate) use status_badge::*;
+pub(crate) use tool_activity::*;
 pub(crate) use tool_execution::*;

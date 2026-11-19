@@ -22,13 +22,16 @@ pub(crate) struct AiReviewPanelProps {
     pub status: AttrValue,
     #[prop_or_default]
     pub composer: Html,
+    /// Dialog or blocking state scoped to the panel, e.g. delete confirmation.
+    #[prop_or_default]
+    pub overlay: Html,
     pub children: Children,
 }
 
 #[function_component(AiReviewPanel)]
 pub(crate) fn ai_review_panel(props: &AiReviewPanelProps) -> Html {
     html! {
-        <section class="flex min-h-0 min-w-0 flex-1 flex-col" data-testid={props.section_test_id}
+        <section class="relative flex min-h-0 min-w-0 flex-1 flex-col" data-testid={props.section_test_id}
             ref={props.section_ref.clone()}>
             <div class="min-h-0 flex-1 space-y-3 overflow-y-auto overscroll-contain touch-pan-y p-4"
                 ref={props.messages_ref.clone()} onscroll={props.on_messages_scroll.clone()}
@@ -44,6 +47,7 @@ pub(crate) fn ai_review_panel(props: &AiReviewPanelProps) -> Html {
                 {for props.children.iter()}
             </div>
             {props.composer.clone()}
+            {props.overlay.clone()}
         </section>
     }
 }

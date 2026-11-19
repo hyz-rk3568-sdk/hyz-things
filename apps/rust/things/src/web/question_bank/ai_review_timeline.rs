@@ -193,26 +193,20 @@ fn run_activity(props: &RunActivityProps) -> Html {
         _ => "执行记录",
     };
     html! {
-        <div data-testid="question-bank-ai-progress" class="min-w-0 max-w-full py-1">
-            <button type="button" class="flex w-full min-w-0 items-start gap-2 text-left text-xs text-base-content/60 hover:text-base-content" aria-expanded={opened.to_string()} onclick={toggle}>
-                <span class="shrink-0 whitespace-nowrap">{if *opened {"⌄ "} else {"› "}}{format!("第 {} 轮 · {status}", props.index + 1)}</span>
-                <span data-testid="question-bank-ai-progress-summary" class="question-bank-ai-progress-summary flex-1">
-                    {tools.last().map(|tool| if tool.2.is_empty() { tool.1.clone() } else { tool.2.clone() }).unwrap_or_default()}
-                </span>
-            </button>
-            if *opened {
-                <div class="mt-2 min-w-0 max-w-full space-y-3 border-l border-base-content/15 pl-3">
-                    {for tools.iter().map(|(_, label, command, output)| {
-                        tool_execution_item(label, command, output, "question-bank-ai")
-                    })}
-                    if *loading { <p role="status">{"正在加载工具输出…"}</p> }
-                    if let Some(message) = error.as_ref() {
-                        <p role="alert" class="text-error">{message.clone()}</p>
-                        <button type="button" class="btn btn-ghost btn-xs" onclick={Callback::from({let load=load.clone(); move |_| load.emit(())})}>{"重试加载输出"}</button>
-                    }
-                </div>
+        <ToolActivity test_id="question-bank-ai-progress"
+            summary_test_id="question-bank-ai-progress-summary"
+            label={format!("第 {} 轮 · {status}", props.index + 1)}
+            summary={tools.last().map(|tool| if tool.2.is_empty() { tool.1.clone() } else { tool.2.clone() }).unwrap_or_default()}
+            opened={*opened} on_toggle={toggle}>
+            {for tools.iter().map(|(_, label, command, output)| {
+                tool_execution_item(label, command, output, "question-bank-ai")
+            })}
+            if *loading { <p role="status">{"正在加载工具输出…"}</p> }
+            if let Some(message) = error.as_ref() {
+                <p role="alert" class="text-error">{message.clone()}</p>
+                <button type="button" class="btn btn-ghost btn-xs" onclick={Callback::from({let load=load.clone(); move |_| load.emit(())})}>{"重试加载输出"}</button>
             }
-        </div>
+        </ToolActivity>
     }
 }
 

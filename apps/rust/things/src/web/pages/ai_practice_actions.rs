@@ -1,7 +1,7 @@
 use super::*;
 use gloo_timers::callback::Interval;
 use hyz_things::domain::ai_practice::{
-    AiPracticeAgentState, AiPracticeMessage, AiPracticeModule, AiPracticeQuestionId,
+    AiPracticeAgentState, AiPracticeMessage, AiPracticeModule, AiPracticeQuestionId, AiPracticeTool,
 };
 use std::{cell::Cell, rc::Rc};
 
@@ -34,6 +34,9 @@ pub(crate) struct AiPracticeReview {
     pub attachments_endpoint: String,
     pub delete_endpoint: String,
     pub can_delete: bool,
+    pub delete_open: bool,
+    pub deleting: bool,
+    pub delete_error: Option<String>,
     pub attachments: UseStateHandle<Vec<PendingImage>>,
     pub uploading: UseStateHandle<bool>,
     pub on_favorite: Callback<MouseEvent>,
@@ -44,6 +47,9 @@ pub(crate) struct AiPracticeReview {
     pub on_stop: Callback<MouseEvent>,
     pub on_keydown: Callback<KeyboardEvent>,
     pub on_deleted: Callback<()>,
+    pub on_request_delete: Callback<MouseEvent>,
+    pub on_cancel_delete: Callback<MouseEvent>,
+    pub on_confirm_delete: Callback<MouseEvent>,
 }
 
 #[hook]
@@ -402,6 +408,57 @@ pub(crate) fn use_ai_practice_review(
             revision.set(revision.wrapping_add(1));
         })
     };
+    let delete_open = use_state(|| false);
+    let deleting = use_state(|| false);
+    let delete_error = use_state(|| None::<String>);
+    let on_request_delete = {
+        let delete_open = delete_open.clone();
+        let delete_error = delete_error.clone();
+        Callback::from(move |_: MouseEvent| {
+            delete_error.set(None);
+            delete_open.set(true);
+        })
+    };
+    let on_cancel_delete = {
+        let delete_open = delete_open.clone();
+        let delete_error = delete_error.clone();
+        Callback::from(move |_: MouseEvent| {
+            delete_open.set(false);
+            delete_error.set(None);
+        })
+    };
+    let on_confirm_delete = {
+        let endpoint = endpoint.clone().unwrap_or_default();
+        let csrf = csrf.clone();
+        let on_deleted = on_deleted.clone();
+        let delete_open = delete_open.clone();
+        let deleting = deleting.clone();
+        let delete_error = delete_error.clone();
+        Callback::from(move |_: MouseEvent| {
+            if *deleting || endpoint.is_empty() {
+                return;
+            }
+            deleting.set(true);
+            delete_error.set(None);
+            let endpoint = endpoint.clone();
+            let csrf = csrf.clone();
+            let on_deleted = on_deleted.clone();
+            let delete_open = delete_open.clone();
+            let deleting = deleting.clone();
+            let delete_error = delete_error.clone();
+            spawn_local(async move {
+                match delete_json_response::<serde_json::Value>(&endpoint, &csrf, "AI 会话").await
+                {
+                    Ok(_) => {
+                        delete_open.set(false);
+                        on_deleted.emit(());
+                    }
+                    Err(message) => delete_error.set(Some(message)),
+                }
+                deleting.set(false);
+            });
+        })
+    };
     let state = (*agent).as_ref();
     let status = state.map(|state| state.status.clone()).unwrap_or_else(|| {
         if *active {
@@ -431,6 +488,9 @@ pub(crate) fn use_ai_practice_review(
         attachments_endpoint: attachments_endpoint.unwrap_or_default(),
         delete_endpoint: endpoint.clone().unwrap_or_default(),
         can_delete,
+        delete_open: *delete_open,
+        deleting: *deleting,
+        delete_error: (*delete_error).clone(),
         attachments,
         uploading,
         on_favorite: toggle_favorite,
@@ -441,6 +501,9 @@ pub(crate) fn use_ai_practice_review(
         on_stop,
         on_keydown,
         on_deleted,
+        on_request_delete,
+        on_cancel_delete,
+        on_confirm_delete,
     }
 }
 
@@ -457,58 +520,8 @@ pub(crate) fn ai_practice_header_controls(props: &AiPracticeHeaderControlsProps)
     } else {
         "收藏题目"
     };
-    let delete_open = use_state(|| false);
-    let deleting = use_state(|| false);
-    let delete_error = use_state(|| None::<String>);
-    let request_delete = {
-        let delete_open = delete_open.clone();
-        let delete_error = delete_error.clone();
-        Callback::from(move |_| {
-            delete_error.set(None);
-            delete_open.set(true);
-        })
-    };
-    let cancel_delete = {
-        let delete_open = delete_open.clone();
-        let delete_error = delete_error.clone();
-        Callback::from(move |_| {
-            delete_open.set(false);
-            delete_error.set(None);
-        })
-    };
-    let confirm_delete = {
-        let review = props.review.clone();
-        let delete_open = delete_open.clone();
-        let deleting = deleting.clone();
-        let delete_error = delete_error.clone();
-        Callback::from(move |_| {
-            if *deleting {
-                return;
-            }
-            let endpoint = review.delete_endpoint.clone();
-            let csrf = review.csrf.clone();
-            let on_deleted = review.on_deleted.clone();
-            let delete_open = delete_open.clone();
-            let deleting = deleting.clone();
-            let delete_error = delete_error.clone();
-            deleting.set(true);
-            delete_error.set(None);
-            spawn_local(async move {
-                match delete_json_response::<serde_json::Value>(&endpoint, &csrf, "AI 会话").await
-                {
-                    Ok(_) => {
-                        delete_open.set(false);
-                        on_deleted.emit(());
-                    }
-                    Err(message) => delete_error.set(Some(message)),
-                }
-                deleting.set(false);
-            });
-        })
-    };
     html! {
-        <>
-            <div class="flex shrink-0 items-center gap-0" role="group" aria-label="AI 解析与收藏">
+        <div class="flex shrink-0 items-center gap-0" role="group" aria-label="AI 解析与收藏">
                 <QuestionHeaderActions favorite={review.favorite} favorite_busy={review.favorite_busy}
                     favorite_label={favorite_label} favorite_test_id="ai-practice-favorite"
                     on_favorite={review.on_favorite.clone()}
@@ -519,33 +532,14 @@ pub(crate) fn ai_practice_header_controls(props: &AiPracticeHeaderControlsProps)
                     original_test_id="ai-practice-answer-tab" ai_test_id="ai-practice-agent-tab"
                     original_label="答案与解析" ai_label="AI 解析与追问"
                     original={review.on_original.clone()} ai={review.on_ai.clone()}/>
-                <QuestionAiMoreMenu can_delete={review.can_delete} delete={request_delete}
+                <QuestionAiMoreMenu can_delete={review.can_delete} delete={review.on_request_delete.clone()}
                     reset_key={review.status.clone()}
                     button_test_id="ai-practice-agent-more" delete_test_id="ai-practice-agent-delete"
                     button_label="更多 AI 操作" delete_label="删除 AI 会话"/>
                 if let Some(message) = review.favorite_error.as_ref() {
                     <span class="text-error" role="alert" title={message.clone()} aria-label={message.clone()}>{"⚠"}</span>
                 }
-            </div>
-            if *delete_open {
-                <div class="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 p-4"
-                    role="dialog" aria-modal="true" aria-label="确认删除 AI 会话"
-                    data-testid="ai-practice-agent-delete-dialog">
-                    <div class="w-full max-w-sm space-y-4 rounded-box bg-base-100 p-5 shadow-xl">
-                        <p>{"确定删除这道题的 AI 会话和全部追问吗？"}</p>
-                        if let Some(error) = delete_error.as_ref() {
-                            <p class="text-sm text-error" role="alert" data-testid="ai-practice-agent-delete-error">{error.clone()}</p>
-                        }
-                        <div class="flex justify-end gap-2">
-                            <button type="button" class="btn btn-ghost btn-sm" data-testid="ai-practice-agent-delete-cancel"
-                                disabled={*deleting} onclick={cancel_delete}>{"取消"}</button>
-                            <button type="button" class="btn btn-error btn-sm" data-testid="ai-practice-agent-delete-confirm"
-                                disabled={*deleting} onclick={confirm_delete}>{"确认删除"}</button>
-                        </div>
-                    </div>
-                </div>
-            }
-        </>
+        </div>
     }
 }
 
@@ -611,30 +605,65 @@ pub(crate) fn ai_practice_agent_page(props: &AiPracticeAgentPageProps) -> Html {
             })}
         </AiComposerArea>
     };
+    let overlay = if review.delete_open {
+        html! {
+            <div class="absolute inset-0 z-20 flex items-center justify-center bg-black/40 p-4"
+                role="dialog" aria-modal="true" aria-label="确认删除 AI 会话"
+                data-testid="ai-practice-agent-delete-dialog">
+                <div class="w-full max-w-sm space-y-4 rounded-box bg-base-100 p-5 shadow-xl">
+                    <p>{"确定删除这道题的 AI 会话和全部追问吗？"}</p>
+                    if let Some(error) = review.delete_error.as_ref() {
+                        <p class="text-sm text-error" role="alert" data-testid="ai-practice-agent-delete-error">{error.clone()}</p>
+                    }
+                    <div class="flex justify-end gap-2">
+                        <button type="button" class="btn btn-ghost btn-sm" data-testid="ai-practice-agent-delete-cancel"
+                            disabled={review.deleting} onclick={review.on_cancel_delete.clone()}>{"取消"}</button>
+                        <button type="button" class="btn btn-error btn-sm" data-testid="ai-practice-agent-delete-confirm"
+                            disabled={review.deleting} onclick={review.on_confirm_delete.clone()}>{"确认删除"}</button>
+                    </div>
+                </div>
+            </div>
+        }
+    } else {
+        Html::default()
+    };
+    enum AgentRow {
+        Message(usize),
+        Tools(Vec<AiPracticeTool>),
+    }
+    let rows = {
+        let mut rows = Vec::new();
+        let mut tools = Vec::new();
+        for (index, message) in review.messages.iter().enumerate() {
+            if let Some(tool) = message.tool.as_ref() {
+                tools.push(tool.clone());
+            } else {
+                if !tools.is_empty() {
+                    rows.push(AgentRow::Tools(std::mem::take(&mut tools)));
+                }
+                rows.push(AgentRow::Message(index));
+            }
+        }
+        if !tools.is_empty() {
+            rows.push(AgentRow::Tools(tools));
+        }
+        rows
+    };
     html! {
         <AiReviewPanel section_test_id="ai-practice-agent-page" messages_test_id="ai-practice-agent-messages"
             status_test_id="ai-practice-agent-status"
             messages_ref={scroller}
-            title="AI 解析与追问" status={status} composer={composer}>
+            title="AI 解析与追问" status={status} composer={composer} overlay={overlay}>
             if let Some(message) = review.agent_error.as_ref() {
                 <p class="text-sm text-error" role="alert">{message.clone()}</p>
             }
             if !has_messages && !running && review.agent_error.is_none() {
                 <p class="text-sm text-base-content/60">{"AI 根据原题、相关给定材料和你的要求进行解析，来源参考答案仅作参考。"}</p>
             }
-            {for review.messages.iter().map(|message| {
-                if let Some(tool) = message.tool.as_ref() {
-                    html! {
-                        <div class="flex min-w-0 items-center gap-2 rounded-lg bg-base-content/5 px-2 py-1 text-xs text-base-content/60"
-                            data-testid="ai-practice-agent-tool">
-                            <span class="shrink-0 font-semibold text-base-content/70">{format!("工具 · {}", tool.name)}</span>
-                            if !tool.detail.is_empty() {
-                                <code class="min-w-0 truncate font-mono text-[11px]">{tool.detail.clone()}</code>
-                            }
-                            <span class="ml-auto shrink-0">{tool_status_label(&tool.status)}</span>
-                        </div>
-                    }
-                } else {
+            {for rows.iter().map(|row| match row {
+                AgentRow::Tools(tools) => html! { <AiPracticeToolActivity tools={tools.clone()}/> },
+                AgentRow::Message(index) => {
+                    let message = &review.messages[*index];
                     html! {
                         <div class={if message.role == "user" {"rounded-xl bg-primary/10 p-3"} else {"py-2"}}>
                             <div class="mb-2 text-xs font-semibold text-base-content/60">{if message.role == "user" {"你的追问"} else {"AI 解析"}}</div>
@@ -654,6 +683,49 @@ pub(crate) fn ai_practice_agent_page(props: &AiPracticeAgentPageProps) -> Html {
                 </div>
             }
         </AiReviewPanel>
+    }
+}
+
+#[derive(Properties, PartialEq)]
+struct AiPracticeToolActivityProps {
+    tools: Vec<AiPracticeTool>,
+}
+
+#[function_component(AiPracticeToolActivity)]
+fn ai_practice_tool_activity(props: &AiPracticeToolActivityProps) -> Html {
+    let opened = use_state(|| false);
+    let toggle = {
+        let opened = opened.clone();
+        Callback::from(move |_: MouseEvent| opened.set(!*opened))
+    };
+    let status = if props.tools.iter().any(|tool| tool.status == "running") {
+        "调用中"
+    } else if props.tools.iter().any(|tool| tool.status == "failed") {
+        "失败"
+    } else if props.tools.iter().all(|tool| tool.status == "stopped") {
+        "已停止"
+    } else {
+        "完成"
+    };
+    let summary = props
+        .tools
+        .last()
+        .map(|tool| {
+            if tool.detail.is_empty() {
+                tool.name.clone()
+            } else {
+                tool.detail.clone()
+            }
+        })
+        .unwrap_or_default();
+    html! {
+        <ToolActivity test_id="ai-practice-agent-tools" summary_test_id="ai-practice-agent-tools-summary"
+            label={format!("工具调用 · {status}")} summary={summary}
+            opened={*opened} on_toggle={toggle}>
+            {for props.tools.iter().map(|tool| tool_execution_item(
+                &format!("{} · {}", tool.name, tool_status_label(&tool.status)),
+                &tool.detail, "", "ai-practice-agent"))}
+        </ToolActivity>
     }
 }
 

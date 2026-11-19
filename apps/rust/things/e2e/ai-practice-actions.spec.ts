@@ -95,9 +95,12 @@ for (const [prefix, mode, endpoint, module] of [
     await page.getByTestId('ai-practice-agent-input-field').fill('请按方法卡讲解');
     await page.getByTestId('ai-practice-agent-send').click();
     await expect(page.getByTestId('ai-practice-agent-page')).toContainText('请按方法卡讲解');
-    await expect(page.getByTestId('ai-practice-agent-tool').first()).toContainText('工具 · command');
-    await expect(page.getByTestId('ai-practice-agent-tool').first()).toContainText('rg 卡片');
-    await expect(page.getByTestId('ai-practice-agent-tool').first()).toContainText('完成');
+    const tools = page.getByTestId('ai-practice-agent-tools').first();
+    await expect(tools).toContainText('工具调用 · 完成');
+    await expect(tools).toContainText('rg 卡片');
+    await tools.getByRole('button').click();
+    await expect(tools.getByTestId('ai-practice-agent-tool')).toContainText('command · 完成');
+    await expect(tools.getByTestId('ai-practice-agent-command')).toHaveText('rg 卡片');
     const finalReply = page.getByTestId('ai-practice-agent-page').locator('div.study-markdown[data-ai-diagram-source="true"]').last();
     await expect(finalReply).toContainText('按关联方法卡解题');
     await expect(finalReply).toHaveClass(/study-markdown/);
@@ -152,10 +155,34 @@ for (const [prefix, mode, endpoint, module] of [
     expect(favorites[0].question).toBe(1);
     await page.getByTestId('ai-practice-agent-more').click();
     await page.getByTestId('ai-practice-agent-delete').click();
-    await expect(page.getByTestId('ai-practice-agent-delete-dialog')).toBeVisible();
+    const dialog = page.getByTestId('ai-practice-agent-page').getByTestId('ai-practice-agent-delete-dialog');
+    await expect(dialog).toBeVisible();
+    const panelBox = await page.getByTestId('ai-practice-agent-page').boundingBox();
+    const dialogBox = await dialog.boundingBox();
+    expect(dialogBox!.x).toBeGreaterThanOrEqual(panelBox!.x);
+    expect(dialogBox!.y).toBeGreaterThanOrEqual(panelBox!.y);
+    expect(dialogBox!.x + dialogBox!.width).toBeLessThanOrEqual(panelBox!.x + panelBox!.width + 0.5);
+    expect(dialogBox!.y + dialogBox!.height).toBeLessThanOrEqual(panelBox!.y + panelBox!.height + 0.5);
+    await expect(page.getByTestId('ai-practice-agent-more')).toBeVisible();
     await page.getByTestId('ai-practice-agent-delete-confirm').click();
     await expect(page.getByTestId('ai-practice-agent-delete-dialog')).toHaveCount(0);
     await expect(page.getByTestId('ai-practice-agent-page')).not.toContainText('为什么这样计算？');
     await expect(page.getByTestId('ai-practice-agent-status')).toHaveText('未生成');
+    const answerHeader = page.getByTestId(`${prefix}-answer-header`);
+    await page.getByTestId(`${prefix}-navigation`).getByRole('button', {name: '下一题'}).click();
+    await expect(answerHeader).toContainText('第 2/');
+    await expect(page.getByTestId('ai-practice-agent-tab')).toHaveAttribute('aria-pressed', 'true');
+    const messages = await page.getByTestId('ai-practice-agent-messages').boundingBox();
+    await page.evaluate(({x, y}) => {
+      const target = document.elementFromPoint(x, y)!;
+      const event = (type: string, clientX: number) => new PointerEvent(type, {
+        bubbles: true, cancelable: true, pointerId: 7, pointerType: 'touch', isPrimary: true,
+        clientX, clientY: y, button: 0, buttons: 1,
+      });
+      target.dispatchEvent(event('pointerdown', x));
+      target.dispatchEvent(event('pointermove', x - 140));
+      target.dispatchEvent(event('pointerup', x - 140));
+    }, {x: messages!.x + messages!.width / 2, y: messages!.y + messages!.height / 2});
+    await expect(answerHeader).toContainText('第 3/');
   });
 }
