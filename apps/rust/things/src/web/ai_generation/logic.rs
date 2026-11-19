@@ -85,7 +85,7 @@ fn logic_scroll_pane(props: &LogicScrollPaneProps) -> Html {
             left={html! {
                 <section class="flex min-h-0 min-w-0 flex-col overflow-hidden rounded-box bg-base-100"
                     data-testid={format!("{prefix}-question-pane")}>
-                <TrainingPaneHeader wrap={true}
+                <TrainingPaneHeader wrap={true} test_id={format!("{prefix}-question-header")}
                     title={html!{<div class="min-w-0 truncate text-sm font-semibold">{"题干"}</div>}}
                     scroll={if scratchpad_open {html!{
                         <div class="flex shrink-0 gap-1" role="group" aria-label="题目滚动" data-testid={format!("{prefix}-scroll-buttons")}>
@@ -105,7 +105,7 @@ fn logic_scroll_pane(props: &LogicScrollPaneProps) -> Html {
             right={html! {
                 <section class="flex min-h-0 min-w-0 flex-col overflow-hidden rounded-box bg-base-100"
                     data-testid={format!("{prefix}-answer-pane")}>
-                <TrainingPaneHeader wrap={true} ink={true}
+                <TrainingPaneHeader wrap={true} ink={true} test_id={format!("{prefix}-answer-header")}
                     title={html!{<span class="text-sm font-semibold">{props.right_title.clone()}</span>}}
                     actions={html!{<div class="flex shrink-0 items-center gap-1">
                         {props.header_actions.clone()}
@@ -730,19 +730,12 @@ pub(crate) fn logic_judgment_training(props: &LogicJudgmentProps) -> Html {
                 answer_test_id="ai-practice-agent-answer"
                 counts_test_id="ai-practice-agent-counts"/>
         };
-        let agent_question = html! {
-            <div class="space-y-4" data-testid="ai-practice-agent-question">
-                <div class="study-markdown whitespace-pre-wrap break-words text-base font-normal leading-8">{render_markdown(&q.question, "")}</div>
-                <div class="grid gap-2">{for review_options.iter().cloned()}</div>
-                {answer_stats.clone()}
-            </div>
-        };
         let answer_actions = html! {
             <AiPracticeHeaderControls review={practice.clone()}/>
         };
         let ai_page = practice.active.then(|| {
             html! {
-                <AiPracticeAgentPage review={practice.clone()} question={agent_question}/>
+                <AiPracticeAgentPage review={practice.clone()}/>
             }
         });
         return html! {

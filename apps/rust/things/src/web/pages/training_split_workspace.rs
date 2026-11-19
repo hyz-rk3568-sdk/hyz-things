@@ -13,7 +13,7 @@ extern "C" {
 }
 
 pub(crate) const TRAINING_PANE_HEADER: &str =
-    "relative z-30 flex min-h-12 shrink-0 items-center justify-between gap-2 px-3 py-2";
+    "training-pane-header relative z-30 flex min-h-12 shrink-0 items-center justify-between gap-2 px-3 py-2";
 
 /// Fullscreen, fixed-height workspace shell shared by Question Bank and AI
 /// practice. `training-safe-area` owns every safe-area inset and

@@ -1,5 +1,7 @@
 use super::*;
 
+mod ai_composer;
+mod ai_reply;
 mod ai_review_panel;
 mod app_shell;
 mod countdown_card;
@@ -10,11 +12,14 @@ mod pwa_controls;
 mod question_collection_browser;
 mod question_collection_row;
 mod question_header_actions;
+mod question_review;
 mod section_card;
 mod states;
 mod status_badge;
 mod tool_execution;
 
+pub(crate) use ai_composer::*;
+pub(crate) use ai_reply::*;
 pub(crate) use ai_review_panel::*;
 pub(crate) use app_shell::*;
 pub(crate) use countdown_card::*;
@@ -25,6 +30,7 @@ pub(crate) use pwa_controls::*;
 pub(crate) use question_collection_browser::*;
 pub(crate) use question_collection_row::*;
 pub(crate) use question_header_actions::*;
+pub(crate) use question_review::*;
 pub(crate) use section_card::*;
 pub(crate) use states::*;
 pub(crate) use status_badge::*;

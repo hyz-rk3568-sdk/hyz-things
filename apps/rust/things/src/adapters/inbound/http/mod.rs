@@ -1200,7 +1200,12 @@ fn app_with_assets(
         )
         .route(
             "/api/v1/study/ai-practice/agent",
-            on(MethodFilter::GET, ai_practice::agent_state),
+            on(MethodFilter::GET, ai_practice::agent_state)
+                .on(MethodFilter::DELETE, ai_practice::agent_delete),
+        )
+        .route(
+            "/api/v1/study/ai-practice/agent/events",
+            on(MethodFilter::GET, ai_practice::agent_events),
         )
         .route(
             "/api/v1/study/ai-practice/agent/messages",
@@ -3205,7 +3210,8 @@ async fn security_headers(request: Request, next: Next) -> Response {
         || request.method() == Method::POST && is_post_path(path)
         || request.method() == Method::DELETE
             && (is_question_bank_ai_path(path, false)
-                || is_question_bank_flashcard_card_path(path))
+                || is_question_bank_flashcard_card_path(path)
+                || path == "/api/v1/study/ai-practice/agent")
         || request.method() == Method::PUT && is_question_bank_flashcard_card_path(path);
     let reject_api_method = !allowed && path.starts_with("/api/");
     let mut response = if reject_api_method {

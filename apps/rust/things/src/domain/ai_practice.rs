@@ -28,9 +28,21 @@ impl AiPracticeQuestionId {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct AiPracticeTool {
+    pub name: String,
+    pub status: String,
+    #[serde(default)]
+    pub detail: String,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct AiPracticeMessage {
     pub role: String,
     pub content: String,
+    /// Tool executions stay in message order so the transcript shows what the
+    /// agent ran before each answer, including after a reload.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tool: Option<AiPracticeTool>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]

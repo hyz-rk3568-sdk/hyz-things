@@ -1,5 +1,6 @@
-//! Shared Question Bank / 申论 AI composer and attachment picker.
-//! Preserve the Question Bank theme, focus ring, image previews and send/stop affordance.
+//! Shared AI composer and attachment picker for every review surface.
+//! Keeps the training theme, focus ring, image previews and send/stop affordance
+//! in one place so callers cannot drift in size or capability.
 use super::*;
 
 #[derive(Clone, PartialEq, Eq)]
@@ -23,20 +24,20 @@ async fn image_preview_data(file: &web_sys::File) -> Option<String> {
 }
 
 #[derive(Properties, PartialEq)]
-pub(super) struct AiImagePickerProps {
-    pub(super) endpoint: String,
-    pub(super) csrf: String,
-    pub(super) attachments: UseStateHandle<Vec<PendingImage>>,
-    pub(super) uploading: UseStateHandle<bool>,
-    pub(super) disabled: bool,
-    pub(super) testid: &'static str,
+pub(crate) struct AiImagePickerProps {
+    pub(crate) endpoint: String,
+    pub(crate) csrf: String,
+    pub(crate) attachments: UseStateHandle<Vec<PendingImage>>,
+    pub(crate) uploading: UseStateHandle<bool>,
+    pub(crate) disabled: bool,
+    pub(crate) testid: &'static str,
     #[prop_or(false)]
-    pub(super) compact: bool,
-    pub(super) children: Children,
+    pub(crate) compact: bool,
+    pub(crate) children: Children,
 }
 
 #[function_component(AiImagePicker)]
-pub(super) fn ai_image_picker(props: &AiImagePickerProps) -> Html {
+pub(crate) fn ai_image_picker(props: &AiImagePickerProps) -> Html {
     let failure = use_state(|| None::<String>);
     let upload = {
         let endpoint = props.endpoint.clone();

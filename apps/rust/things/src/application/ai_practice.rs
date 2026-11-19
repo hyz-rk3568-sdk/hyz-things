@@ -97,6 +97,8 @@ pub trait AiPracticeAgentPort: Send + Sync {
         attachments: &[String],
     ) -> Result<(), AiPracticeError>;
     async fn stop(&self, id: &AiPracticeQuestionId) -> Result<(), AiPracticeError>;
+    async fn delete(&self, id: &AiPracticeQuestionId) -> Result<(), AiPracticeError>;
+    fn subscribe(&self) -> tokio::sync::broadcast::Receiver<AiPracticeQuestionId>;
 }
 
 pub struct AiPracticeAgent {
@@ -153,6 +155,17 @@ impl AiPracticeAgent {
         }
         self.port.stop(id).await
     }
+    pub async fn delete(&self, id: &AiPracticeQuestionId) -> Result<(), AiPracticeError> {
+        if !id.is_valid() {
+            return Err(AiPracticeError::Invalid);
+        }
+        self.port.delete(id).await
+    }
+    /// SSE subscribers receive a notification after every persisted agent
+    /// change; they read the authoritative state themselves.
+    pub fn subscribe(&self) -> tokio::sync::broadcast::Receiver<AiPracticeQuestionId> {
+        self.port.subscribe()
+    }
 }
 
 #[cfg(test)]
@@ -177,6 +190,7 @@ mod agent_tests {
                 .map(|(_, content)| AiPracticeMessage {
                     role: "user".into(),
                     content: content.clone(),
+                    tool: None,
                 })
                 .collect();
             Ok(AiPracticeAgentState {
@@ -206,6 +220,13 @@ mod agent_tests {
         async fn stop(&self, _: &AiPracticeQuestionId) -> Result<(), AiPracticeError> {
             Ok(())
         }
+        async fn delete(&self, id: &AiPracticeQuestionId) -> Result<(), AiPracticeError> {
+            self.0.lock().unwrap().retain(|(key, _)| key != id);
+            Ok(())
+        }
+        fn subscribe(&self) -> tokio::sync::broadcast::Receiver<AiPracticeQuestionId> {
+            tokio::sync::broadcast::channel(1).1
+        }
     }
     #[tokio::test]
     async fn agent_messages_are_scoped_to_session_and_question() {
@@ -220,6 +241,25 @@ mod agent_tests {
         let mut other = id.clone();
         other.question = 1;
         assert!(app.state(&other).await.unwrap().messages.is_empty());
+    }
+    #[tokio::test]
+    async fn agent_delete_clears_only_the_target_thread() {
+        let app = AiPracticeAgent::new(Arc::new(Fake::default()));
+        let id = AiPracticeQuestionId {
+            module: AiPracticeModule::DataAnalysis,
+            session_id: "019a31b7-8c42-7c16-a6d1-0c1f0f34c821".into(),
+            question: 0,
+        };
+        let mut other = id.clone();
+        other.question = 1;
+        app.send(&id, "请解题", &[]).await.unwrap();
+        app.send(&other, "另一题", &[]).await.unwrap();
+        app.delete(&id).await.unwrap();
+        assert!(app.state(&id).await.unwrap().messages.is_empty());
+        assert_eq!(
+            app.state(&other).await.unwrap().messages[0].content,
+            "另一题"
+        );
     }
     #[tokio::test]
     async fn agent_accepts_an_image_without_text() {

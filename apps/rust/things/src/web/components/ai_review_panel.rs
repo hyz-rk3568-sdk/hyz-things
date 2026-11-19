@@ -7,7 +7,8 @@ use yew::prelude::*;
 pub(crate) struct AiReviewPanelProps {
     pub section_test_id: &'static str,
     pub messages_test_id: &'static str,
-    pub question_test_id: &'static str,
+    #[prop_or_default]
+    pub question_test_id: Option<AttrValue>,
     pub status_test_id: &'static str,
     #[prop_or_default]
     pub section_ref: NodeRef,
@@ -15,7 +16,8 @@ pub(crate) struct AiReviewPanelProps {
     pub messages_ref: NodeRef,
     #[prop_or_default]
     pub on_messages_scroll: Callback<Event>,
-    pub question: Html,
+    #[prop_or_default]
+    pub question: Option<Html>,
     pub title: AttrValue,
     pub status: AttrValue,
     #[prop_or_default]
@@ -32,7 +34,9 @@ pub(crate) fn ai_review_panel(props: &AiReviewPanelProps) -> Html {
                 ref={props.messages_ref.clone()} onscroll={props.on_messages_scroll.clone()}
                 data-testid={props.messages_test_id} data-ink-pane="answer"
                 role="log" aria-label="AI 对话记录" aria-live="polite">
-                <div class="space-y-4" data-testid={props.question_test_id}>{props.question.clone()}</div>
+                if let Some(question) = props.question.clone() {
+                    <div class="space-y-4" data-testid={props.question_test_id.clone()}>{question}</div>
+                }
                 <div class="flex items-center justify-between gap-2">
                     <strong>{props.title.clone()}</strong>
                     <span class="text-xs text-base-content/60" data-testid={props.status_test_id}>{props.status.clone()}</span>

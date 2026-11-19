@@ -393,6 +393,19 @@ impl AiReviewTurn for FixturePracticeTurn {
                 .map_err(|_| "fixture cancellation channel closed")?;
             return Err("fixture stopped".into());
         }
+        sink(AiReviewProgress::ToolStarted {
+            item_id: "fixture-tool".into(),
+            tool: "command".into(),
+            details: serde_json::json!({"command":"rg 卡片 --files"}),
+        })
+        .await?;
+        sink(AiReviewProgress::ToolFinished {
+            item_id: "fixture-tool".into(),
+            tool: "command".into(),
+            status: "completed".into(),
+            details: serde_json::json!({}),
+        })
+        .await?;
         sink(AiReviewProgress::TextDelta {
             item_id: "fixture-message".into(),
             text: "按当前方法卡求解。".into(),

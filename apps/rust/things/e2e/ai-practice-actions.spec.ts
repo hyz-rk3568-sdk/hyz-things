@@ -28,18 +28,27 @@ for (const [prefix, mode, endpoint, module] of [
     });
     await page.route('**/api/v1/study/ai-practice/agent**', async route => {
       const url = new URL(route.request().url());
+      const id = { module:url.searchParams.get('module'), session_id:url.searchParams.get('session_id'), question:Number(url.searchParams.get('question')) };
+      if (url.pathname.endsWith('/events')) {
+        // Exercise the polling fallback; the dedicated storage spec covers SSE.
+        return route.fulfill({status:204});
+      }
+      if (route.request().method() === 'DELETE') {
+        conversations.delete(key(id));
+        return route.fulfill({json:{deleted:true}});
+      }
       if (url.pathname.endsWith('/attachments')) {
         uploads.push(route.request().headers()['content-type']);
         return route.fulfill({json:{id:'attachment-1'}});
       }
       if (route.request().method() === 'GET') {
-        const id = { module:url.searchParams.get('module'), session_id:url.searchParams.get('session_id'), question:Number(url.searchParams.get('question')) };
-        return route.fulfill({json:{status:'complete',messages:conversations.get(key(id)) ?? [],partial:'',error:null}});
+        const messages = conversations.get(key(id));
+        return route.fulfill({json:{status:messages?'complete':'idle',messages:messages ?? [],partial:'',error:null}});
       }
-      const {id, message} = route.request().postDataJSON();
+      const body = route.request().postDataJSON();
       if (url.pathname.endsWith('/messages')) {
-        sentMessages.push(route.request().postDataJSON());
-        conversations.set(key(id), [...(conversations.get(key(id)) ?? []), {role:'user',content:message}, {role:'assistant',content:'按关联方法卡解题'}]);
+        sentMessages.push(body);
+        conversations.set(key(body.id), [...(conversations.get(key(body.id)) ?? []), {role:'user',content:body.message}, {role:'assistant',content:'',tool:{name:'command',status:'completed',detail:'rg 卡片'}}, {role:'assistant',content:'按关联方法卡解题'}]);
       }
       return route.fulfill({json:{accepted:true}});
     });
@@ -75,9 +84,24 @@ for (const [prefix, mode, endpoint, module] of [
     await expect(tab).toHaveAttribute('aria-pressed','true');
     await expect(page.getByTestId('ai-practice-agent-page')).toBeVisible();
     await expect(page.getByTestId('ai-practice-agent-dialog')).toHaveCount(0);
+    await expect(page.getByTestId('ai-practice-agent-question')).toHaveCount(0);
+    // The AI panel renders only the conversation; the question belongs to the panes.
+    await expect(page.getByTestId('ai-practice-agent-page').getByText('题目 1',{exact:true})).toHaveCount(0);
+    for (const header of prefix === 'analysis'
+      ? ['analysis-material-header','analysis-answer-header']
+      : [`${prefix}-question-header`,`${prefix}-answer-header`]) {
+      await expect(page.getByTestId(header)).toHaveCSS('border-bottom-width','1px');
+    }
     await page.getByTestId('ai-practice-agent-input-field').fill('请按方法卡讲解');
     await page.getByTestId('ai-practice-agent-send').click();
     await expect(page.getByTestId('ai-practice-agent-page')).toContainText('请按方法卡讲解');
+    await expect(page.getByTestId('ai-practice-agent-tool').first()).toContainText('工具 · command');
+    await expect(page.getByTestId('ai-practice-agent-tool').first()).toContainText('rg 卡片');
+    await expect(page.getByTestId('ai-practice-agent-tool').first()).toContainText('完成');
+    const finalReply = page.getByTestId('ai-practice-agent-page').locator('div.study-markdown[data-ai-diagram-source="true"]').last();
+    await expect(finalReply).toContainText('按关联方法卡解题');
+    await expect(finalReply).toHaveClass(/study-markdown/);
+    await expect(finalReply).toHaveClass(/text-base/);
     await expect(page.getByTestId('ai-practice-agent-page')).toContainText('按关联方法卡解题');
     await page.getByTestId('ai-practice-agent-input-field').fill('为什么这样计算？');
     await page.getByTestId('ai-practice-agent-send').click();
@@ -126,5 +150,12 @@ for (const [prefix, mode, endpoint, module] of [
     await page.getByTestId('ai-practice-favorite').click();
     await expect.poll(()=>favorites.length).toBe(1);
     expect(favorites[0].question).toBe(1);
+    await page.getByTestId('ai-practice-agent-more').click();
+    await page.getByTestId('ai-practice-agent-delete').click();
+    await expect(page.getByTestId('ai-practice-agent-delete-dialog')).toBeVisible();
+    await page.getByTestId('ai-practice-agent-delete-confirm').click();
+    await expect(page.getByTestId('ai-practice-agent-delete-dialog')).toHaveCount(0);
+    await expect(page.getByTestId('ai-practice-agent-page')).not.toContainText('为什么这样计算？');
+    await expect(page.getByTestId('ai-practice-agent-status')).toHaveText('未生成');
   });
 }

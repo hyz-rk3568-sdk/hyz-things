@@ -225,3 +225,140 @@ pub(super) async fn agent_stop(
         Err(error) => failure(error),
     }
 }
+
+pub(super) async fn agent_delete(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    service: Agent,
+    query: Result<
+        axum::extract::Query<AiPracticeQuestionId>,
+        axum::extract::rejection::QueryRejection,
+    >,
+) -> Response {
+    if let Err(response) = authorize_sensitive_control(&state, &headers).await {
+        return response;
+    }
+    let Ok(axum::extract::Query(id)) = query else {
+        return failure(AiPracticeError::Invalid);
+    };
+    let Some(Extension(service)) = service else {
+        return failure(AiPracticeError::Unavailable);
+    };
+    match service.delete(&id).await {
+        Ok(()) => Json(serde_json::json!({"deleted":true})).into_response(),
+        Err(error) => failure(error),
+    }
+}
+
+struct AgentEventConnection {
+    state: AppState,
+    headers: HeaderMap,
+    service: Arc<crate::application::ai_practice::AiPracticeAgent>,
+    id: AiPracticeQuestionId,
+    receiver: tokio::sync::broadcast::Receiver<AiPracticeQuestionId>,
+    snapshot: Option<crate::domain::ai_practice::AiPracticeAgentState>,
+    last_emit: std::time::Instant,
+    next_authorization: tokio::time::Instant,
+}
+
+pub(super) async fn agent_events(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    service: Agent,
+    query: Result<
+        axum::extract::Query<AiPracticeQuestionId>,
+        axum::extract::rejection::QueryRejection,
+    >,
+) -> Response {
+    if let Err(response) = authorize_sensitive_read(&state, &headers).await {
+        return response;
+    }
+    let Ok(axum::extract::Query(id)) = query else {
+        return failure(AiPracticeError::Invalid);
+    };
+    let Some(Extension(service)) = service else {
+        return failure(AiPracticeError::Unavailable);
+    };
+    let snapshot = match service.state(&id).await {
+        Ok(value) => value,
+        Err(error) => return failure(error),
+    };
+    let receiver = service.subscribe();
+    let connection = AgentEventConnection {
+        state,
+        headers,
+        service,
+        receiver,
+        id,
+        snapshot: Some(snapshot),
+        last_emit: std::time::Instant::now() - std::time::Duration::from_millis(200),
+        next_authorization: tokio::time::Instant::now() + std::time::Duration::from_secs(2),
+    };
+    let stream = futures_util::stream::unfold(connection, |mut connection| async move {
+        loop {
+            if let Some(snapshot) = connection.snapshot.take() {
+                let data = serde_json::to_string(&snapshot).ok()?;
+                return Some((
+                    Ok::<_, std::convert::Infallible>(
+                        axum::response::sse::Event::default().data(data),
+                    ),
+                    connection,
+                ));
+            }
+            let received = tokio::select! {
+                value = connection.receiver.recv() => Some(value),
+                _ = tokio::time::sleep_until(connection.next_authorization) => {
+                    if authorize_sensitive_read(&connection.state, &connection.headers)
+                        .await
+                        .is_err()
+                    {
+                        return None;
+                    }
+                    connection.next_authorization =
+                        tokio::time::Instant::now() + std::time::Duration::from_secs(2);
+                    continue;
+                }
+            };
+            match received {
+                Some(Ok(changed)) if changed != connection.id => continue,
+                Some(Err(tokio::sync::broadcast::error::RecvError::Closed)) => return None,
+                Some(Ok(_)) | Some(Err(tokio::sync::broadcast::error::RecvError::Lagged(_))) => {
+                    let mut snapshot = connection.service.state(&connection.id).await.ok()?;
+                    if snapshot.status == "running" {
+                        let window = std::time::Duration::from_millis(100);
+                        let elapsed = connection.last_emit.elapsed();
+                        if elapsed < window {
+                            // Coalesce rapid deltas, then re-read so the emitted
+                            // snapshot includes every delta produced meanwhile.
+                            tokio::time::sleep(window - elapsed).await;
+                            snapshot = connection.service.state(&connection.id).await.ok()?;
+                        }
+                    }
+                    connection.last_emit = std::time::Instant::now();
+                    let data = serde_json::to_string(&snapshot).ok()?;
+                    return Some((
+                        Ok(axum::response::sse::Event::default().data(data)),
+                        connection,
+                    ));
+                }
+                None => return None,
+            }
+        }
+    });
+    let mut response = axum::response::sse::Sse::new(stream)
+        .keep_alive(
+            axum::response::sse::KeepAlive::new()
+                .interval(std::time::Duration::from_secs(15))
+                .text("keepalive"),
+        )
+        .into_response();
+    response.headers_mut().insert(
+        axum::http::header::CACHE_CONTROL,
+        axum::http::HeaderValue::from_static("no-store"),
+    );
+    response.headers_mut().insert(
+        "x-accel-buffering",
+        axum::http::HeaderValue::from_static("no"),
+    );
+    response
+}

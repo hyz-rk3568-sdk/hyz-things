@@ -78,6 +78,11 @@ nav.tabs > button.tab:not(.tab-active) {
     }
   }
 
+  /* Every pane header owns the same divider, whether it belongs to Question
+     Bank or AI practice. */
+  .training-pane-header {
+    border-bottom: 1px solid color-mix(in srgb, var(--color-base-content) 8%, transparent);
+  }
   .analysis-header,
   .analysis-header > div {
     flex-wrap: wrap;

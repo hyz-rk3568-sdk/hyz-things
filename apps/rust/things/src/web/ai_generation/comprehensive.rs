@@ -1028,23 +1028,12 @@ pub(crate) fn comprehensive_training(props: &ComprehensiveProps) -> Html {
                 progress.set(None);
             })
         };
-        let agent_question = html! {
-            <div class="space-y-4" data-testid="ai-practice-agent-question">
-                <div class="flex items-center justify-between gap-2 text-xs text-base-content/60">
-                    <span>{format!("本材料第 {}/5 题 · {}",local_index+1,q.skill)}</span>
-                    <span>{grade}</span>
-                </div>
-                <h2 class="text-base font-normal leading-8">{q.question.clone()}</h2>
-                <div class="grid gap-2">{for review_options.iter().cloned()}</div>
-                {answer_stats.clone()}
-            </div>
-        };
         let answer_actions = html! {
             <AiPracticeHeaderControls review={practice.clone()}/>
         };
         let ai_page = practice.active.then(|| {
             html! {
-                <AiPracticeAgentPage review={practice.clone()} question={agent_question}/>
+                <AiPracticeAgentPage review={practice.clone()}/>
             }
         });
         return html! {

@@ -972,9 +972,9 @@ pub(crate) fn question_ai_review(props: &QuestionAiReviewProps) -> Html {
     html! {
         <AiReviewPanel
             section_test_id="question-bank-ai-review" messages_test_id="question-bank-ai-messages"
-            question_test_id="question-bank-ai-question-content" status_test_id="question-bank-ai-status"
+            question_test_id={Some(AttrValue::from("question-bank-ai-question-content"))} status_test_id="question-bank-ai-status"
             section_ref={diagram_root} messages_ref={messages_ref} on_messages_scroll={on_messages_scroll}
-            question={props.question_content.clone()}
+            question={Some(props.question_content.clone())}
             title={if props.mode=="grade" {"AI 批改与追问"} else {"AI 解析与追问"}}
             status={status_label} composer={composer}>
             if *disconnected {

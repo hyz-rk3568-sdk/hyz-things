@@ -32,6 +32,8 @@ pub(crate) struct AiPracticeReview {
     pub draft: String,
     pub csrf: String,
     pub attachments_endpoint: String,
+    pub delete_endpoint: String,
+    pub can_delete: bool,
     pub attachments: UseStateHandle<Vec<PendingImage>>,
     pub uploading: UseStateHandle<bool>,
     pub on_favorite: Callback<MouseEvent>,
@@ -41,6 +43,7 @@ pub(crate) struct AiPracticeReview {
     pub on_send: Callback<MouseEvent>,
     pub on_stop: Callback<MouseEvent>,
     pub on_keydown: Callback<KeyboardEvent>,
+    pub on_deleted: Callback<()>,
 }
 
 #[hook]
@@ -59,6 +62,7 @@ pub(crate) fn use_ai_practice_review(
     let attachments = use_state(Vec::<PendingImage>::new);
     let uploading = use_state(|| false);
     let revision = use_state(|| 0_u64);
+    let stream_connected = use_state(|| false);
     {
         let favorite = favorite.clone();
         let favorite_error = favorite_error.clone();
@@ -110,10 +114,76 @@ pub(crate) fn use_ai_practice_review(
             id.question
         )
     });
-    let polling = agent
-        .as_ref()
-        .as_ref()
-        .is_none_or(|state| state.status == "running");
+    let events_endpoint = id.as_ref().map(|id| {
+        format!(
+            "{AGENT}/events?module={}&session_id={}&question={}",
+            module_key(id.module),
+            id.session_id,
+            id.question
+        )
+    });
+    {
+        let agent = agent.clone();
+        let agent_error = agent_error.clone();
+        let connected = stream_connected.clone();
+        use_effect_with(
+            (id.clone(), events_endpoint.clone(), *active),
+            move |(_, endpoint, active)| {
+                let alive = Rc::new(Cell::new(true));
+                connected.set(false);
+                let source = if *active {
+                    endpoint.as_ref().and_then(|endpoint| {
+                        web_sys::EventSource::new(endpoint).ok().map(|stream| {
+                            let onmessage = {
+                                let agent = agent.clone();
+                                let agent_error = agent_error.clone();
+                                let connected = connected.clone();
+                                let alive = alive.clone();
+                                Closure::wrap(Box::new(move |event: web_sys::MessageEvent| {
+                                    let Some(data) = event.data().as_string() else {
+                                        return;
+                                    };
+                                    let Ok(value) =
+                                        serde_json::from_str::<AiPracticeAgentState>(&data)
+                                    else {
+                                        return;
+                                    };
+                                    if !alive.get() {
+                                        return;
+                                    }
+                                    connected.set(true);
+                                    agent_error.set(None);
+                                    agent.set(Some(value));
+                                })
+                                    as Box<dyn FnMut(_)>)
+                            };
+                            stream.set_onmessage(Some(onmessage.as_ref().unchecked_ref()));
+                            let onerror = {
+                                let connected = connected.clone();
+                                Closure::wrap(Box::new(move |_: Event| connected.set(false))
+                                    as Box<dyn FnMut(_)>)
+                            };
+                            stream.set_onerror(Some(onerror.as_ref().unchecked_ref()));
+                            (stream, onmessage, onerror)
+                        })
+                    })
+                } else {
+                    None
+                };
+                move || {
+                    alive.set(false);
+                    if let Some((stream, _, _)) = source {
+                        stream.close();
+                    }
+                }
+            },
+        );
+    }
+    let polling = !*stream_connected
+        && agent
+            .as_ref()
+            .as_ref()
+            .is_none_or(|state| state.status == "running");
     {
         let agent = agent.clone();
         let agent_error = agent_error.clone();
@@ -318,6 +388,20 @@ pub(crate) fn use_ai_practice_review(
             send.emit(());
         })
     };
+    let on_deleted = {
+        let agent = agent.clone();
+        let agent_error = agent_error.clone();
+        let draft = draft.clone();
+        let attachments = attachments.clone();
+        let revision = revision.clone();
+        Callback::from(move |_| {
+            agent.set(None);
+            agent_error.set(None);
+            draft.set(String::new());
+            attachments.set(Vec::new());
+            revision.set(revision.wrapping_add(1));
+        })
+    };
     let state = (*agent).as_ref();
     let status = state.map(|state| state.status.clone()).unwrap_or_else(|| {
         if *active {
@@ -326,14 +410,16 @@ pub(crate) fn use_ai_practice_review(
             "idle".to_owned()
         }
     });
+    let messages = state
+        .map(|state| state.messages.clone())
+        .unwrap_or_default();
+    let can_delete = !messages.is_empty() && status != "running";
     AiPracticeReview {
         favorite: *favorite,
         favorite_busy: *favorite_busy,
         active: *active,
         status,
-        messages: state
-            .map(|state| state.messages.clone())
-            .unwrap_or_default(),
+        messages,
         partial: state.map(|state| state.partial.clone()).unwrap_or_default(),
         favorite_error: (*favorite_error).clone(),
         agent_error: (*agent_error)
@@ -343,6 +429,8 @@ pub(crate) fn use_ai_practice_review(
         draft: (*draft).clone(),
         csrf,
         attachments_endpoint: attachments_endpoint.unwrap_or_default(),
+        delete_endpoint: endpoint.clone().unwrap_or_default(),
+        can_delete,
         attachments,
         uploading,
         on_favorite: toggle_favorite,
@@ -352,6 +440,7 @@ pub(crate) fn use_ai_practice_review(
         on_send,
         on_stop,
         on_keydown,
+        on_deleted,
     }
 }
 
@@ -368,29 +457,101 @@ pub(crate) fn ai_practice_header_controls(props: &AiPracticeHeaderControlsProps)
     } else {
         "收藏题目"
     };
-    html! {
-        <div class="flex shrink-0 items-center gap-0" role="group" aria-label="AI 解析与收藏">
-            <QuestionHeaderActions favorite={review.favorite} favorite_busy={review.favorite_busy}
-                favorite_label={favorite_label} favorite_test_id="ai-practice-favorite"
-                on_favorite={review.on_favorite.clone()}
-                flashcard_count={None::<usize>} flashcard_can_create={false}
-                flashcard_create_test_id="ai-practice-flashcard-create" flashcard_manage_test_id="ai-practice-flashcard-manage"
-                on_flashcard={Callback::noop()}/>
-            <QuestionAiModeTabs active={review.active}
-                original_test_id="ai-practice-answer-tab" ai_test_id="ai-practice-agent-tab"
-                original_label="答案与解析" ai_label="AI 解析与追问"
-                original={review.on_original.clone()} ai={review.on_ai.clone()}/>
-            if let Some(message) = review.favorite_error.as_ref() {
-                <span class="text-error" role="alert" title={message.clone()} aria-label={message.clone()}>{"⚠"}</span>
+    let delete_open = use_state(|| false);
+    let deleting = use_state(|| false);
+    let delete_error = use_state(|| None::<String>);
+    let request_delete = {
+        let delete_open = delete_open.clone();
+        let delete_error = delete_error.clone();
+        Callback::from(move |_| {
+            delete_error.set(None);
+            delete_open.set(true);
+        })
+    };
+    let cancel_delete = {
+        let delete_open = delete_open.clone();
+        let delete_error = delete_error.clone();
+        Callback::from(move |_| {
+            delete_open.set(false);
+            delete_error.set(None);
+        })
+    };
+    let confirm_delete = {
+        let review = props.review.clone();
+        let delete_open = delete_open.clone();
+        let deleting = deleting.clone();
+        let delete_error = delete_error.clone();
+        Callback::from(move |_| {
+            if *deleting {
+                return;
             }
-        </div>
+            let endpoint = review.delete_endpoint.clone();
+            let csrf = review.csrf.clone();
+            let on_deleted = review.on_deleted.clone();
+            let delete_open = delete_open.clone();
+            let deleting = deleting.clone();
+            let delete_error = delete_error.clone();
+            deleting.set(true);
+            delete_error.set(None);
+            spawn_local(async move {
+                match delete_json_response::<serde_json::Value>(&endpoint, &csrf, "AI 会话").await
+                {
+                    Ok(_) => {
+                        delete_open.set(false);
+                        on_deleted.emit(());
+                    }
+                    Err(message) => delete_error.set(Some(message)),
+                }
+                deleting.set(false);
+            });
+        })
+    };
+    html! {
+        <>
+            <div class="flex shrink-0 items-center gap-0" role="group" aria-label="AI 解析与收藏">
+                <QuestionHeaderActions favorite={review.favorite} favorite_busy={review.favorite_busy}
+                    favorite_label={favorite_label} favorite_test_id="ai-practice-favorite"
+                    on_favorite={review.on_favorite.clone()}
+                    flashcard_count={None::<usize>} flashcard_can_create={false}
+                    flashcard_create_test_id="ai-practice-flashcard-create" flashcard_manage_test_id="ai-practice-flashcard-manage"
+                    on_flashcard={Callback::noop()}/>
+                <QuestionAiModeTabs active={review.active}
+                    original_test_id="ai-practice-answer-tab" ai_test_id="ai-practice-agent-tab"
+                    original_label="答案与解析" ai_label="AI 解析与追问"
+                    original={review.on_original.clone()} ai={review.on_ai.clone()}/>
+                <QuestionAiMoreMenu can_delete={review.can_delete} delete={request_delete}
+                    reset_key={review.status.clone()}
+                    button_test_id="ai-practice-agent-more" delete_test_id="ai-practice-agent-delete"
+                    button_label="更多 AI 操作" delete_label="删除 AI 会话"/>
+                if let Some(message) = review.favorite_error.as_ref() {
+                    <span class="text-error" role="alert" title={message.clone()} aria-label={message.clone()}>{"⚠"}</span>
+                }
+            </div>
+            if *delete_open {
+                <div class="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 p-4"
+                    role="dialog" aria-modal="true" aria-label="确认删除 AI 会话"
+                    data-testid="ai-practice-agent-delete-dialog">
+                    <div class="w-full max-w-sm space-y-4 rounded-box bg-base-100 p-5 shadow-xl">
+                        <p>{"确定删除这道题的 AI 会话和全部追问吗？"}</p>
+                        if let Some(error) = delete_error.as_ref() {
+                            <p class="text-sm text-error" role="alert" data-testid="ai-practice-agent-delete-error">{error.clone()}</p>
+                        }
+                        <div class="flex justify-end gap-2">
+                            <button type="button" class="btn btn-ghost btn-sm" data-testid="ai-practice-agent-delete-cancel"
+                                disabled={*deleting} onclick={cancel_delete}>{"取消"}</button>
+                            <button type="button" class="btn btn-error btn-sm" data-testid="ai-practice-agent-delete-confirm"
+                                disabled={*deleting} onclick={confirm_delete}>{"确认删除"}</button>
+                        </div>
+                    </div>
+                </div>
+            }
+        </>
     }
 }
 
 #[derive(Properties, PartialEq)]
 pub(crate) struct AiPracticeAgentPageProps {
     pub review: AiPracticeReview,
-    pub question: Html,
 }
 
 #[function_component(AiPracticeAgentPage)]
@@ -452,8 +613,8 @@ pub(crate) fn ai_practice_agent_page(props: &AiPracticeAgentPageProps) -> Html {
     };
     html! {
         <AiReviewPanel section_test_id="ai-practice-agent-page" messages_test_id="ai-practice-agent-messages"
-            question_test_id="ai-practice-agent-question" status_test_id="ai-practice-agent-status"
-            messages_ref={scroller} question={props.question.clone()}
+            status_test_id="ai-practice-agent-status"
+            messages_ref={scroller}
             title="AI 解析与追问" status={status} composer={composer}>
             if let Some(message) = review.agent_error.as_ref() {
                 <p class="text-sm text-error" role="alert">{message.clone()}</p>
@@ -461,15 +622,30 @@ pub(crate) fn ai_practice_agent_page(props: &AiPracticeAgentPageProps) -> Html {
             if !has_messages && !running && review.agent_error.is_none() {
                 <p class="text-sm text-base-content/60">{"AI 根据原题、相关给定材料和你的要求进行解析，来源参考答案仅作参考。"}</p>
             }
-            {for review.messages.iter().map(|message| html! {
-                <div class={if message.role == "user" {"rounded-xl bg-primary/10 p-3"} else {"py-2"}}>
-                    <div class="mb-2 text-xs font-semibold text-base-content/60">{if message.role == "user" {"你的追问"} else {"AI 解析"}}</div>
-                    if message.role == "assistant" {
-                        <AiReply content={message.content.clone()}/>
-                    } else {
-                        <div class="study-markdown">{render_question_bank_markdown(&message.content)}</div>
+            {for review.messages.iter().map(|message| {
+                if let Some(tool) = message.tool.as_ref() {
+                    html! {
+                        <div class="flex min-w-0 items-center gap-2 rounded-lg bg-base-content/5 px-2 py-1 text-xs text-base-content/60"
+                            data-testid="ai-practice-agent-tool">
+                            <span class="shrink-0 font-semibold text-base-content/70">{format!("工具 · {}", tool.name)}</span>
+                            if !tool.detail.is_empty() {
+                                <code class="min-w-0 truncate font-mono text-[11px]">{tool.detail.clone()}</code>
+                            }
+                            <span class="ml-auto shrink-0">{tool_status_label(&tool.status)}</span>
+                        </div>
                     }
-                </div>
+                } else {
+                    html! {
+                        <div class={if message.role == "user" {"rounded-xl bg-primary/10 p-3"} else {"py-2"}}>
+                            <div class="mb-2 text-xs font-semibold text-base-content/60">{if message.role == "user" {"你的追问"} else {"AI 解析"}}</div>
+                            if message.role == "assistant" {
+                                <AiReply content={message.content.clone()}/>
+                            } else {
+                                <div class="study-markdown">{render_question_bank_markdown(&message.content)}</div>
+                            }
+                        </div>
+                    }
+                }
             })}
             if !review.partial.is_empty() {
                 <div class="py-2" data-testid="ai-practice-agent-stream">
@@ -755,5 +931,15 @@ pub(crate) fn ai_practice_favorites_page(props: &AiPracticeFavoritesPageProps) -
             })}>
             <div class="space-y-3" data-testid="ai-practice-favorites-page-content">{body}</div>
         </TrainingSetupLayout>
+    }
+}
+
+fn tool_status_label(status: &str) -> &'static str {
+    match status {
+        "running" => "调用中",
+        "complete" | "completed" => "完成",
+        "failed" => "失败",
+        "stopped" => "已停止",
+        _ => "已调用",
     }
 }
