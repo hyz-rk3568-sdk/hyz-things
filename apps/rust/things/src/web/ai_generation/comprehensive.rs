@@ -65,7 +65,7 @@ fn analysis_panes(props: &AnalysisPanesProps) -> Html {
             left={html! {
                 <article class="flex min-h-0 min-w-0 flex-col overflow-hidden rounded-box bg-base-100" data-testid="analysis-material">
                 <TrainingPaneHeader test_id="analysis-material-header"
-                    title={html!{<div class="min-w-0 text-sm font-semibold">{props.material.topic.clone()}</div>}}
+                    title={html!{<div class="min-w-0 truncate text-sm font-semibold">{props.material.topic.clone()}</div>}}
                     scroll={if scratchpad_open {html!{
                         <div class="relative z-30 flex shrink-0 gap-1" role="group" aria-label="材料滚动">
                             <MaterialScrollButton passage={passage.clone()} up={true} disabled={!scroll_state.can_scroll_up} question_index={props.question_index} />
@@ -80,9 +80,11 @@ fn analysis_panes(props: &AnalysisPanesProps) -> Html {
             right={html! {
                 <section class="flex min-h-0 min-w-0 flex-col overflow-hidden rounded-box bg-base-100" data-testid="analysis-answer-pane">
                     <TrainingPaneHeader test_id="analysis-answer-header" wrap={true} ink={true}
-                        title={html!{<span class="text-sm font-semibold">{props.right_title.clone()}</span>}}
+                        title={html!{<span class="block min-w-0 truncate text-sm font-semibold">{props.right_title.clone()}</span>}}
                         actions={html!{<div class="flex shrink-0 items-center gap-1">
-                            {props.header_actions.clone()}
+                            if !scratchpad_open {
+                                {props.header_actions.clone()}
+                            }
                             if scratchpad_open && props.ai_page.is_none() {
                                 <div class="flex gap-1" role="group" aria-label="题目滚动">
                                     <MaterialScrollButton passage={question_scroll.clone()} up={true} disabled={!question_edges.can_scroll_up} question_index={props.question_index} target="题目" />

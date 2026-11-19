@@ -48,7 +48,7 @@ for (const [prefix, mode, endpoint, module] of [
       const body = route.request().postDataJSON();
       if (url.pathname.endsWith('/messages')) {
         sentMessages.push(body);
-        conversations.set(key(body.id), [...(conversations.get(key(body.id)) ?? []), {role:'user',content:body.message}, {role:'assistant',content:'',tool:{name:'command',status:'completed',detail:'rg 卡片'}}, {role:'assistant',content:'按关联方法卡解题。\n\n**关键条件： **三种方式走的是同一段路程。\n\n$$\n\\binom{9}{2}=36\n$$'}]);
+        conversations.set(key(body.id), [...(conversations.get(key(body.id)) ?? []), {role:'user',content:body.message}, {role:'assistant',content:'',tool:{name:'command',status:'completed',detail:'rg 卡片'}}, {role:'assistant',content:'按关联方法卡解题。\n\n**关键条件： **三种方式走的是同一段路程。\n\n$$\n\\binom{9}{2}=36\n$$\n\n```svg\n<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><rect x="10" y="10" width="80" height="80" fill="none" stroke="#333"/></svg>\n```'}]);
       }
       return route.fulfill({json:{accepted:true}});
     });
@@ -118,6 +118,7 @@ for (const [prefix, mode, endpoint, module] of [
     await expect(finalReply.locator('strong')).toHaveText('关键条件');
     await expect(finalReply).not.toContainText('**关键条件');
     await expect(finalReply.locator('.katex').first()).toBeVisible();
+    await expect(finalReply.locator('img[data-testid="question-bank-ai-diagram"]')).toBeVisible();
     await expect(page.getByTestId('ai-practice-agent-page')).toContainText('按关联方法卡解题');
     await page.getByTestId('ai-practice-agent-input-field').fill('为什么这样计算？');
     await page.getByTestId('ai-practice-agent-send').click();
@@ -197,5 +198,13 @@ for (const [prefix, mode, endpoint, module] of [
       target.dispatchEvent(event('pointerup', x - 140));
     }, {x: messages!.x + messages!.width / 2, y: messages!.y + messages!.height / 2});
     await expect(answerHeader).toContainText('第 3/');
+    await page.setViewportSize({width:834,height:1112});
+    const headerBeforeScratch = await answerHeader.boundingBox();
+    await page.getByTestId('calculation-scratchpad-toggle').click();
+    await expect(page.getByTestId('calculation-scratchpad-toolbar')).toBeVisible();
+    const headerDuringScratch = await answerHeader.boundingBox();
+    expect(Math.abs(headerDuringScratch!.height - headerBeforeScratch!.height)).toBeLessThanOrEqual(2);
+    await page.getByTestId('calculation-scratchpad-toggle').click();
+    await expect(page.getByTestId('calculation-scratchpad-toolbar')).toHaveCount(0);
   });
 }

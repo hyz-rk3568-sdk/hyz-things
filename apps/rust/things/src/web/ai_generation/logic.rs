@@ -106,9 +106,11 @@ fn logic_scroll_pane(props: &LogicScrollPaneProps) -> Html {
                 <section class="flex min-h-0 min-w-0 flex-col overflow-hidden rounded-box bg-base-100"
                     data-testid={format!("{prefix}-answer-pane")}>
                 <TrainingPaneHeader wrap={true} ink={true} test_id={format!("{prefix}-answer-header")}
-                    title={html!{<span class="text-sm font-semibold">{props.right_title.clone()}</span>}}
+                    title={html!{<span class="block min-w-0 truncate text-sm font-semibold">{props.right_title.clone()}</span>}}
                     actions={html!{<div class="flex shrink-0 items-center gap-1">
-                        {props.header_actions.clone()}
+                        if !scratchpad_open {
+                            {props.header_actions.clone()}
+                        }
                         if scratchpad_open && props.ai_page.is_none() {
                             <div class="flex shrink-0 gap-1" role="group" aria-label="选项滚动" data-testid={format!("{prefix}-answer-scroll-buttons")}>
                                 <MaterialScrollButton passage={answer_scroll.clone()} up={true}

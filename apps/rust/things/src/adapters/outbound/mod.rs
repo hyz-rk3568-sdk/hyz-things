@@ -25,5 +25,6 @@ pub mod question_bank_sqlite;
 pub mod shenlun_ai;
 
 pub mod ai_practice;
+mod ai_prompt;
 
 pub mod ai_practice_agent;
