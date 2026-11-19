@@ -976,7 +976,16 @@ pub(crate) fn question_ai_review(props: &QuestionAiReviewProps) -> Html {
             section_ref={diagram_root} messages_ref={messages_ref} on_messages_scroll={on_messages_scroll}
             question={Some(props.question_content.clone())}
             title={if props.mode=="grade" {"AI 批改与追问"} else {"AI 解析与追问"}}
-            status={status_label} composer={composer}>
+            status={status_label} composer={composer}
+            overlay={html!{<AiReviewDeleteDialog
+                visible={*deleting && current.is_some()}
+                confirmation_required={*delete_confirmation_required}
+                confirm_uncertain={*confirm_delete_uncertain}
+                error={(*delete_error).clone()}
+                submitting={*submitting}
+                on_cancel={Callback::from({let deleting=deleting.clone(); move |_|deleting.set(false)})}
+                on_confirm={on_delete.clone()}
+                on_confirm_uncertain={Callback::from({let confirm_delete_uncertain=confirm_delete_uncertain.clone(); move |value: bool| confirm_delete_uncertain.set(value)})}/>}}>
             if *disconnected {
                 <p class="text-xs text-warning" role="status" data-testid="question-bank-ai-disconnected">{"连接中断，正在重新连接…"}</p>
             }
@@ -1054,15 +1063,6 @@ pub(crate) fn question_ai_review(props: &QuestionAiReviewProps) -> Html {
                     <div class="study-markdown text-base leading-7">{render_question_bank_markdown(message)}</div>
                 </div>
             }
-            <AiReviewDeleteDialog
-                visible={*deleting && current.is_some()}
-                confirmation_required={*delete_confirmation_required}
-                confirm_uncertain={*confirm_delete_uncertain}
-                error={(*delete_error).clone()}
-                submitting={*submitting}
-                on_cancel={Callback::from({let deleting=deleting.clone(); move |_|deleting.set(false)})}
-                on_confirm={on_delete.clone()}
-                on_confirm_uncertain={Callback::from({let confirm_delete_uncertain=confirm_delete_uncertain.clone(); move |value: bool| confirm_delete_uncertain.set(value)})}/>
             if can_start {
                 <p class="text-sm text-base-content/60">{if props.mode=="grade" {
                     "粘贴作答或上传手写图片。AI 先辨认原图并确认不清楚的文字，再根据原题给出 Markdown 批改报告。"

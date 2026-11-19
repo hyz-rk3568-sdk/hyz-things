@@ -333,6 +333,9 @@ test("comprehensive headers and navigation stay inside PWA safe areas at every v
   await expect(page.getByTestId("analysis-result")).toBeVisible();
   await expect(page.getByTestId("analysis-result").getByTestId("question-detail-layout")).toBeVisible();
   await expect(page.getByTestId("analysis-result").getByTestId("training-workspace-header")).toBeVisible();
+  const reviewTimer=page.getByTestId("analysis-result").getByTestId("training-workspace-header").getByTestId("analysis-review-timer");
+  await expect(reviewTimer).toBeVisible();
+  await expect(reviewTimer).toHaveText(/^\d{2}:\d{2}:\d{2}$/);
   await expect(page.getByTestId("analysis-result-correct")).toHaveAttribute("aria-label", "正确 0");
   await expect(page.getByTestId("analysis-result-wrong")).toHaveAttribute("aria-label", "错误 0");
   await expect(page.getByTestId("analysis-result-unanswered")).toHaveAttribute("aria-label", "未答 20");

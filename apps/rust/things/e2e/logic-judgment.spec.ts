@@ -59,6 +59,9 @@ test("logic judgment persists answers, recovers deadline and reviews exact-paper
   await page.getByTestId('logic-submit').click();
   await expect(page.getByTestId('logic-result').getByTestId('question-detail-layout')).toBeVisible();
   await expect(page.getByTestId('logic-result').getByTestId('training-workspace-header')).toBeVisible();
+  const reviewTimer=page.getByTestId('logic-result').getByTestId('training-workspace-header').getByTestId('logic-review-timer');
+  await expect(reviewTimer).toBeVisible();
+  await expect(reviewTimer).toHaveText(/^\d{2}:\d{2}:\d{2}$/);
   await expect(page.getByTestId('logic-result')).toContainText('1/10');
   await expect(page.getByTestId('logic-result-correct')).toHaveAttribute('aria-label', '正确 1');
   await expect(page.getByTestId('logic-result-wrong')).toHaveAttribute('aria-label', '错误 0');

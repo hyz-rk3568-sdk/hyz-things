@@ -153,6 +153,14 @@ test('deleting saved AI analysis sends a same-origin JSON request', async ({page
   await expect(page.getByTestId('question-bank-ai-message')).toContainText('待删除的 AI 解析');
   await page.getByRole('button',{name:'更多解析操作'}).click();
   await page.getByTestId('question-bank-ai-delete').click();
+  const dialog = page.getByTestId('question-bank-ai-review').getByTestId('question-bank-ai-delete-dialog');
+  await expect(dialog).toBeVisible();
+  const panelBox = await page.getByTestId('question-bank-ai-review').boundingBox();
+  const dialogBox = await dialog.boundingBox();
+  expect(dialogBox!.x).toBeGreaterThanOrEqual(panelBox!.x);
+  expect(dialogBox!.y).toBeGreaterThanOrEqual(panelBox!.y);
+  expect(dialogBox!.x + dialogBox!.width).toBeLessThanOrEqual(panelBox!.x + panelBox!.width + 0.5);
+  expect(dialogBox!.y + dialogBox!.height).toBeLessThanOrEqual(panelBox!.y + panelBox!.height + 0.5);
   const deleted = page.waitForResponse(response =>
     response.request().method() === 'DELETE' &&
     new URL(response.url()).pathname.endsWith('/ai'));

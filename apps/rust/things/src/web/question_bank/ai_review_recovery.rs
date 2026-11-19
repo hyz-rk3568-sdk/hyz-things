@@ -124,7 +124,8 @@ pub(super) fn ai_review_delete_dialog(props: &AiReviewDeleteDialogProps) -> Html
         return Html::default();
     }
     html! {
-        <div class="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 p-4" role="dialog" aria-modal="true" aria-label="确认删除 AI 解析">
+        <div class="absolute inset-0 z-20 flex items-center justify-center bg-black/40 p-4" role="dialog" aria-modal="true"
+            aria-label="确认删除 AI 解析" data-testid="question-bank-ai-delete-dialog">
             <div class="w-full max-w-sm space-y-4 rounded-box bg-base-100 p-5 shadow-xl">
                 <p>{"确定删除这道题的 AI 解析和全部追问吗？"}</p>
                 if props.confirmation_required {

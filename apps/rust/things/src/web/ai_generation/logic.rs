@@ -674,6 +674,11 @@ pub(crate) fn logic_judgment_training(props: &LogicJudgmentProps) -> Html {
     }
     if let Some(score) = result.as_ref().filter(|_| !*history_forced) {
         let index = (*current).min(score.questions.len().saturating_sub(1));
+        let review_elapsed_seconds = history
+            .iter()
+            .find(|entry| entry.id == score.id)
+            .map(|entry| entry.elapsed_ms.max(0) as u64 / 1000)
+            .unwrap_or(0);
         let q = &score.questions[index];
         let grade = if q.chosen == Some(q.correct_index) {
             "正确"
@@ -746,6 +751,10 @@ pub(crate) fn logic_judgment_training(props: &LogicJudgmentProps) -> Html {
                 actions={html! {
                     <div class="ml-auto flex flex-wrap items-center justify-end gap-2">
                         <TrainingStatusBar prefix={format!("{prefix}-result")} counts={review_status} mode={TrainingStatusMode::Review}/>
+                        <span class="btn btn-ghost px-2 font-mono text-xl font-semibold tabular-nums" role="timer"
+                            data-testid={format!("{prefix}-review-timer")} title="训练已结束">
+                            {format!("{:02}:{:02}:{:02}", review_elapsed_seconds / 3600, review_elapsed_seconds / 60 % 60, review_elapsed_seconds % 60)}
+                        </span>
                         <button class="btn btn-outline btn-sm" data-testid={format!("{prefix}-records")} onclick={show_records}>{"查看练习记录"}</button>
                         <button class="btn btn-primary btn-sm" data-testid={format!("{prefix}-retry")} disabled={*busy} onclick={invoke(LogicAction::Retry(score.id.clone()))}>{"重做原题"}</button>
                     </div>

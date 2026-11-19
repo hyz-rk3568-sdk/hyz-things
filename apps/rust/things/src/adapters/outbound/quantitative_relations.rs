@@ -232,6 +232,7 @@ pub struct HistoryEntry {
     pub answered: usize,
     pub total: usize,
     pub ended_at_ms: i64,
+    pub elapsed_ms: i64,
 }
 #[derive(Clone, Serialize)]
 pub struct CardPerformance {
@@ -835,15 +836,21 @@ impl QuantitativeRelationsService {
     }
     pub async fn history(&self) -> Result<Vec<HistoryEntry>, String> {
         self.expire_all().await?;
-        let rows=sqlx::query("SELECT run.id,run.ended_at_ms,SUM(r.is_correct) AS correct,SUM(r.was_answered) AS answered FROM quantitative_relations_runs run JOIN quantitative_relations_results r ON r.run_id=run.id WHERE run.status='submitted' GROUP BY run.id ORDER BY run.ended_at_ms DESC,run.id DESC LIMIT 100").fetch_all(&self.pool).await.map_err(error)?;
+        let rows=sqlx::query("SELECT run.id,run.started_at_ms,run.ended_at_ms,run.paused_total_ms,SUM(r.is_correct) AS correct,SUM(r.was_answered) AS answered FROM quantitative_relations_runs run JOIN quantitative_relations_results r ON r.run_id=run.id WHERE run.status='submitted' GROUP BY run.id ORDER BY run.ended_at_ms DESC,run.id DESC LIMIT 100").fetch_all(&self.pool).await.map_err(error)?;
         rows.into_iter()
             .map(|r| {
+                let ended_at_ms: i64 = r.try_get("ended_at_ms").map_err(error)?;
+                let started_at_ms: Option<i64> = r.try_get("started_at_ms").map_err(error)?;
+                let paused_total_ms: i64 = r.try_get("paused_total_ms").map_err(error)?;
                 Ok(HistoryEntry {
                     id: r.try_get("id").map_err(error)?,
                     correct: r.try_get::<i64, _>("correct").map_err(error)? as usize,
                     answered: r.try_get::<i64, _>("answered").map_err(error)? as usize,
                     total: QUIZ_QUESTIONS,
-                    ended_at_ms: r.try_get("ended_at_ms").map_err(error)?,
+                    ended_at_ms,
+                    elapsed_ms: started_at_ms
+                        .map(|started| (ended_at_ms - started - paused_total_ms).max(0))
+                        .unwrap_or(0),
                 })
             })
             .collect()

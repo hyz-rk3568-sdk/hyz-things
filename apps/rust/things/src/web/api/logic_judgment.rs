@@ -47,6 +47,8 @@ pub(crate) struct LogicHistory {
     pub answered: usize,
     pub total: usize,
     pub ended_at_ms: i64,
+    #[serde(default)]
+    pub elapsed_ms: i64,
 }
 #[derive(Serialize)]
 pub(crate) struct LogicAnswer {
