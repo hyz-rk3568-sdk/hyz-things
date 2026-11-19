@@ -4,7 +4,7 @@ import { expectNoHorizontalOverflow, resetHarness } from './fixtures';
 test.beforeEach(async ({ request }) => { await resetHarness(request); });
 
 for (const viewport of [{ width: 1180, height: 820 }, { width: 390, height: 844 }]) {
-  test(`analysis review expands its method card and handles legacy papers at ${viewport.width}px`, async ({ page }) => {
+  test(`analysis review reads current method cards by UUID at ${viewport.width}px`, async ({ page }) => {
     await page.setViewportSize(viewport);
     const now = Date.now();
     const materials = Array.from({ length: 4 }, (_, i) => ({ topic: `材料 ${i + 1}`, text: '业务量1200亿元，同比增长20%。\n\n'.repeat(30) }));
@@ -15,6 +15,10 @@ for (const viewport of [{ width: 1180, height: 820 }, { width: 390, height: 844 
       ...(i === 0 ? { related_card: { front: '基期量方法 $B=\\frac{A}{1+r}$', back: '**先判断基期**，再计算 $1200/1.2=1000$。' } } : {}),
     }));
     const writes: string[] = [];
+    await page.route('**/api/v1/study/cards/*/current', async route => {
+      if (route.request().url().includes('/card-1/')) return route.fulfill({status:404,json:{error:{message:'卡片不存在'}}});
+      return route.fulfill({json:{source_file:'资料/基期量/cards.md',front_markdown:'当前基期量方法 $B=\\frac{A}{1+r}$',back_markdown:'**先判断基期**，再计算 $1200/1.2=1000$。'}});
+    });
     await page.route('**/api/v1/study/data-analysis/**', async route => {
       const path = new URL(route.request().url()).pathname;
       if (route.request().method() !== 'GET') writes.push(path);
@@ -33,7 +37,7 @@ for (const viewport of [{ width: 1180, height: 820 }, { width: 390, height: 844 
     await expect(card).toBeVisible();
     await expect(card).not.toHaveAttribute('open', '');
     await card.locator('summary').click();
-    await expect(card).toContainText('基期量方法');
+    await expect(card).toContainText('当前基期量方法');
     await expect(card).toContainText('先判断基期');
     await expect(card.locator('.katex').first()).toBeVisible();
     await expect(card.locator('strong')).toHaveText('先判断基期');
@@ -42,7 +46,7 @@ for (const viewport of [{ width: 1180, height: 820 }, { width: 390, height: 844 
     await expect(page.getByTestId('analysis-explanation')).toHaveText('第 1 题解析');
     await page.getByRole('button', { name: '下一题', exact: true }).click();
     await card.locator('summary').click();
-    await expect(card).toContainText('此答卷未保存关联卡片内容');
+    await expect(card).toContainText('关联卡片不可用');
     await expect(card).not.toContainText('基期量方法');
     await expect(page.getByTestId('analysis-explanation')).toHaveText('第 2 题解析');
     expect(writes).toEqual([]);
@@ -55,6 +59,11 @@ for (const [prefix, mode, endpoint] of [
 ]) {
   test(`${prefix} review uses the shared method-card disclosure`, async ({ page }) => {
     const now = Date.now();
+    await page.route('**/api/v1/study/cards/*/current', async route => {
+      const id = new URL(route.request().url()).pathname.split('/').at(-2);
+      const n = Number(id?.replace('card-', '')) + 1;
+      await route.fulfill({json:{source_file:'数量/经济利润/cards.md',front_markdown:`第 ${n} 张方法卡 $A=B$`,back_markdown:'**关联卡片正文**'}});
+    });
     await page.route(`**/api/v1/study/${endpoint}/**`, async route => {
       const path = new URL(route.request().url()).pathname;
       expect(route.request().method()).toBe('GET');
@@ -66,7 +75,7 @@ for (const [prefix, mode, endpoint] of [
         id: 'shared-card', correct: 10, total: 10,
         questions: Array.from({ length: 10 }, (_, i) => ({
           question: `第 ${i + 1} 题`, options: ['甲', '乙', '丙', '丁'], chosen: 0, correct_index: 0,
-          explanation: '解析', card_path: '数量/经济利润/cards.md',
+          explanation: '解析', card_id: `card-${i}`, card_path: '数量/经济利润/cards.md',
           front: `第 ${i + 1} 张方法卡 $A=B$`, back: '**关联卡片正文**',
         })),
       };

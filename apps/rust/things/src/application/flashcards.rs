@@ -7,9 +7,9 @@ use tokio::sync::Semaphore;
 use crate::{
     application::ports::ClockPort,
     domain::flashcards::{
-        DeckSummary, FlashcardFilter, FlashcardId, FlashcardSummary, ReviewLog, ReviewOutcome,
-        ReviewRating, ReviewState, ReviewStateKind, ReviewTarget, SourceSnapshot, StudySummary,
-        SyncSummary, TagSummary,
+        CurrentFlashcard, DeckSummary, FlashcardFilter, FlashcardId, FlashcardSummary, ReviewLog,
+        ReviewOutcome, ReviewRating, ReviewState, ReviewStateKind, ReviewTarget, SourceSnapshot,
+        StudySummary, SyncSummary, TagSummary,
     },
 };
 
@@ -60,6 +60,14 @@ impl std::error::Error for FlashcardError {}
 #[async_trait]
 pub trait FlashcardSourcePort: Send + Sync {
     async fn scan(&self) -> Result<SourceSnapshot, FlashcardError>;
+    async fn current_card(
+        &self,
+        _id: &FlashcardId,
+    ) -> Result<Option<CurrentFlashcard>, FlashcardError> {
+        Err(FlashcardError::SourceUnavailable(
+            "current card lookup unavailable".into(),
+        ))
+    }
 }
 
 #[async_trait]
@@ -127,6 +135,13 @@ impl FlashcardApplication {
             clock,
             sync_gate: Arc::new(Semaphore::new(1)),
         }
+    }
+
+    pub async fn current_card(
+        &self,
+        id: &FlashcardId,
+    ) -> Result<Option<CurrentFlashcard>, FlashcardError> {
+        self.source.current_card(id).await
     }
 
     pub async fn sync(&self) -> Result<SyncSummary, FlashcardError> {
@@ -362,6 +377,22 @@ mod tests {
 
     #[async_trait]
     impl FlashcardSourcePort for FakeSource {
+        async fn current_card(
+            &self,
+            id: &FlashcardId,
+        ) -> Result<Option<CurrentFlashcard>, FlashcardError> {
+            Ok(self
+                .snapshot
+                .lock()
+                .unwrap()
+                .as_ref()
+                .and_then(|snapshot| snapshot.cards.iter().find(|card| &card.id == id))
+                .map(|card| CurrentFlashcard {
+                    source_file: card.source_file.clone(),
+                    front_markdown: card.front_markdown.clone(),
+                    back_markdown: card.back_markdown.clone(),
+                }))
+        }
         async fn scan(&self) -> Result<SourceSnapshot, FlashcardError> {
             self.snapshot.lock().unwrap().take().ok_or_else(|| {
                 FlashcardError::SourceUnavailable("missing fake snapshot".to_owned())
@@ -435,6 +466,35 @@ mod tests {
         ) -> Result<(FlashcardSummary, ReviewLog), FlashcardError> {
             Err(FlashcardError::NotFound)
         }
+    }
+
+    #[tokio::test]
+    async fn current_card_reads_the_source_by_uuid() {
+        let id = FlashcardId::new("019a31b7-8c42-7c16-a6d1-0c1f0f34c821").unwrap();
+        let source = Arc::new(FakeSource {
+            snapshot: Mutex::new(Some(SourceSnapshot {
+                cards: vec![SourceCard {
+                    id: id.clone(),
+                    source_question_id: None,
+                    correct_answer: Vec::new(),
+                    source_file: "deck/cards.md".into(),
+                    source_order: 0,
+                    deck_path: "deck".into(),
+                    front_markdown: "current front".into(),
+                    back_markdown: "current back".into(),
+                    tags: Vec::new(),
+                    source_hash: "hash".into(),
+                    generated_id: false,
+                }],
+                ..SourceSnapshot::default()
+            })),
+        });
+        let repository = Arc::new(FakeRepository {
+            applied: Mutex::new(Vec::new()),
+        });
+        let app = FlashcardApplication::new(source, repository, Arc::new(FakeClock(0)));
+        let card = app.current_card(&id).await.unwrap().unwrap();
+        assert_eq!(card.front_markdown, "current front");
     }
 
     #[tokio::test]

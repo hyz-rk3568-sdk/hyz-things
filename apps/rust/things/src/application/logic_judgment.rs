@@ -40,7 +40,7 @@ pub trait LogicJudgmentPort: Send + Sync {
         -> Result<Value, LogicJudgmentError>;
 }
 
-#[derive(Clone, serde::Serialize)]
+#[derive(Clone)]
 pub struct LogicGenerationTarget {
     pub target_id: String,
     pub card_id: String,
@@ -49,6 +49,12 @@ pub struct LogicGenerationTarget {
     pub back: String,
     pub correct_answer: Vec<String>,
     pub kind: String,
+}
+
+impl serde::Serialize for LogicGenerationTarget {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.serialize_str(&self.card_id)
+    }
 }
 
 #[derive(Clone)]
@@ -73,5 +79,27 @@ pub trait LogicGenerationPort: Send + Sync {
         _sink: crate::application::question_bank::practice::AiReviewEventSink,
     ) -> Result<Vec<crate::domain::logic_judgment::GeneratedQuestion>, String> {
         self.generate(request, cancellation).await
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn generation_target_exposes_only_card_uuid_to_codex() {
+        let target = LogicGenerationTarget {
+            target_id: "card-1".into(),
+            card_id: "card-1".into(),
+            card_path: "secret/path".into(),
+            front: "private front".into(),
+            back: "private back".into(),
+            correct_answer: vec!["A".into()],
+            kind: "formal".into(),
+        };
+        assert_eq!(
+            serde_json::to_value(target).unwrap(),
+            serde_json::json!("card-1")
+        );
     }
 }

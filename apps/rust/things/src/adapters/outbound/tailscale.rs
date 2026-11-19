@@ -17,8 +17,9 @@ use socket2::{Domain, Protocol, Socket, Type};
 
 use crate::{
     adapters::inbound::http::{
-        app_with_admin_camera_control_at_address_and_flashcards_and_analysis, with_question_bank,
-        with_question_bank_ai, with_shenlun_ai, TlsListener,
+        app_with_admin_camera_control_at_address_and_flashcards_and_analysis, with_ai_practice,
+        with_ai_practice_agent, with_question_bank, with_question_bank_ai, with_shenlun_ai,
+        TlsListener,
     },
     application::{
         admin::AdminApplication,
@@ -147,6 +148,8 @@ impl TailscaleListenerManager {
             app.logic_judgment,
             app.quantitative_relations,
         );
+        let http_app = with_ai_practice_agent(http_app, app.ai_practice_agent);
+        let http_app = with_ai_practice(http_app, app.ai_practice);
         let http_app = with_question_bank(http_app, app.question_bank);
         let http_app = with_question_bank_ai(http_app, app.question_bank_ai);
         let http_app = with_shenlun_ai(http_app, app.shenlun_ai);
@@ -269,6 +272,8 @@ pub struct PortalListenerApp {
     pub admin: Arc<AdminApplication>,
     pub camera: Arc<CameraApplication>,
     pub question_bank: Option<Arc<crate::application::question_bank::QuestionBankApplication>>,
+    pub ai_practice: Option<Arc<crate::application::ai_practice::AiPracticeFavorites>>,
+    pub ai_practice_agent: Option<Arc<crate::application::ai_practice::AiPracticeAgent>>,
     pub question_bank_ai:
         Option<Arc<crate::adapters::outbound::question_bank_ai::QuestionBankAiService>>,
     pub shenlun_ai: Option<Arc<crate::adapters::outbound::shenlun_ai::ShenlunAiService>>,

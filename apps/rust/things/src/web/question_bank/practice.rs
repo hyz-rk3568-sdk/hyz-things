@@ -3036,15 +3036,6 @@ pub(crate) fn question_bank_training(props: &QuestionBankTrainingProps) -> Html 
                                 <div class="question-bank-results-list" data-testid="question-bank-browse-list">
                                     {for rows_filtered.iter().take(if *cards_open {usize::MAX} else {100}).enumerate().map(|(position,row)| {
                                         let disabled=*cards_open && *cards_busy;
-                                        let content = html! {
-                                            <>
-                                                <div class="min-w-0">
-                                                    <strong class="block truncate text-sm">{row.title.clone()}</strong>
-                                                    <p class="mt-0.5 truncate text-xs text-base-content/50">{row.subtitle.clone()}</p>
-                                                </div>
-                                                <span class="question-bank-result-year">{row.badge.clone()}</span>
-                                            </>
-                                        };
                                         let on_open = if *cards_open {
                                             let open=open_card.clone();
                                             let card_id=row.key.clone();
@@ -3060,9 +3051,9 @@ pub(crate) fn question_bank_training(props: &QuestionBankTrainingProps) -> Html 
                                             })))
                                         };
                                         html! {
-                                            <button type="button" class="question-bank-result-row w-full text-left"
-                                                data-testid={if *cards_open {"question-bank-card-item"} else {"question-bank-collection-item"}}
-                                                disabled={disabled} onclick={on_open}>{content}</button>
+                                            <QuestionCollectionRow title={row.title.clone()} subtitle={row.subtitle.clone()} badge={row.badge.clone()}
+                                                test_id={if *cards_open {"question-bank-card-item"} else {"question-bank-collection-item"}}
+                                                disabled={disabled} on_open={on_open}/>
                                         }
                                     })}
                                 </div>

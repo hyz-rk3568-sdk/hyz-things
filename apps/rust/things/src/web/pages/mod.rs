@@ -1,5 +1,6 @@
 use super::*;
 
+mod ai_practice_actions;
 mod calculation;
 mod camera;
 mod deployments;
@@ -24,6 +25,7 @@ mod training_split_workspace;
 mod training_statistics;
 mod training_time;
 
+pub(crate) use ai_practice_actions::*;
 pub(crate) use calculation::*;
 pub(crate) use camera::*;
 pub(crate) use deployments::*;

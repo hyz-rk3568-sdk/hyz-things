@@ -9,8 +9,9 @@ use axum::{
 use hyz_contract::router::{ControlOperation, ControlProxyMode, ControlResult};
 use hyz_things::{
     adapters::inbound::http::{
-        app_with_loopback_runtime_frontend_and_flashcards, with_favorite_flashcards,
-        with_question_bank, with_question_bank_ai, with_training_time,
+        app_with_loopback_runtime_frontend_and_flashcards, with_ai_practice,
+        with_ai_practice_agent, with_favorite_flashcards, with_question_bank,
+        with_question_bank_ai, with_training_time,
     },
     adapters::outbound::{
         favorite_flashcard_source::FilesystemFavoriteFlashcardWriter,
@@ -31,7 +32,10 @@ use hyz_things::{
         },
         question_bank::{
             document::{self, Document},
-            practice::AiAttachmentRelay,
+            practice::{
+                AiAttachmentRelay, AiReviewBackend, AiReviewEventSink, AiReviewProgress,
+                AiReviewTurn,
+            },
             BankAsset, BankError, BankSnapshot, IndexedPaper, QuestionBankApplication,
             QuestionBankSourcePort,
         },
@@ -331,6 +335,73 @@ struct FixtureAiUploadObservation {
 }
 
 #[derive(Clone)]
+struct FixturePracticeBackend {
+    prompts: Arc<Mutex<Vec<String>>>,
+}
+struct FixturePracticeTurn {
+    prompts: Arc<Mutex<Vec<String>>>,
+}
+#[async_trait]
+impl AiReviewBackend for FixturePracticeBackend {
+    async fn connect(
+        &self,
+        _previous_thread: Option<&str>,
+    ) -> Result<Box<dyn AiReviewTurn>, String> {
+        Ok(Box::new(FixturePracticeTurn {
+            prompts: self.prompts.clone(),
+        }))
+    }
+}
+#[async_trait]
+impl AiReviewTurn for FixturePracticeTurn {
+    fn thread_id(&self) -> &str {
+        "fixture-practice-thread"
+    }
+    async fn turn(
+        &mut self,
+        prompt: &str,
+        _images: &[String],
+        _cancel: tokio::sync::watch::Sender<bool>,
+    ) -> Result<String, String> {
+        self.prompts
+            .lock()
+            .map_err(|_| "fixture prompt lock failed")?
+            .push(prompt.to_owned());
+        Ok("按当前方法卡求解。".into())
+    }
+    async fn turn_stream(
+        &mut self,
+        prompt: &str,
+        images: &[String],
+        cancel: tokio::sync::watch::Sender<bool>,
+        sink: AiReviewEventSink,
+    ) -> Result<String, String> {
+        if prompt.contains("阻塞模式") {
+            self.prompts
+                .lock()
+                .map_err(|_| "fixture prompt lock failed")?
+                .push(prompt.to_owned());
+            sink(AiReviewProgress::TextDelta {
+                item_id: "fixture-message".into(),
+                text: "已开始解题。".into(),
+            })
+            .await?;
+            let mut receiver = cancel.subscribe();
+            receiver
+                .wait_for(|value| *value)
+                .await
+                .map_err(|_| "fixture cancellation channel closed")?;
+            return Err("fixture stopped".into());
+        }
+        sink(AiReviewProgress::TextDelta {
+            item_id: "fixture-message".into(),
+            text: "按当前方法卡求解。".into(),
+        })
+        .await?;
+        self.turn(prompt, images, cancel).await
+    }
+}
+
 struct FixtureAiAttachmentRelay {
     observation: Arc<Mutex<Option<FixtureAiUploadObservation>>>,
 }
@@ -807,6 +878,8 @@ struct HarnessControlState {
     admin: Arc<AdminApplication>,
     camera: Arc<CameraApplication>,
     question_bank: sqlx::SqlitePool,
+    practice_db: sqlx::SqlitePool,
+    practice_prompts: Arc<Mutex<Vec<String>>>,
     ai_upload_observation: Arc<Mutex<Option<FixtureAiUploadObservation>>>,
 }
 
@@ -1606,6 +1679,25 @@ async fn main() -> Result<(), Box<dyn Error>> {
         SqliteFlashcardRepository::connect(fixture_root.join("flashcards.db"))
             .await
             .map_err(|error| std::io::Error::other(error.to_string()))?;
+    let practice_db = flashcard_repository.pool().clone();
+    let practice_prompts = Arc::new(Mutex::new(Vec::<String>::new()));
+    let ai_practice = Arc::new(
+        hyz_things::application::ai_practice::AiPracticeFavorites::new(Arc::new(
+            hyz_things::adapters::outbound::ai_practice::SqliteAiPracticeFavorites::new(
+                flashcard_repository.pool().clone(),
+            ),
+        )),
+    );
+    let ai_practice_agent = Arc::new(hyz_things::application::ai_practice::AiPracticeAgent::new(
+        Arc::new(
+            hyz_things::adapters::outbound::ai_practice_agent::SqliteAiPracticeAgent::new(
+                flashcard_repository.pool().clone(),
+                Some(Arc::new(FixturePracticeBackend {
+                    prompts: practice_prompts.clone(),
+                })),
+            ),
+        ),
+    ));
     let training_time = Arc::new(TrainingTimeService::new(
         flashcard_repository.pool().clone(),
     ));
@@ -1673,6 +1765,8 @@ async fn main() -> Result<(), Box<dyn Error>> {
             Arc::new(FixtureMount),
         )),
     ));
+    let web_app = with_ai_practice_agent(web_app, Some(ai_practice_agent));
+    let web_app = with_ai_practice(web_app, Some(ai_practice));
     let web_app = with_question_bank(web_app, Some(bank));
     let web_app = with_favorite_flashcards(web_app, Some(favorite_flashcards));
     let web_app = with_question_bank_ai(web_app, Some(ai));
@@ -1682,6 +1776,8 @@ async fn main() -> Result<(), Box<dyn Error>> {
         admin,
         camera,
         bank_repository.pool().clone(),
+        practice_db,
+        practice_prompts,
         ai_upload_observation,
     );
 
@@ -1709,6 +1805,8 @@ fn harness_control_app(
     admin: Arc<AdminApplication>,
     camera: Arc<CameraApplication>,
     question_bank: sqlx::SqlitePool,
+    practice_db: sqlx::SqlitePool,
+    practice_prompts: Arc<Mutex<Vec<String>>>,
     ai_upload_observation: Arc<Mutex<Option<FixtureAiUploadObservation>>>,
 ) -> Router {
     Router::new()
@@ -1716,6 +1814,11 @@ fn harness_control_app(
         .route("/state", get(harness_state).put(replace_harness_state))
         .route("/reset", put(reset_harness_state))
         .route("/reset-question-bank", put(reset_question_bank))
+        .route(
+            "/ai-practice-fixtures",
+            put(seed_ai_practice_fixtures).delete(clear_ai_practice_fixtures),
+        )
+        .route("/ai-practice-prompts", get(ai_practice_prompts))
         .route("/ai-uploads", get(harness_ai_upload))
         .layer(DefaultBodyLimit::max(MAX_HARNESS_JSON_BYTES))
         .with_state(HarnessControlState {
@@ -1723,8 +1826,105 @@ fn harness_control_app(
             admin,
             camera,
             question_bank,
+            practice_db,
+            practice_prompts,
             ai_upload_observation,
         })
+}
+
+const PRACTICE_FIXTURE_IDS: [&str; 3] = [
+    "019a31b7-8c42-7c16-a6d1-000000000101",
+    "019a31b7-8c42-7c16-a6d1-000000000102",
+    "019a31b7-8c42-7c16-a6d1-000000000103",
+];
+const PRACTICE_FIXTURE_CARD: &str = "019a31b7-8c42-7c16-a6d1-0c1f0f34c823";
+
+async fn clear_practice_rows(pool: &sqlx::SqlitePool) -> Result<(), sqlx::Error> {
+    let mut tx = pool.begin().await?;
+    for id in PRACTICE_FIXTURE_IDS {
+        for table in [
+            "ai_practice_agent_messages",
+            "ai_practice_agent_threads",
+            "ai_practice_favorites",
+        ] {
+            sqlx::query(&format!("DELETE FROM {table} WHERE session_id=?"))
+                .bind(id)
+                .execute(&mut *tx)
+                .await?;
+        }
+        for table in [
+            "data_analysis_runs",
+            "logic_judgment_runs",
+            "quantitative_relations_runs",
+        ] {
+            sqlx::query(&format!("DELETE FROM {table} WHERE id=?"))
+                .bind(id)
+                .execute(&mut *tx)
+                .await?;
+        }
+    }
+    tx.commit().await
+}
+async fn clear_ai_practice_fixtures(
+    State(control): State<HarnessControlState>,
+) -> Result<Json<serde_json::Value>, (axum::http::StatusCode, String)> {
+    clear_practice_rows(&control.practice_db)
+        .await
+        .map_err(|error| harness_internal_error(error.to_string()))?;
+    control
+        .practice_prompts
+        .lock()
+        .map_err(|_| harness_internal_error("prompt lock".into()))?
+        .clear();
+    Ok(Json(serde_json::json!({"ok":true})))
+}
+async fn seed_ai_practice_fixtures(
+    State(control): State<HarnessControlState>,
+) -> Result<Json<serde_json::Value>, (axum::http::StatusCode, String)> {
+    clear_practice_rows(&control.practice_db)
+        .await
+        .map_err(|error| harness_internal_error(error.to_string()))?;
+    control
+        .practice_prompts
+        .lock()
+        .map_err(|_| harness_internal_error("prompt lock".into()))?
+        .clear();
+    let q = serde_json::json!({"question":"资料模拟题", "options":["甲","乙","丙","丁"], "correct_index":0, "answer":"甲", "explanation":"资料解析", "skill":"增长率", "evidence":"资料事实", "card_id":PRACTICE_FIXTURE_CARD});
+    let groups = (0..4).map(|_| serde_json::json!({"version":5,"material":{"topic":"人口","text":"共享统计材料"},"questions":vec![q.clone();5]})).collect::<Vec<_>>();
+    sqlx::query("INSERT INTO data_analysis_runs(id,groups_json,answers_json,status,created_at_ms,started_at_ms,ended_at_ms) VALUES(?,?,?,'submitted',1,1,2)")
+        .bind(PRACTICE_FIXTURE_IDS[0]).bind(serde_json::to_string(&groups).unwrap()).bind(serde_json::to_string(&vec![Some(0);20]).unwrap()).execute(&control.practice_db).await.map_err(|error| harness_internal_error(error.to_string()))?;
+    for (index, table, kind) in [
+        (1, "logic_judgment_runs", "formal"),
+        (2, "quantitative_relations_runs", "quantitative"),
+    ] {
+        let mut generated = serde_json::json!({"target_id":PRACTICE_FIXTURE_CARD,"kind":kind,"question":format!("{kind}模拟题"),"options":["甲","乙","丙","丁"],"correct_index":0,"explanation":"练习解析"});
+        if kind == "quantitative" {
+            generated["diagram_required"] = false.into();
+        }
+        let stored = serde_json::json!({"generated":generated,"card":{"id":PRACTICE_FIXTURE_CARD,"card_path":"资料分析/cards.md","front":"旧卡片正文","back":"旧卡片背面","source_hash":"old","kind":kind}});
+        let sql = format!("INSERT INTO {table}(id,questions_json,answers_json,status,created_at_ms,started_at_ms,ended_at_ms) VALUES(?,?,?,'submitted',1,1,2)");
+        sqlx::query(&sql)
+            .bind(PRACTICE_FIXTURE_IDS[index])
+            .bind(serde_json::to_string(&vec![stored; 10]).unwrap())
+            .bind(serde_json::to_string(&vec![Some(0); 10]).unwrap())
+            .execute(&control.practice_db)
+            .await
+            .map_err(|error| harness_internal_error(error.to_string()))?;
+    }
+    Ok(Json(
+        serde_json::json!({"sessions":PRACTICE_FIXTURE_IDS,"card":PRACTICE_FIXTURE_CARD}),
+    ))
+}
+async fn ai_practice_prompts(
+    State(control): State<HarnessControlState>,
+) -> Result<Json<Vec<String>>, (axum::http::StatusCode, String)> {
+    Ok(Json(
+        control
+            .practice_prompts
+            .lock()
+            .map_err(|_| harness_internal_error("prompt lock".into()))?
+            .clone(),
+    ))
 }
 
 async fn reset_question_bank(

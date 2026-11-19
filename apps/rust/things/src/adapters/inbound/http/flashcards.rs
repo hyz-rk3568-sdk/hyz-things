@@ -131,6 +131,28 @@ pub(super) async fn cards(
     }
 }
 
+pub(super) async fn current_card(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(id): Path<String>,
+) -> Response {
+    if let Err(response) = authorize_sensitive_read(&state, &headers).await {
+        return response;
+    }
+    let id = match FlashcardId::new(id) {
+        Ok(id) => id,
+        Err(_) => return invalid_request_json(),
+    };
+    let Some(application) = state.flashcards.clone() else {
+        return study_unavailable_json();
+    };
+    match application.current_card(&id).await {
+        Ok(Some(card)) => Json(card).into_response(),
+        Ok(None) => flashcard_error_json(FlashcardError::NotFound),
+        Err(error) => flashcard_error_json(error),
+    }
+}
+
 pub(super) async fn decks(State(state): State<AppState>) -> Response {
     let Some(application) = state.flashcards.clone() else {
         return study_unavailable_json();

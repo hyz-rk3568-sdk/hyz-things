@@ -30,9 +30,7 @@ pub(crate) struct LogicGrade {
     pub options: [String; 4],
     pub correct_index: usize,
     pub explanation: String,
-    pub card_path: String,
-    pub front: String,
-    pub back: String,
+    pub card_id: String,
     pub chosen: Option<usize>,
 }
 #[derive(Clone, Deserialize)]
@@ -120,9 +118,7 @@ mod tests {
                 "options": ["A", "B", "C", "D"],
                 "correct_index": 0,
                 "explanation": "解析",
-                "card_path": "cards/example.md",
-                "front": "题干",
-                "back": "答案",
+                "card_id": "019a31b7-8c42-7c16-a6d1-0c1f0f34c821",
                 "chosen": 0
             }]
         }))
@@ -132,9 +128,10 @@ mod tests {
         assert_eq!(result.questions[0].question, "题目");
         assert_eq!(result.questions[0].correct_index, 0);
         assert_eq!(result.questions[0].explanation, "解析");
-        assert_eq!(result.questions[0].card_path, "cards/example.md");
-        assert_eq!(result.questions[0].front, "题干");
-        assert_eq!(result.questions[0].back, "答案");
+        assert_eq!(
+            result.questions[0].card_id,
+            "019a31b7-8c42-7c16-a6d1-0c1f0f34c821"
+        );
         assert_eq!(result.questions[0].chosen, Some(0));
     }
 }

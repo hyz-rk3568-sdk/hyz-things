@@ -161,6 +161,26 @@ if [[ "${0##*/}" == make || "${1:-}" == fmt ]]; then exit 1; fi
         self.assertEqual(selection.returncode, 0, selection.stderr)
         self.assertEqual(selection.stdout, "")
 
+    def test_ai_practice_and_shared_components_select_affected_e2e(self):
+        script = ROOT / "apps/rust/things/tools/select-related-e2e.sh"
+        with tempfile.TemporaryDirectory() as directory:
+            git = Path(directory) / "git"
+            git.write_text('#!/bin/sh\nprintf "%s\\n" "$TEST_CHANGED"\n')
+            git.chmod(0o755)
+            for changed in (
+                "apps/rust/things/src/web/pages/ai_practice_actions.rs",
+                "apps/rust/things/src/web/components/question_collection_row.rs",
+                "apps/rust/things/src/web/question_bank/ai_reply.rs",
+            ):
+                env = dict(os.environ, PATH=f"{directory}:{os.environ['PATH']}",
+                           GITHUB_EVENT_NAME="pull_request", GITHUB_BASE_REF="main", TEST_CHANGED=changed)
+                result = subprocess.run(["bash", str(script)], capture_output=True, text=True, env=env)
+                self.assertEqual(result.returncode, 0, result.stderr)
+                selected = set(result.stdout.splitlines())
+                self.assertIn("e2e/ai-practice-actions.spec.ts", selected)
+                self.assertIn("e2e/ai-practice-storage.spec.ts", selected)
+                self.assertIn("e2e/question-bank.spec.ts", selected)
+
     def test_verified_cache_hit_skips_dependency_target_and_bundle_build(self):
         steps = named_blocks(self.jobs["frontend"], r"^      - name: ([^\n]+)\n")
         self.assertIn("frontend-bundle-cache.py check", steps["Validate cached frontend bundle"])

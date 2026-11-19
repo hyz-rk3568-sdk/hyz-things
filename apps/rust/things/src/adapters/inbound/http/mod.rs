@@ -55,10 +55,12 @@ use crate::{
     logging::{self, Level},
 };
 
+mod ai_practice;
 mod data_analysis;
 mod favorite_flashcards;
 mod flashcards;
 mod generation_events;
+pub use ai_practice::{with_ai_practice, with_ai_practice_agent};
 pub use favorite_flashcards::with_favorite_flashcards;
 mod question_bank;
 pub use question_bank::{with_question_bank, with_question_bank_ai};
@@ -1197,8 +1199,30 @@ fn app_with_assets(
             on(MethodFilter::POST, control_proxy_delay_refresh),
         )
         .route(
+            "/api/v1/study/ai-practice/agent",
+            on(MethodFilter::GET, ai_practice::agent_state),
+        )
+        .route(
+            "/api/v1/study/ai-practice/agent/messages",
+            on(MethodFilter::POST, ai_practice::agent_message)
+                .layer(DefaultBodyLimit::max(16 * 1024)),
+        )
+        .route(
+            "/api/v1/study/ai-practice/agent/stop",
+            on(MethodFilter::POST, ai_practice::agent_stop),
+        )
+        .route(
+            "/api/v1/study/ai-practice/favorites",
+            on(MethodFilter::GET, ai_practice::favorites)
+                .on(MethodFilter::POST, ai_practice::set_favorite),
+        )
+        .route(
             "/api/v1/study/cards",
             on(MethodFilter::GET, flashcards::cards),
+        )
+        .route(
+            "/api/v1/study/cards/{id}/current",
+            on(MethodFilter::GET, flashcards::current_card),
         )
         .route(
             "/api/v1/study/decks",
@@ -3032,6 +3056,9 @@ fn is_post_path(path: &str) -> bool {
             | "/api/v1/control/proxy/selection"
             | "/api/v1/control/proxy/delay"
             | "/api/v1/control/proxy/delays"
+            | "/api/v1/study/ai-practice/favorites"
+            | "/api/v1/study/ai-practice/agent/messages"
+            | "/api/v1/study/ai-practice/agent/stop"
             | "/api/v1/study/review"
             | "/api/v1/study/training-time/events"
             | "/api/v1/study/training-time/goals"

@@ -165,29 +165,7 @@ impl LogicJudgmentService {
 }
 
 fn eligible_path(path: &str) -> Option<&'static str> {
-    // The AI generator only reads the 用户整理 source root (plus legacy decks).
-    let relative = path.strip_prefix("flashcards/").unwrap_or(path);
-    if relative.starts_with("真题练习/") {
-        return None;
-    }
-    let relative = relative.strip_prefix("用户整理/").unwrap_or(relative);
-    let normalized = if let Some(tail) = relative.strip_prefix("判断/") {
-        format!("判断推理/{tail}")
-    } else {
-        relative.to_owned()
-    };
-    let normalized = normalized.replacen("判断推理/AI出题/", "判断推理/", 1);
-    match normalized.as_str() {
-        "判断推理/形式推理/直言命题/cards.md"
-        | "判断推理/形式推理/直言命题/错题/cards.md"
-        | "判断推理/形式推理/联言选言假言命题/cards.md"
-        | "判断推理/形式推理/联言选言假言命题/错题/cards.md"
-        | "判断推理/形式推理/组合排列/cards.md"
-        | "判断推理/形式推理/组合排列/错题/cards.md"
-        | "判断推理/形式推理/特殊题型/cards.md"
-        | "判断推理/形式推理/特殊题型/错题/cards.md" => Some("formal"),
-        _ => None,
-    }
+    crate::domain::logic_judgment::generation_card_path(path).then_some("formal")
 }
 
 pub const DEFAULT_USER_PROMPT: &str = "题目风格接近国考、省考，条件自然、表达简练，干扰项具有合理迷惑性，难度中等偏上；优先考查推理方法迁移，避免机械套用同一结构。";
@@ -765,7 +743,7 @@ impl LogicJudgmentService {
         }
         let result = run.grade(id);
         tx.commit().await.map_err(error)?;
-        Ok(result)
+        self.current_cards(result).await
     }
     pub async fn result(&self, id: &str) -> Result<RunResult, String> {
         self.expire(id).await?;
@@ -773,7 +751,25 @@ impl LogicJudgmentService {
         if run.status != "submitted" {
             return Err(INVALID.into());
         }
-        Ok(run.grade(id))
+        self.current_cards(run.grade(id)).await
+    }
+    async fn current_cards(&self, mut result: RunResult) -> Result<RunResult, String> {
+        for question in &mut result.questions {
+            if let Some((path, front, back)) =
+                super::flashcard_sqlite::current_card_content(&self.pool, &question.card_id)
+                    .await
+                    .map_err(error)?
+            {
+                question.card_path = path;
+                question.front = front;
+                question.back = back;
+            } else {
+                question.card_path.clear();
+                question.front.clear();
+                question.back.clear();
+            }
+        }
+        Ok(result)
     }
     pub async fn retry(&self, source_id: &str) -> Result<String, String> {
         let mut tx = self
@@ -883,16 +879,16 @@ impl LogicGenerationPort for CodexConfig {
         // follow the same explicit boundaries as data analysis.
         let prompt = format!(
             r#"【固定规则 / 应用端约束】
-你是行测形式推理命题 Agent。读取 .agents/skills/行测做题/SKILL.md 及形式推理解题文档；Skill 和 Flashcard 只负责解题方法。
-固定生成10道原创独立四选一题，kind 为 formal。每个 target_id 对应一题，不得换卡或补题。范围仅包括直言命题、联言选言假言命题、组合排列和特殊题型；排除论证、原因解释、图推、定义、类比、日常结论和共享材料题。题干须包含全部条件且不得泄露答案。
+你是行测形式推理命题 Agent。读取 .agents/skills/行测做题/SKILL.md 及形式推理解题文档；Skill 和 Flashcard 只负责解题方法。自行在仓库 flashcards 目录中按 UUID 查找并读取指定卡片；找不到时报告错误，不得换卡。
+固定生成10道原创独立四选一题，kind 为 formal。每个 target_id 是指定卡片 UUID，对应一题，不得换卡或补题。范围仅包括直言命题、联言选言假言命题、组合排列和特殊题型；排除论证、原因解释、图推、定义、类比、日常结论和共享材料题。题干须包含全部条件且不得泄露答案。
 Codex 自行检查逻辑、答案唯一性、平行结构等价、选项歧义、正确索引与解析一致性。应用只检查 JSON 结构、题数、卡片身份和前后权限，不验算语义逻辑。严格遵守 outputSchema，correct_index 为0至3。
 
 【本轮动态上下文】
 后端 SQLite 已按本模块 VCNT 选定10张已同步卡片，禁止自行换卡。每张卡片恰好生成一道题，原有方法优先；可跨知识点调用满足题干条件的技巧，不得硬套或伪造用户方法。
 
-correct_answer 是原卡片的正确答案；back 为空表示未提供个人解法，不得编造或声称用户使用了某种解法。
+原卡片的正确答案不是新题答案；未提供个人解法时，不得编造或声称用户使用了某种解法。
 
-【本轮固定 Flashcard】
+【本轮指定卡片 UUID】
 {}
 
 【用户出题要求 / 自定义】
@@ -978,21 +974,21 @@ mod tests {
     fn only_synced_formal_logic_sources_are_eligible() {
         for directory in ["直言命题", "联言选言假言命题", "组合排列", "特殊题型"]
         {
-            let method = format!("判断/形式推理/{directory}/cards.md");
-            let mistake = format!("判断/形式推理/{directory}/错题/cards.md");
+            let method = format!("用户整理/判断推理/形式推理/{directory}/cards.md");
+            let mistake = format!("用户整理/判断推理/形式推理/{directory}/错题/cards.md");
             assert_eq!(eligible_path(&method), Some("formal"));
             assert_eq!(eligible_path(&mistake), Some("formal"));
             assert_eq!(
-                eligible_path(&method.replace("判断/", "判断推理/")),
-                Some("formal")
+                eligible_path(&method.replace("用户整理/判断推理/", "判断/")),
+                None
             );
             assert_eq!(
-                eligible_path(&mistake.replace("判断/", "判断推理/")),
-                Some("formal")
+                eligible_path(&mistake.replace("用户整理/判断推理/", "判断/")),
+                None
             );
-            let ai = format!("用户整理/判断推理/形式推理/{directory}/错题/cards.md");
-            assert_eq!(eligible_path(&ai), Some("formal"));
-            assert_eq!(eligible_path(&format!("用户整理/{method}")), Some("formal"));
+            let legacy = format!("判断推理/AI出题/形式推理/{directory}/错题/cards.md");
+            assert_eq!(eligible_path(&legacy), None);
+            assert_eq!(eligible_path(&format!("用户整理/{method}")), None);
             let default = format!("真题练习/判断推理/{directory}/错题/cards.md");
             assert_eq!(eligible_path(&default), None);
         }
@@ -1009,6 +1005,7 @@ mod tests {
 #[cfg(test)]
 mod service_tests {
     use super::*;
+    use crate::application::logic_judgment::LogicJudgmentPort;
     use sqlx::sqlite::SqlitePoolOptions;
 
     async fn service() -> LogicJudgmentService {
@@ -1023,7 +1020,7 @@ mod service_tests {
 
     async fn cards(service: &LogicJudgmentService, count: usize) {
         for i in 1..=count {
-            sqlx::query("INSERT OR IGNORE INTO flashcards(id,source_file,source_order,deck_path,front_markdown,back_markdown,source_hash,active,created_at_ms,updated_at_ms) VALUES(?, '判断/形式推理/直言命题/cards.md',?, '判断/形式推理','front','back','hash',1,0,0)")
+            sqlx::query("INSERT OR IGNORE INTO flashcards(id,source_file,source_order,deck_path,front_markdown,back_markdown,source_hash,active,created_at_ms,updated_at_ms) VALUES(?, '用户整理/判断推理/形式推理/直言命题/cards.md',?, '用户整理/判断推理/形式推理/直言命题','front','back','hash',1,0,0)")
                 .bind(format!("00000000-0000-7000-8000-{i:012}"))
                 .bind(i as i64).execute(&service.pool).await.unwrap();
         }
@@ -1098,6 +1095,27 @@ mod service_tests {
             .commit_paper(None, &plan, generated(&plan))
             .await
             .unwrap()
+    }
+
+    #[tokio::test]
+    async fn review_reads_current_card_by_uuid() {
+        let service = service().await;
+        let id = paper(&service).await;
+        service.start(&id).await.unwrap();
+        service.submit(&id).await.unwrap();
+        let initial = service
+            .execute(crate::application::logic_judgment::LogicJudgmentOperation::Result(id.clone()))
+            .await
+            .unwrap();
+        let card_id = initial["questions"][0]["card_id"].as_str().unwrap();
+        sqlx::query("UPDATE flashcards SET front_markdown='current front', back_markdown='current back' WHERE id=?")
+            .bind(card_id).execute(&service.pool).await.unwrap();
+        let result = service
+            .execute(crate::application::logic_judgment::LogicJudgmentOperation::Result(id))
+            .await
+            .unwrap();
+        assert_eq!(result["questions"][0]["front"], "current front");
+        assert_eq!(result["questions"][0]["back"], "current back");
     }
 
     #[tokio::test]
@@ -1779,7 +1797,7 @@ mod favorite_metadata_tests {
         for i in 0..QUIZ_QUESTIONS {
             sqlx::query("INSERT INTO flashcards(id,source_file,source_order,deck_path,front_markdown,back_markdown,source_hash,correct_answer,active,created_at_ms,updated_at_ms) VALUES(?,?,0,'deck','Question','-','hash','[\"B\"]',1,0,0)")
                 .bind(format!("00000000-0000-7000-8000-{i:012}"))
-                .bind("判断/形式推理/直言命题/错题/cards.md").execute(&pool).await.unwrap();
+                .bind("用户整理/判断推理/形式推理/直言命题/错题/cards.md").execute(&pool).await.unwrap();
         }
         let service = LogicJudgmentService::with_generator(pool, Some(Arc::new(AnswerContext)));
         let plan = service.plan(1).await.unwrap();

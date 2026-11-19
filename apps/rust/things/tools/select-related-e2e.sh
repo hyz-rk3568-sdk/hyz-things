@@ -18,6 +18,12 @@ changed="$(git -C "$WORKSPACE" -c core.quotepath=false diff --name-only "origin/
 emit_selected() {
   local -a selected=("$@")
   local file
+  if printf '%s\n' "$changed" | grep -qE 'apps/rust/things/(src/.*(ai_practice|ai_generation|question_collection_row|related_method_card|question_bank/ai_reply|flashcard_source)|e2e/(ai-practice|related-method-card))'; then
+    selected+=(e2e/ai-practice-actions.spec.ts e2e/ai-practice-storage.spec.ts e2e/related-method-card.spec.ts)
+  fi
+  if printf '%s\n' "$changed" | grep -qE 'apps/rust/things/src/web/(components/question_collection_row|question_bank/(setup|practice))\.rs'; then
+    selected+=(e2e/question-bank-history.spec.ts e2e/question-bank-performance.spec.ts e2e/question-bank-resume.spec.ts e2e/question-bank-theme.spec.ts)
+  fi
   while IFS= read -r file; do
     [[ "$file" == apps/rust/things/e2e/*.spec.ts ]] || continue
     selected+=("${file#apps/rust/things/}")

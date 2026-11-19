@@ -484,16 +484,15 @@ fn card_from_db(
     back: String,
     hash: String,
 ) -> Option<CardCandidate> {
-    // Never accept paths from unrelated modules or nested subdecks.
-    let wrong_source = wrong_question_source(&deck);
-    let (kind, category) = if let Some((name, _)) = wrong_source {
-        (SourceKind::Wrong, name)
-    } else {
-        (SourceKind::Knowledge, knowledge_card_category(&deck)?)
+    let (kind, category) = match crate::domain::data_analysis::data_card_deck(&deck)? {
+        (crate::domain::data_analysis::DataCardKind::Wrong, category) => {
+            (SourceKind::Wrong, category)
+        }
+        (crate::domain::data_analysis::DataCardKind::Knowledge, category) => {
+            (SourceKind::Knowledge, category)
+        }
     };
-    if category == "错题"
-        || !valid_wrong_category(category)
-        || crate::domain::flashcards::FlashcardId::new(id.clone()).is_err()
+    if crate::domain::flashcards::FlashcardId::new(id.clone()).is_err()
         || hash.is_empty()
         || front.trim().is_empty()
         || back.trim().is_empty()
@@ -506,25 +505,7 @@ fn card_from_db(
     if !matches!(leaf, "card.md" | "cards.md") {
         return None;
     }
-    // The canonical display path is reconstructed from a verified deck, not
-    // trusted from an arbitrary source_file path.
-    let card_path = match (kind, wrong_source) {
-        (SourceKind::Wrong, Some((_, true)))
-            if deck.starts_with("资料分析/") || deck.starts_with("用户整理/") =>
-        {
-            format!("flashcards/{deck}/{leaf}")
-        }
-        (SourceKind::Wrong, Some((_, true))) => {
-            format!("flashcards/资料/{category}/错题/{leaf}")
-        }
-        (SourceKind::Wrong, _) => format!("flashcards/资料/错题/{category}/{leaf}"),
-        (SourceKind::Knowledge, _)
-            if deck.starts_with("资料分析/") || deck.starts_with("用户整理/") =>
-        {
-            format!("flashcards/{deck}/{leaf}")
-        }
-        (SourceKind::Knowledge, _) => format!("flashcards/资料/{category}/{leaf}"),
-    };
+    let card_path = format!("flashcards/{deck}/{leaf}");
     Some(CardCandidate {
         id,
         card_path,
@@ -538,18 +519,7 @@ fn card_from_db(
 }
 
 fn card_generation_context(target: &CardTarget) -> String {
-    let solution = crate::domain::flashcards::personal_solution(&target.card.back_markdown)
-        .unwrap_or("未提供");
-    format!(
-        "【目标 {target_id}】\n来源：{kind}\n分类：{category}\n卡片ID：{id}\n卡片路径：{path}\n### Front\n{front}\n正确答案：{correct_answer}\n个人解法：{solution}\n",
-        target_id = target.target_id,
-        kind = target.card.source_kind.as_str(),
-        category = target.card.category,
-        id = target.card.id,
-        path = target.card.card_path,
-        front = target.card.front_markdown,
-        correct_answer = serde_json::json!(target.card.correct_answer),
-    )
+    target.card.id.clone()
 }
 
 // Integral min-cost flow. Category -> passage edges enforce one question per
@@ -698,9 +668,8 @@ fn plan_question_targets(
             rng.shuffle(&mut groups[slot]);
             groups[slot]
                 .iter()
-                .enumerate()
-                .map(|(index, card)| CardTarget {
-                    target_id: format!("g{}-q{}", slot + 1, index + 1),
+                .map(|card| CardTarget {
+                    target_id: card.id.clone(),
                     card: card.clone(),
                     vcnt_increment: schedule.increment(&card.id),
                     expected_vcnt: schedule.card(&card.id),
@@ -755,24 +724,23 @@ async fn restore_related_cards(
     groups: &mut [QuestionGroup],
 ) -> Result<(), String> {
     for question in groups.iter_mut().flat_map(|group| &mut group.questions) {
-        if question.related_card.is_some() || question.source_hash.is_none() {
-            continue;
-        }
+        question.related_card = None;
+        question.card_path = None;
         let Some(id) = question.card_id.as_deref() else {
             continue;
         };
         let row = sqlx::query(
-            "SELECT source_hash,front_markdown,back_markdown FROM flashcards WHERE id=?",
+            "SELECT source_file,front_markdown,back_markdown FROM flashcards WHERE id=? AND active=1",
         )
         .bind(id)
         .fetch_optional(&mut *connection)
         .await
         .map_err(as_error)?;
         if let Some(row) = row {
-            let hash: String = row.try_get("source_hash").map_err(as_error)?;
+            let source: String = row.try_get("source_file").map_err(as_error)?;
+            question.card_path = Some(format!("flashcards/{source}"));
             question.related_card = question.related_card_for(
                 id,
-                &hash,
                 RelatedCardSnapshot {
                     front: row.try_get("front_markdown").map_err(as_error)?,
                     back: row.try_get("back_markdown").map_err(as_error)?,
@@ -1380,9 +1348,9 @@ impl DataAnalysisService {
             .join("\n");
         let prompt = format!(
             r#"【固定规则 / 应用端约束】
-你是 hyz 的公务员行测资料分析命题 Agent。先读取仓库 .agents/skills/行测做题/SKILL.md 及其资料分析参考，再严格使用下方五张已指定的 Flashcard 内容。
+你是 hyz 的公务员行测资料分析命题 Agent。先读取仓库 .agents/skills/行测做题/SKILL.md 及其资料分析参考，自行在仓库 flashcards 目录中按 UUID 查找并读取下方五张指定 Flashcard；找不到时报告错误，不得换卡。
 生成一篇自洽统计材料和恰好5道四选一题，唯一正确，答案与解析一致，材料只包含统计事实。
-必须使用 Codex 输出 Schema；每道题对应一个不同的指定 target_id，skill、source_kind 必须与该卡片一致；不得自行选卡、替换卡片或引用额外卡片补位。
+必须使用 Codex 输出 Schema；每道题的 target_id 必须是一个不同的指定卡片 UUID，skill、source_kind 必须与该卡片一致；不得自行选卡、替换卡片或引用额外卡片补位。
 联网参考可验证来源的国考、省考真题材料风格，不照搬原题与数字。
 
 【本轮动态上下文】
@@ -1393,7 +1361,7 @@ impl DataAnalysisService {
 
 原卡片正确答案不是新题答案；个人解法标记为未提供时，不得编造或声称用户使用了某种解法。
 
-【本篇固定 Flashcard】
+【本篇指定卡片 UUID】
 {targets_text}
 
 【用户出题要求 / 自定义】
@@ -1987,59 +1955,6 @@ fn exam_theme_materials() -> Vec<Material> {
         .collect()
 }
 
-fn knowledge_card_category(deck: &str) -> Option<&str> {
-    let parts: Vec<_> = deck.split('/').filter(|s| !s.is_empty()).collect();
-    let category = match parts.as_slice() {
-        [skill]
-        | ["资料", skill]
-        | ["flashcards", "资料", skill]
-        | ["资料分析", skill]
-        | ["flashcards", "资料分析", skill]
-        | ["用户整理", "资料分析", skill]
-        | ["flashcards", "用户整理", "资料分析", skill] => *skill,
-        _ => return None,
-    };
-    valid_wrong_category(category).then_some(category)
-}
-
-fn valid_wrong_category(category: &str) -> bool {
-    let count = category.chars().count();
-    count > 0
-        && count <= 60
-        && category != "."
-        && category != ".."
-        && !category.chars().any(char::is_control)
-}
-
-/// Accept the legacy 资料/错题/<skill> layout and the current
-/// 资料/<skill>/错题 layout. Only verified product roots and skill segments pass.
-fn wrong_question_source(deck: &str) -> Option<(&str, bool)> {
-    let parts = deck
-        .split('/')
-        .filter(|part| !part.is_empty())
-        .collect::<Vec<_>>();
-    let index = parts.iter().position(|part| *part == "错题")?;
-    let prefix = &parts[..index];
-    let (category, skill_precedes_wrong_folder) = match prefix {
-        [] | ["资料"] | ["flashcards", "资料"] => (*parts.get(index + 1)?, false),
-        ["资料", category]
-        | ["flashcards", "资料", category]
-        | ["资料分析", category]
-        | ["flashcards", "资料分析", category] => (*category, true),
-        ["资料分析", "AI出题", category]
-        | ["flashcards", "资料分析", "AI出题", category]
-        | ["用户整理", "资料分析", category]
-        | ["flashcards", "用户整理", "资料分析", category] => (*category, true),
-        _ => return None,
-    };
-    valid_wrong_category(category).then_some((category, skill_precedes_wrong_folder))
-}
-
-#[cfg(test)]
-fn wrong_question_category(deck: &str) -> Option<&str> {
-    wrong_question_source(deck).map(|(category, _)| category)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -2051,7 +1966,7 @@ mod tests {
             .await
             .unwrap();
         sqlx::migrate!("./migrations").run(&pool).await.unwrap();
-        sqlx::query("INSERT INTO flashcards(id,source_file,source_order,deck_path,front_markdown,back_markdown,source_hash,correct_answer,active,created_at_ms,updated_at_ms) VALUES('00000000-0000-7000-8000-000000000001','资料/乘除变化/错题/cards.md',0,'资料/乘除变化/错题','Question','-','hash','[\"B\"]',1,0,0)")
+        sqlx::query("INSERT INTO flashcards(id,source_file,source_order,deck_path,front_markdown,back_markdown,source_hash,correct_answer,active,created_at_ms,updated_at_ms) VALUES('00000000-0000-7000-8000-000000000001','用户整理/资料分析/乘除变化/错题/cards.md',0,'用户整理/资料分析/乘除变化/错题','Question','-','hash','[\"B\"]',1,0,0)")
             .execute(&pool).await.unwrap();
         let service = DataAnalysisService::new(pool, None).unwrap();
         let card = service.card_candidates().await.unwrap().remove(0);
@@ -2063,98 +1978,49 @@ mod tests {
             expected_vcnt: 0,
         };
         let context = card_generation_context(&target);
-        assert!(context.contains("正确答案：[\"B\"]"));
-        assert!(context.contains("个人解法：未提供"));
-        assert!(!context.contains("### Back\n-"));
+        assert_eq!(context, target.card.id);
+        assert!(!context.contains("Question"));
+        assert!(!context.contains("[\"B\"]"));
     }
 
     #[test]
-    fn uses_exact_wrong_question_subdirectories_as_skills() {
-        assert_eq!(
-            wrong_question_category("资料/错题/乘积增长率"),
-            Some("乘积增长率")
-        );
-        assert_eq!(
-            wrong_question_category("资料/乘除变化/错题"),
-            Some("乘除变化")
-        );
-        assert_eq!(
-            wrong_question_category("flashcards/资料/线段混合/错题"),
-            Some("线段混合")
-        );
-        assert_eq!(
-            wrong_question_category("错题/混合增长率"),
-            Some("混合增长率")
-        );
-        assert_eq!(
-            wrong_question_category("flashcards/资料/错题/综合分析与审题/小结"),
-            Some("综合分析与审题")
-        );
-        assert_eq!(
-            wrong_question_category("资料/错题/平均数增量"),
-            Some("平均数增量")
-        );
-        assert_eq!(
-            wrong_question_category("资料分析/乘除变化/错题"),
-            Some("乘除变化")
-        );
-        assert_eq!(
-            wrong_question_category("资料分析/AI出题/乘除变化/错题"),
-            Some("乘除变化")
-        );
-        assert_eq!(
-            wrong_question_category("真题练习/资料分析/乘除变化/错题"),
-            None
-        );
-        assert_eq!(
-            wrong_question_category("用户整理/资料分析/乘除变化/错题"),
-            Some("乘除变化")
-        );
-        assert_eq!(
-            knowledge_card_category("用户整理/资料分析/乘除变化"),
-            Some("乘除变化")
-        );
-        assert_eq!(wrong_question_category("资料/错题"), None);
-        assert_eq!(wrong_question_category("资料/线段混合"), None);
-        assert_eq!(wrong_question_category("其他/错题/乘积增长率"), None);
-    }
-
-    #[test]
-    fn candidates_keep_the_verified_asset_path_for_each_wrong_question_layout() {
-        let current = card_from_db(
-            "00000000-0000-7000-8000-000000000001".into(),
-            "/import/资料/乘除变化/错题/cards.md".into(),
-            "资料/乘除变化/错题".into(),
-            "Front".into(),
-            "Back".into(),
-            "hash".into(),
-        )
-        .unwrap();
-        assert_eq!(current.category, "乘除变化");
-        assert_eq!(current.card_path, "flashcards/资料/乘除变化/错题/cards.md");
-        let curated = card_from_db(
-            "00000000-0000-7000-8000-000000000003".into(),
-            "/import/用户整理/资料分析/乘除变化/错题/cards.md".into(),
-            "用户整理/资料分析/乘除变化/错题".into(),
-            "Front".into(),
-            "Back".into(),
-            "hash".into(),
-        )
-        .unwrap();
-        assert_eq!(
-            curated.card_path,
-            "flashcards/用户整理/资料分析/乘除变化/错题/cards.md"
-        );
-        let legacy = card_from_db(
-            "00000000-0000-7000-8000-000000000002".into(),
-            "/import/资料/错题/乘除变化/cards.md".into(),
-            "资料/错题/乘除变化".into(),
-            "Front".into(),
-            "Back".into(),
-            "hash".into(),
-        )
-        .unwrap();
-        assert_eq!(legacy.card_path, "flashcards/资料/错题/乘除变化/cards.md");
+    fn candidates_reject_legacy_paths_and_keep_user_organized_paths() {
+        for deck in [
+            "资料/乘除变化/错题",
+            "资料/错题/乘除变化",
+            "资料分析/乘除变化/错题",
+            "真题练习/资料分析/乘除变化/错题",
+        ] {
+            assert!(
+                card_from_db(
+                    "00000000-0000-7000-8000-000000000001".into(),
+                    format!("{deck}/cards.md"),
+                    deck.into(),
+                    "Front".into(),
+                    "Back".into(),
+                    "hash".into()
+                )
+                .is_none(),
+                "{deck}"
+            );
+        }
+        for (deck, expected) in [
+            ("用户整理/资料分析/乘除变化", SourceKind::Knowledge),
+            ("用户整理/资料分析/乘除变化/错题", SourceKind::Wrong),
+        ] {
+            let candidate = card_from_db(
+                "00000000-0000-7000-8000-000000000002".into(),
+                format!("{deck}/cards.md"),
+                deck.into(),
+                "Front".into(),
+                "Back".into(),
+                "hash".into(),
+            )
+            .unwrap();
+            assert_eq!(candidate.source_kind, expected);
+            assert_eq!(candidate.category, "乘除变化");
+            assert_eq!(candidate.card_path, format!("flashcards/{deck}/cards.md"));
+        }
     }
 
     #[test]
@@ -2172,8 +2038,8 @@ mod tests {
         let mut cards = Vec::new();
         for (category, knowledge_count, wrong_count) in data_categories {
             for (deck, count) in [
-                (format!("资料/{category}"), knowledge_count),
-                (format!("资料/{category}/错题"), wrong_count),
+                (format!("用户整理/资料分析/{category}"), knowledge_count),
+                (format!("用户整理/资料分析/{category}/错题"), wrong_count),
             ] {
                 for _ in 0..count {
                     cards.push(
@@ -2582,15 +2448,16 @@ mod tests {
 
     #[test]
     fn knowledge_decks_exclude_wrong_questions_and_unrelated_modules() {
-        assert_eq!(knowledge_card_category("资料/年均变化"), Some("年均变化"));
+        use crate::domain::data_analysis::{data_card_deck, DataCardKind};
         assert_eq!(
-            knowledge_card_category("flashcards/资料/线段混合"),
-            Some("线段混合")
+            data_card_deck("用户整理/资料分析/年均变化"),
+            Some((DataCardKind::Knowledge, "年均变化"))
         );
-        assert_eq!(knowledge_card_category("乘除变化"), Some("乘除变化"));
-        assert_eq!(knowledge_card_category("资料/错题/年均变化"), None);
-        assert_eq!(knowledge_card_category("判断/论证推理"), None);
-        assert_eq!(knowledge_card_category("资料/images"), Some("images"));
+        assert_eq!(data_card_deck("flashcards/资料/线段混合"), None);
+        assert_eq!(data_card_deck("乘除变化"), None);
+        assert_eq!(data_card_deck("资料/错题/年均变化"), None);
+        assert_eq!(data_card_deck("判断/论证推理"), None);
+        assert_eq!(data_card_deck("资料/images"), None);
     }
 
     #[test]
@@ -3072,7 +2939,7 @@ mod tests {
             .fetch_all(&pool)
             .await
             .unwrap();
-        let archived_groups = historical_rows
+        let mut archived_groups = historical_rows
             .into_iter()
             .map(|row| {
                 serde_json::from_str::<QuestionGroup>(
@@ -3081,6 +2948,10 @@ mod tests {
                 .unwrap()
             })
             .collect::<Vec<_>>();
+        let card_id = "019a31b7-8c42-7c16-a6d1-0c1f0f34c821";
+        sqlx::query("INSERT INTO flashcards(id,source_file,source_order,deck_path,front_markdown,back_markdown,source_hash,active,created_at_ms,updated_at_ms) VALUES(?,'新位置/cards.md',0,'新位置','新正面','新背面','current',1,0,0)").bind(card_id).execute(&pool).await.unwrap();
+        archived_groups[0].questions[0].card_id = Some(card_id.into());
+        archived_groups[0].questions[0].card_path = Some("flashcards/旧位置/cards.md".into());
         let run_id = Uuid::now_v7().to_string();
         sqlx::query("INSERT INTO data_analysis_runs(id,groups_json,answers_json,status,created_at_ms) VALUES(?,?,?,'ready',?)")
             .bind(&run_id)
@@ -3114,6 +2985,10 @@ mod tests {
         assert_eq!(result.correct, 1);
         assert_eq!(result.total, 20);
         assert_eq!(result.questions.len(), 20);
+        assert_eq!(
+            result.questions[0].card_path.as_deref(),
+            Some("flashcards/新位置/cards.md")
+        );
         assert!(
             service.answer(&run_id, 2, 1).await.is_err(),
             "submitted run must reject answers"

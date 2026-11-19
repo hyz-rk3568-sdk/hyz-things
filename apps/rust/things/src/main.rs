@@ -2,13 +2,16 @@ use hyz_things::{
     adapters::{
         inbound::http::{
             app_with_admin_camera_control_and_flashcards_and_analysis_with_allowed_origins,
-            bind_fixed_lan_with_retry, bind_ipv6_listener, with_favorite_flashcards,
-            with_question_bank, with_question_bank_ai, with_shenlun_ai, with_training_time,
-            PortalTls, TlsListener, DEFAULT_BIND_ATTEMPTS, DEFAULT_HTTP_PORT,
+            bind_fixed_lan_with_retry, bind_ipv6_listener, with_ai_practice,
+            with_ai_practice_agent, with_favorite_flashcards, with_question_bank,
+            with_question_bank_ai, with_shenlun_ai, with_training_time, PortalTls, TlsListener,
+            DEFAULT_BIND_ATTEMPTS, DEFAULT_HTTP_PORT,
         },
         outbound::{
             admin::AdminFileAdapter,
             ai_attachment_receiver::load_attachment_relay,
+            ai_practice::SqliteAiPracticeFavorites,
+            ai_practice_agent::SqliteAiPracticeAgent,
             camera::CameraUnixAdapter,
             data_analysis::{load_codex_env, DataAnalysisService},
             favorite_flashcard_source::FilesystemFavoriteFlashcardWriter,
@@ -29,13 +32,17 @@ use hyz_things::{
     },
     application::{
         admin::AdminApplication,
+        ai_practice::{AiPracticeAgent, AiPracticeFavorites},
         camera::CameraApplication,
         favorite_flashcards::FavoriteFlashcardApplication,
         flashcards::FlashcardApplication,
         logic_judgment::LogicJudgmentPort,
         ports::{ClockPort, PlatformError, PortalControlHandler},
         quantitative_relations::QuantitativeRelationsPort,
-        question_bank::{practice::AiAttachmentRelay, QuestionBankApplication},
+        question_bank::{
+            practice::{AiAttachmentRelay, AiReviewBackend},
+            QuestionBankApplication,
+        },
         status::PortalStatus,
         training_time::TrainingTimePort,
     },
@@ -130,12 +137,31 @@ async fn run_daemon() -> Result<(), Box<dyn Error>> {
         logic_judgment,
         quantitative_relations,
         training_time,
+        ai_practice,
+        ai_practice_agent,
     ) = match SqliteFlashcardRepository::connect(FLASHCARD_DB_PATH).await {
         Ok(repository) => {
+            let ai_practice = Arc::new(AiPracticeFavorites::new(Arc::new(
+                SqliteAiPracticeFavorites::new(repository.pool().clone()),
+            )));
             let training_time = Arc::new(TrainingTimeService::new(repository.pool().clone()))
                 as Arc<dyn TrainingTimePort>;
             let source = Arc::new(FilesystemFlashcardSource::default());
             let ai_config = load_codex_env().unwrap_or(None);
+            let agent_backend = ai_config
+                .clone()
+                .map(|config| Arc::new(config) as Arc<dyn AiReviewBackend>);
+            let agent = Arc::new(SqliteAiPracticeAgent::new(
+                repository.pool().clone(),
+                agent_backend,
+            ));
+            let ai_practice_agent = match agent.recover_interrupted().await {
+                Ok(()) => Some(Arc::new(AiPracticeAgent::new(agent))),
+                Err(_) => {
+                    tracing::warn!("AI practice agent recovery failed");
+                    None
+                }
+            };
             let data_analysis =
                 DataAnalysisService::new(repository.pool().clone(), ai_config.clone())
                     .ok()
@@ -170,6 +196,8 @@ async fn run_daemon() -> Result<(), Box<dyn Error>> {
                 logic_judgment,
                 quantitative_relations,
                 Some(training_time),
+                Some(ai_practice),
+                ai_practice_agent,
             )
         }
         Err(_error) => {
@@ -183,7 +211,7 @@ async fn run_daemon() -> Result<(), Box<dyn Error>> {
                 None,
                 None,
             );
-            (None, None, None, None, None, None)
+            (None, None, None, None, None, None, None, None)
         }
     };
     let control: Arc<dyn PortalControlHandler> = Arc::new(RouterControlClient);
@@ -263,6 +291,8 @@ async fn run_daemon() -> Result<(), Box<dyn Error>> {
         tls: tls_acceptor.clone(),
         question_bank: question_bank.clone(),
         question_bank_ai: question_bank_ai.clone(),
+        ai_practice: ai_practice.clone(),
+        ai_practice_agent: ai_practice_agent.clone(),
         shenlun_ai: shenlun_ai.clone(),
         flashcards: flashcards.clone(),
         flashcard_source: flashcard_source.clone(),
@@ -368,6 +398,8 @@ async fn run_daemon() -> Result<(), Box<dyn Error>> {
         quantitative_relations,
         additional_allowed_origins,
     );
+    let app = with_ai_practice_agent(app, ai_practice_agent);
+    let app = with_ai_practice(app, ai_practice);
     let app = with_question_bank(app, question_bank);
     let app = with_favorite_flashcards(app, favorite_flashcards);
     let app = with_question_bank_ai(app, question_bank_ai);

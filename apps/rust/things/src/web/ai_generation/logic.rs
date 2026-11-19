@@ -1,7 +1,6 @@
 //! Independent logic drills use server-owned answers and deadlines.
 use super::*;
 use gloo_timers::callback::Interval;
-use hyz_things::domain::data_analysis::RelatedCardSnapshot;
 
 #[derive(Properties, PartialEq)]
 pub(crate) struct LogicJudgmentProps {
@@ -22,7 +21,7 @@ enum LogicAction {
     Submit,
     Pause,
     PauseAndExit,
-    Result(String),
+    Result(String, usize),
     Retry(String),
     Prompt,
     ResetPrompt,
@@ -469,9 +468,10 @@ pub(crate) fn logic_judgment_training(props: &LogicJudgmentProps) -> Html {
                                 }
                             }
                         }
-                        LogicAction::Result(id) => {
+                        LogicAction::Result(id, index) => {
                             history_forced.set(false);
                             let score = read_drill_result(root, &id).await?;
+                            current.set(index.min(score.questions.len().saturating_sub(1)));
                             result.set(Some(score));
                             run.set(None);
                         }
@@ -702,6 +702,7 @@ pub(crate) fn logic_judgment_training(props: &LogicJudgmentProps) -> Html {
                 actions={html! {
                     <div class="ml-auto flex flex-wrap items-center justify-end gap-2">
                         <TrainingStatusBar prefix={format!("{prefix}-result")} counts={review_status} mode={TrainingStatusMode::Review}/>
+                        <AiPracticeActions key={format!("{prefix}-{}-{index}",score.id)} csrf={props.csrf.clone()} id={hyz_things::domain::ai_practice::AiPracticeQuestionId { module: if props.quantitative {hyz_things::domain::ai_practice::AiPracticeModule::QuantitativeRelations} else {hyz_things::domain::ai_practice::AiPracticeModule::LogicJudgment}, session_id:score.id.clone(), question:index }}/>
                         <button class="btn btn-outline btn-sm" data-testid={format!("{prefix}-records")} onclick={show_records}>{"查看练习记录"}</button>
                         <button class="btn btn-primary btn-sm" data-testid={format!("{prefix}-retry")} disabled={*busy} onclick={invoke(LogicAction::Retry(score.id.clone()))}>{"重做原题"}</button>
                     </div>
@@ -733,8 +734,7 @@ pub(crate) fn logic_judgment_training(props: &LogicJudgmentProps) -> Html {
                         <h3 class="mt-3 font-semibold">{"解题解析"}</h3>
                         <div class="study-markdown mt-2 whitespace-pre-wrap text-base leading-7">{render_markdown(&q.explanation, "")}</div>
                         <RelatedMethodCard key={format!("{prefix}-{}-{index}", score.id)}
-                            card={Some(RelatedCardSnapshot { front: q.front.clone(), back: q.back.clone() })}
-                            source_file={q.card_path.clone()} test_id={format!("{prefix}-related-card")} />
+                            card_id={Some(q.card_id.clone())} test_id={format!("{prefix}-related-card")} />
                                     </div>
                                 </div>
                             }}
@@ -760,6 +760,7 @@ pub(crate) fn logic_judgment_training(props: &LogicJudgmentProps) -> Html {
                     <button class="btn btn-outline btn-sm" onclick={{let history_open=history_open.clone();let history_forced=history_forced.clone(); Callback::from(move |_|{history_open.set(false);history_forced.set(false);})}}>{"返回训练"}</button>
                 </div>})}>
                 <div class="space-y-4">
+                <AiPracticeFavoritesPanel module={if props.quantitative {hyz_things::domain::ai_practice::AiPracticeModule::QuantitativeRelations} else {hyz_things::domain::ai_practice::AiPracticeModule::LogicJudgment}} on_open={Callback::from({let action=action.clone(); move |id: hyz_things::domain::ai_practice::AiPracticeQuestionId| action.emit(LogicAction::Result(id.session_id,id.question))})}/>
                 if history.is_empty() { <p class="text-sm text-base-content/60">{format!("尚无已交卷的{subject}训练。")}</p> }
                 {for history.iter().map(|h| {
                     let finished=Date::new(&JsValue::from_f64(h.ended_at_ms as f64)).to_locale_string("zh-CN",&JsValue::UNDEFINED);
@@ -771,7 +772,7 @@ pub(crate) fn logic_judgment_training(props: &LogicJudgmentProps) -> Html {
                                     <p class="mt-1 text-xs text-base-content/60">{format!("作答 {} 题 · 可查看解析或重做",h.answered)}</p>
                                 </div>
                                 <div class="flex flex-wrap gap-2">
-                                    <button class="btn btn-outline btn-sm" disabled={*busy} onclick={invoke(LogicAction::Result(h.id.clone()))}>{"查看原题与解析"}</button>
+                                    <button class="btn btn-outline btn-sm" disabled={*busy} onclick={invoke(LogicAction::Result(h.id.clone(), 0))}>{"查看原题与解析"}</button>
                                     <button class="btn btn-primary btn-sm" disabled={*busy} onclick={invoke(LogicAction::Retry(h.id.clone()))}>{"重做原题"}</button>
                                 </div>
                             </div>

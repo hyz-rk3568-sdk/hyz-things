@@ -23,3 +23,7 @@ pub mod question_bank_ai;
 pub mod question_bank_source;
 pub mod question_bank_sqlite;
 pub mod shenlun_ai;
+
+pub mod ai_practice;
+
+pub mod ai_practice_agent;

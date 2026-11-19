@@ -12,7 +12,7 @@ use uuid::Uuid;
 
 use crate::{
     application::flashcards::{FlashcardError, FlashcardSourcePort},
-    domain::flashcards::{FlashcardId, SourceCard, SourceSnapshot, SyncError},
+    domain::flashcards::{CurrentFlashcard, FlashcardId, SourceCard, SourceSnapshot, SyncError},
 };
 
 pub const FLASHCARD_SOURCE_ROOT: &str = "/mnt/hyz-cards";
@@ -143,6 +143,13 @@ impl FilesystemFlashcardSource {
     }
 
     fn scan_blocking(&self) -> Result<SourceSnapshot, FlashcardError> {
+        self.scan_blocking_mode(true)
+    }
+
+    fn scan_blocking_mode(
+        &self,
+        write_missing_ids: bool,
+    ) -> Result<SourceSnapshot, FlashcardError> {
         let guard = guard::SourceGuard::open(&self.root, self.mount_checked)
             .map_err(|error| FlashcardError::SourceUnavailable(error.to_string()))?;
         let root = fs::canonicalize(&self.root).map_err(|error| {
@@ -242,8 +249,13 @@ impl FilesystemFlashcardSource {
                         snapshot
                             .successful_markdown_files
                             .insert(source_file.clone());
-                        snapshot.cards.extend(parsed.cards);
-                        if parsed.generated_ids {
+                        snapshot.cards.extend(
+                            parsed
+                                .cards
+                                .into_iter()
+                                .filter(|card| write_missing_ids || !card.generated_id),
+                        );
+                        if parsed.generated_ids && write_missing_ids {
                             if let Err(error) = guard.replace(
                                 Path::new(&source_file),
                                 &original,
@@ -282,6 +294,33 @@ impl FilesystemFlashcardSource {
 
 #[async_trait]
 impl FlashcardSourcePort for FilesystemFlashcardSource {
+    async fn current_card(
+        &self,
+        id: &FlashcardId,
+    ) -> Result<Option<CurrentFlashcard>, FlashcardError> {
+        let source = self.clone();
+        let id = id.clone();
+        tokio::task::spawn_blocking(move || {
+            let snapshot = source.scan_blocking_mode(false)?;
+            if !snapshot.complete || !snapshot.errors.is_empty() {
+                return Err(FlashcardError::SourceUnavailable(
+                    "card source scan incomplete".into(),
+                ));
+            }
+            Ok(snapshot
+                .cards
+                .into_iter()
+                .find(|card| card.id == id)
+                .map(|card| CurrentFlashcard {
+                    source_file: card.source_file,
+                    front_markdown: card.front_markdown,
+                    back_markdown: card.back_markdown,
+                }))
+        })
+        .await
+        .map_err(|error| FlashcardError::SourceUnavailable(error.to_string()))?
+    }
+
     async fn scan(&self) -> Result<SourceSnapshot, FlashcardError> {
         let source = self.clone();
         tokio::task::spawn_blocking(move || source.scan_blocking())

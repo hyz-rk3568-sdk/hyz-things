@@ -23,3 +23,5 @@ pub mod quantitative_relations;
 pub mod question_bank;
 
 pub mod svg;
+
+pub mod ai_practice;

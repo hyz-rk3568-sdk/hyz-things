@@ -95,3 +95,37 @@ mod tests {
         assert!(serde_json::from_value::<GeneratedQuestion>(value).is_err());
     }
 }
+
+pub fn generation_card_path(path: &str) -> bool {
+    let Some(deck) = path
+        .strip_prefix("用户整理/判断推理/形式推理/")
+        .and_then(|value| value.strip_suffix("/cards.md"))
+    else {
+        return false;
+    };
+    let category = deck.strip_suffix("/错题").unwrap_or(deck);
+    ["直言命题", "联言选言假言命题", "组合排列", "特殊题型"].contains(&category)
+}
+
+#[cfg(test)]
+mod generation_path_tests {
+    use super::*;
+    #[test]
+    fn generation_accepts_only_user_organized_formal_decks() {
+        assert!(generation_card_path(
+            "用户整理/判断推理/形式推理/直言命题/cards.md"
+        ));
+        assert!(generation_card_path(
+            "用户整理/判断推理/形式推理/直言命题/错题/cards.md"
+        ));
+        for path in [
+            "判断/形式推理/直言命题/cards.md",
+            "判断推理/AI出题/形式推理/直言命题/cards.md",
+            "真题练习/判断推理/形式推理/直言命题/错题/cards.md",
+            "用户整理/判断推理/形式推理/未知/cards.md",
+            "用户整理/判断推理/形式推理/直言命题/其他/cards.md",
+        ] {
+            assert!(!generation_card_path(path), "{path}");
+        }
+    }
+}

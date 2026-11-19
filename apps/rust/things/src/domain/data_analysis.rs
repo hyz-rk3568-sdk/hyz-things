@@ -79,14 +79,9 @@ impl VerifiedQuestion {
     pub fn related_card_for(
         &self,
         card_id: &str,
-        source_hash: &str,
         current: RelatedCardSnapshot,
     ) -> Option<RelatedCardSnapshot> {
-        self.related_card.clone().or_else(|| {
-            (self.card_id.as_deref() == Some(card_id)
-                && self.source_hash.as_deref() == Some(source_hash))
-            .then_some(current)
-        })
+        (self.card_id.as_deref() == Some(card_id)).then_some(current)
     }
 }
 
@@ -129,46 +124,22 @@ mod tests {
     }
 
     #[test]
-    fn legacy_review_recovers_only_the_same_card_version() {
-        let mut question: VerifiedQuestion = serde_json::from_value(serde_json::json!({
+    fn related_card_uses_current_content_for_matching_uuid() {
+        let question: VerifiedQuestion = serde_json::from_value(serde_json::json!({
             "question":"题目", "options":["1","2","3","4"], "correct_index":0,
             "answer":"1", "explanation":"解析", "skill":"基期量", "evidence":"统计数据",
-            "card_id":"card-1", "source_hash":"original-hash"
+            "card_id":"card-1", "source_hash":"old", "related_card":{"front":"旧", "back":"旧"}
         }))
         .unwrap();
-        let card = RelatedCardSnapshot {
-            front: "原题方法".into(),
-            back: "原题解法".into(),
+        let current = RelatedCardSnapshot {
+            front: "新".into(),
+            back: "新解法".into(),
         };
         assert_eq!(
-            question.related_card_for("card-1", "original-hash", card.clone()),
-            Some(card.clone())
+            question.related_card_for("card-1", current.clone()),
+            Some(current.clone())
         );
-        assert_eq!(
-            question.related_card_for("card-1", "new-hash", card.clone()),
-            None
-        );
-        assert_eq!(
-            question.related_card_for("another-card", "original-hash", card.clone()),
-            None
-        );
-        question.source_hash = None;
-        assert_eq!(
-            question.related_card_for("card-1", "original-hash", card.clone()),
-            None
-        );
-        question.related_card = Some(card.clone());
-        assert_eq!(
-            question.related_card_for(
-                "another-card",
-                "new-hash",
-                RelatedCardSnapshot {
-                    front: "改过的卡片".into(),
-                    back: "改过的解法".into(),
-                }
-            ),
-            Some(card)
-        );
+        assert_eq!(question.related_card_for("another-card", current), None);
     }
 
     #[test]
@@ -264,5 +235,55 @@ mod tests {
         assert_eq!(topic_scope("不存在的主题"), None);
         assert_eq!(QUIZ_GROUPS * QUIZ_PER_GROUP, QUIZ_QUESTIONS);
         assert_eq!(QUIZ_SECONDS, 1200);
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum DataCardKind {
+    Knowledge,
+    Wrong,
+}
+
+pub fn data_card_deck(deck: &str) -> Option<(DataCardKind, &str)> {
+    let parts = deck.split('/').collect::<Vec<_>>();
+    let (kind, category) = match parts.as_slice() {
+        ["用户整理", "资料分析", category, "错题"] => (DataCardKind::Wrong, *category),
+        ["用户整理", "资料分析", category] => (DataCardKind::Knowledge, *category),
+        _ => return None,
+    };
+    let count = category.chars().count();
+    (count > 0
+        && count <= 60
+        && category != "."
+        && category != ".."
+        && category != "错题"
+        && !category.chars().any(char::is_control))
+    .then_some((kind, category))
+}
+
+#[cfg(test)]
+mod deck_tests {
+    use super::*;
+    #[test]
+    fn generation_accepts_only_user_organized_data_decks() {
+        assert_eq!(
+            data_card_deck("用户整理/资料分析/乘除变化"),
+            Some((DataCardKind::Knowledge, "乘除变化"))
+        );
+        assert_eq!(
+            data_card_deck("用户整理/资料分析/乘除变化/错题"),
+            Some((DataCardKind::Wrong, "乘除变化"))
+        );
+        for old in [
+            "资料/乘除变化",
+            "资料/乘除变化/错题",
+            "资料/错题/乘除变化",
+            "资料分析/乘除变化/错题",
+            "真题练习/资料分析/乘除变化/错题",
+            "用户整理/资料分析/乘除变化/错题/下级",
+            "用户整理/资料分析/../错题",
+        ] {
+            assert_eq!(data_card_deck(old), None, "{old}");
+        }
     }
 }

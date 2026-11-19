@@ -12,3 +12,5 @@ pub mod quantitative_relations;
 pub mod question_bank;
 
 pub mod training_time;
+
+pub mod ai_practice;

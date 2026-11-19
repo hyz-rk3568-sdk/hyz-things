@@ -759,7 +759,7 @@ impl QuantitativeRelationsService {
         }
         let result = run.grade(id);
         tx.commit().await.map_err(error)?;
-        Ok(result)
+        self.current_cards(result).await
     }
     pub async fn result(&self, id: &str) -> Result<RunResult, String> {
         self.expire(id).await?;
@@ -767,7 +767,25 @@ impl QuantitativeRelationsService {
         if run.status != "submitted" {
             return Err(INVALID.into());
         }
-        Ok(run.grade(id))
+        self.current_cards(run.grade(id)).await
+    }
+    async fn current_cards(&self, mut result: RunResult) -> Result<RunResult, String> {
+        for question in &mut result.questions {
+            if let Some((path, front, back)) =
+                super::flashcard_sqlite::current_card_content(&self.pool, &question.card_id)
+                    .await
+                    .map_err(error)?
+            {
+                question.card_path = path;
+                question.front = front;
+                question.back = back;
+            } else {
+                question.card_path.clear();
+                question.front.clear();
+                question.back.clear();
+            }
+        }
+        Ok(result)
     }
     pub async fn retry(&self, source_id: &str) -> Result<String, String> {
         let mut tx = self
@@ -881,26 +899,11 @@ impl QuantitativeGenerationPort for CodexConfig {
     ) -> Result<Vec<GeneratedQuestion>, String> {
         // Follow the verified data-analysis generation contract: the server fixes
         // all target cards and checks shape/identity, while Codex checks mathematics.
-        let targets_text = request
-            .targets
-            .iter()
-            .map(|target| format!(
-                "【目标 {id}】\n题型：{kind}\n卡片ID：{card_id}\n路径：{path}\n### Front\n{front}\n正确答案：{correct_answer}\n个人解法：{back}",
-                id = target.target_id,
-                kind = target.kind,
-                card_id = target.card_id,
-                path = target.card_path,
-                front = target.front,
-                correct_answer = json!(target.correct_answer),
-                back = crate::domain::flashcards::personal_solution(&target.back)
-                    .unwrap_or("未提供"),
-            ))
-            .collect::<Vec<_>>()
-            .join("\n\n");
+        let targets_text = serde_json::to_string(&request.targets).map_err(error)?;
         let prompt = format!(
             r#"【固定规则 / 应用端约束】
 你是 hyz 行测数量关系命题 Agent。先阅读仓库 .agents/skills/行测做题/SKILL.md 和 .agents/skills/行测做题/references/数量关系.md；根据目标题型阅读同目录中的 数量关系-方程比例与应用.md、数量关系-计数概率与最值.md、数量关系-几何数推与特殊题.md，必要时阅读 数量关系-实战验题与输出.md。只有来自 用户整理/数量关系/方程比例与应用、计数概率与最值、几何数推与特殊题 下的已同步 cards.md 或 错题/cards.md 可作为本轮命题目标。
-根据后端指定的已同步 Flashcard 命题，生成恰好10道原创四选一独立题，每张卡片恰好对应一道，target_id 不可更换和复用，kind 固定 quantitative。
+自行在仓库 flashcards 目录中按 UUID 查找并读取指定卡片；找不到时报告错误，不得换卡。根据后端指定的 Flashcard 命题，生成恰好10道原创四选一独立题，每张卡片恰好对应一道，target_id 必须为指定卡片 UUID，不可更换和复用，kind 固定 quantitative。
 覆盖三类方法对应的方程、比例、利润、工程、行程、溶液、计数、概率、最值、周期、几何、数字推理及特殊题型，但每题必须紧扣对应卡片的实际考点。只出文字条件充分、无需共享材料的四选一独立题。需要图形辅助理解的几何题设置 diagram_required 为 true，在 question 末尾提供独立的 ```svg 代码块；其他题设置为 false。SVG 使用 xmlns="http://www.w3.org/2000/svg" 和正宽高 viewBox，可使用渐变、样式、变换、滤镜及 #id 内部引用，禁止脚本、事件处理器、foreignObject 和外部资源。检查图形点位、标注和题干条件一致，画不准确时重新出题。题干只陈述已知条件，不泄露思路、公式、答案。
 遵循资料分析已验证的命题责任分工：应用只检验结构、题量、选项、目标唯一性，数学正确性和语义唯一性由 Codex 自检。
 
@@ -910,7 +913,7 @@ Codex 自行验算每题数值、边界、单位、正确选项唯一性、解�
 
 原卡片正确答案不是新题答案；个人解法标记为未提供时，不得编造或声称用户使用了某种解法。
 
-【本轮固定 Flashcard】
+【本轮指定卡片 UUID】
 {targets_text}
 
 【用户出题要求 / 自定义】
@@ -1055,6 +1058,43 @@ mod favorite_metadata_tests {
                 })
                 .collect())
         }
+    }
+
+    #[tokio::test]
+    async fn review_reads_current_card_by_uuid() {
+        use crate::application::quantitative_relations::{
+            QuantitativeRelationsOperation, QuantitativeRelationsPort,
+        };
+        let pool = sqlx::sqlite::SqlitePoolOptions::new()
+            .max_connections(1)
+            .connect("sqlite::memory:")
+            .await
+            .unwrap();
+        sqlx::migrate!("./migrations").run(&pool).await.unwrap();
+        for i in 0..QUIZ_QUESTIONS {
+            sqlx::query("INSERT INTO flashcards(id,source_file,source_order,deck_path,front_markdown,back_markdown,source_hash,correct_answer,active,created_at_ms,updated_at_ms) VALUES(?,?,0,'deck','Question','-','hash','[\"B\"]',1,0,0)")
+                .bind(format!("00000000-0000-7000-8000-{i:012}"))
+                .bind(format!("用户整理/数量关系/{}/cards.md", ["方程比例与应用", "计数概率与最值", "几何数推与特殊题"][i % 3])).execute(&pool).await.unwrap();
+        }
+        let service =
+            QuantitativeRelationsService::with_generator(pool, Some(Arc::new(AnswerContext)));
+        let plan = service.plan(1).await.unwrap();
+        let generated = service.generate("test-job", &plan, "").await.unwrap();
+        let id = service.commit_paper(None, &plan, generated).await.unwrap();
+        service.start(&id).await.unwrap();
+        service.submit(&id).await.unwrap();
+        let initial = service
+            .execute(QuantitativeRelationsOperation::Result(id.clone()))
+            .await
+            .unwrap();
+        let card_id = initial["questions"][0]["card_id"].as_str().unwrap();
+        sqlx::query("UPDATE flashcards SET front_markdown='current front',back_markdown='current back' WHERE id=?").bind(card_id).execute(&service.pool).await.unwrap();
+        let result = service
+            .execute(QuantitativeRelationsOperation::Result(id))
+            .await
+            .unwrap();
+        assert_eq!(result["questions"][0]["front"], "current front");
+        assert_eq!(result["questions"][0]["back"], "current back");
     }
 
     #[tokio::test]

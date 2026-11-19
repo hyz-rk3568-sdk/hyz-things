@@ -26,6 +26,13 @@ const QUESTION: &str = "019a3d8e-1b32-7a60-9c83-f34217a6e210";
 const CARD: &str = "019a31b7-8c42-7c16-a6d1-0c1f0f34c821";
 #[derive(Default)]
 struct Fake {
+    ai_favorites: Mutex<Vec<hyz_things::domain::ai_practice::AiPracticeQuestionId>>,
+    ai_messages: Mutex<
+        Vec<(
+            hyz_things::domain::ai_practice::AiPracticeQuestionId,
+            String,
+        )>,
+    >,
     written: Mutex<Vec<NewFavoriteCard>>,
     indexed: Mutex<Vec<SourceCard>>,
     targets: Mutex<Vec<String>>,
@@ -169,6 +176,76 @@ impl FlashcardSourcePort for Fake {
             successful_markdown_files,
             ..Default::default()
         })
+    }
+}
+#[async_trait]
+impl hyz_things::application::ai_practice::AiPracticeFavoritesPort for Fake {
+    async fn set(
+        &self,
+        id: &hyz_things::domain::ai_practice::AiPracticeQuestionId,
+        favorite: bool,
+    ) -> Result<(), hyz_things::application::ai_practice::AiPracticeError> {
+        let mut entries = self.ai_favorites.lock().unwrap();
+        entries.retain(|entry| entry != id);
+        if favorite {
+            entries.push(id.clone());
+        }
+        Ok(())
+    }
+    async fn list(
+        &self,
+    ) -> Result<
+        Vec<hyz_things::domain::ai_practice::AiPracticeQuestionId>,
+        hyz_things::application::ai_practice::AiPracticeError,
+    > {
+        Ok(self.ai_favorites.lock().unwrap().clone())
+    }
+}
+#[async_trait]
+impl hyz_things::application::ai_practice::AiPracticeAgentPort for Fake {
+    async fn state(
+        &self,
+        id: &hyz_things::domain::ai_practice::AiPracticeQuestionId,
+    ) -> Result<
+        hyz_things::domain::ai_practice::AiPracticeAgentState,
+        hyz_things::application::ai_practice::AiPracticeError,
+    > {
+        let messages = self
+            .ai_messages
+            .lock()
+            .unwrap()
+            .iter()
+            .filter(|(key, _)| key == id)
+            .map(
+                |(_, content)| hyz_things::domain::ai_practice::AiPracticeMessage {
+                    role: "user".into(),
+                    content: content.clone(),
+                },
+            )
+            .collect();
+        Ok(hyz_things::domain::ai_practice::AiPracticeAgentState {
+            status: "idle".into(),
+            messages,
+            partial: String::new(),
+            error: None,
+        })
+    }
+    async fn send(
+        &self,
+        id: &hyz_things::domain::ai_practice::AiPracticeQuestionId,
+        message: &str,
+    ) -> Result<(), hyz_things::application::ai_practice::AiPracticeError> {
+        self.ai_messages
+            .lock()
+            .unwrap()
+            .push((id.clone(), message.into()));
+        Ok(())
+    }
+    async fn stop(
+        &self,
+        _: &hyz_things::domain::ai_practice::AiPracticeQuestionId,
+    ) -> Result<(), hyz_things::application::ai_practice::AiPracticeError> {
+        Ok(())
     }
 }
 impl ClockPort for Fake {
@@ -508,7 +585,10 @@ impl PortalControlHandler for AuthPorts {
 
 async fn server() -> (tokio::task::JoinHandle<()>, String, String, Arc<Fake>) {
     use hyz_things::{
-        adapters::inbound::http::{app_with_admin_control_at_address, with_favorite_flashcards},
+        adapters::inbound::http::{
+            app_with_admin_control_at_address, with_ai_practice, with_ai_practice_agent,
+            with_favorite_flashcards,
+        },
         application::{admin::AdminApplication, status::PortalStatus},
     };
     let auth = Arc::new(AuthPorts::default());
@@ -542,6 +622,18 @@ async fn server() -> (tokio::task::JoinHandle<()>, String, String, Arc<Fake>) {
             addr.port(),
         ),
         Some(Arc::new(app)),
+    );
+    let router = with_ai_practice(
+        router,
+        Some(Arc::new(
+            hyz_things::application::ai_practice::AiPracticeFavorites::new(fake.clone()),
+        )),
+    );
+    let router = with_ai_practice_agent(
+        router,
+        Some(Arc::new(
+            hyz_things::application::ai_practice::AiPracticeAgent::new(fake.clone()),
+        )),
     );
     let task = tokio::spawn(async move { axum::serve(listener, router).await.unwrap() });
     (
@@ -951,4 +1043,153 @@ async fn cancelled_manual_sync_keeps_write_gate_until_its_worker_finishes() {
     };
     fake.scan_release.notify_one();
     assert!(is_busy, "cancelled sync released its filesystem write gate");
+}
+
+#[tokio::test]
+async fn current_flashcard_http_requires_admin_and_valid_uuid() {
+    let (task, base, cookie, _) = server().await;
+    let client = reqwest::Client::new();
+    let root = format!("{base}/api/v1/study/cards/{CARD}/current");
+    assert_eq!(client.get(&root).send().await.unwrap().status(), 401);
+    assert_eq!(
+        client
+            .get(format!("{base}/api/v1/study/cards/not-a-uuid/current"))
+            .header("cookie", &cookie)
+            .send()
+            .await
+            .unwrap()
+            .status(),
+        400
+    );
+    assert_eq!(
+        client
+            .get(&root)
+            .header("cookie", &cookie)
+            .send()
+            .await
+            .unwrap()
+            .status(),
+        503
+    );
+    task.abort();
+}
+
+#[tokio::test]
+async fn ai_practice_favorites_are_admin_and_csrf_protected() {
+    let (task, base, cookie, _) = server().await;
+    let client = reqwest::Client::new();
+    let url = format!("{base}/api/v1/study/ai-practice/favorites");
+    assert_eq!(client.get(&url).send().await.unwrap().status(), 401);
+    assert_eq!(
+        client
+            .get(&url)
+            .header("cookie", &cookie)
+            .send()
+            .await
+            .unwrap()
+            .status(),
+        200
+    );
+    let body = serde_json::json!({"id":{"module":"logic_judgment","session_id":CARD,"question":0},"favorite":true});
+    assert_eq!(
+        client
+            .post(&url)
+            .header("cookie", &cookie)
+            .header("origin", &base)
+            .json(&body)
+            .send()
+            .await
+            .unwrap()
+            .status(),
+        403
+    );
+    assert_eq!(
+        client
+            .post(&url)
+            .header("cookie", &cookie)
+            .header("origin", &base)
+            .header("x-hyz-csrf", "fc-csrf")
+            .json(&body)
+            .send()
+            .await
+            .unwrap()
+            .status(),
+        200
+    );
+    let items: Vec<serde_json::Value> = client
+        .get(&url)
+        .header("cookie", &cookie)
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(items, vec![body["id"].clone()]);
+    task.abort();
+}
+
+#[tokio::test]
+async fn ai_practice_agent_requires_admin_origin_and_csrf() {
+    let (task, base, cookie, _) = server().await;
+    let client = reqwest::Client::new();
+    let root = format!("{base}/api/v1/study/ai-practice/agent");
+    let query = format!("?module=data_analysis&session_id={CARD}&question=0");
+    assert_eq!(
+        client
+            .get(format!("{root}{query}"))
+            .send()
+            .await
+            .unwrap()
+            .status(),
+        401
+    );
+    assert_eq!(
+        client
+            .get(format!("{root}{query}"))
+            .header("cookie", &cookie)
+            .send()
+            .await
+            .unwrap()
+            .status(),
+        200
+    );
+    let body = serde_json::json!({"id":{"module":"data_analysis","session_id":CARD,"question":0},"message":"请解题"});
+    assert_eq!(
+        client
+            .post(format!("{root}/messages"))
+            .header("cookie", &cookie)
+            .header("origin", "https://foreign.example")
+            .header("x-hyz-csrf", "fc-csrf")
+            .json(&body)
+            .send()
+            .await
+            .unwrap()
+            .status(),
+        403
+    );
+    assert_eq!(
+        client
+            .post(format!("{root}/messages"))
+            .header("cookie", &cookie)
+            .header("origin", &base)
+            .header("x-hyz-csrf", "fc-csrf")
+            .json(&body)
+            .send()
+            .await
+            .unwrap()
+            .status(),
+        200
+    );
+    let state: serde_json::Value = client
+        .get(format!("{root}{query}"))
+        .header("cookie", &cookie)
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(state["messages"][0]["content"], "请解题");
+    task.abort();
 }

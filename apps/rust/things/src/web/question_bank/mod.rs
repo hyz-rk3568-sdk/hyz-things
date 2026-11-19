@@ -24,7 +24,7 @@ pub(crate) use practice::*;
 pub(crate) use shenlun::*;
 
 use ai_composer::*;
-use ai_reply::*;
+pub(crate) use ai_reply::*;
 use ai_review_api::*;
 use ai_review_recovery::*;
 use setup::*;

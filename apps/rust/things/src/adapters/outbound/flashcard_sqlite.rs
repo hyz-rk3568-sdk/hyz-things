@@ -19,6 +19,26 @@ use crate::{
     },
 };
 
+pub(crate) async fn current_card_content(
+    pool: &SqlitePool,
+    id: &str,
+) -> Result<Option<(String, String, String)>, sqlx::Error> {
+    let row = sqlx::query(
+        "SELECT source_file,front_markdown,back_markdown FROM flashcards WHERE id=? AND active=1",
+    )
+    .bind(id)
+    .fetch_optional(pool)
+    .await?;
+    row.map(|row| {
+        Ok((
+            format!("flashcards/{}", row.try_get::<String, _>("source_file")?),
+            row.try_get("front_markdown")?,
+            row.try_get("back_markdown")?,
+        ))
+    })
+    .transpose()
+}
+
 #[derive(Clone)]
 pub struct SqliteFlashcardRepository {
     pool: SqlitePool,

@@ -245,6 +245,13 @@ pub struct TagSummary {
     pub card_count: u32,
 }
 
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct CurrentFlashcard {
+    pub source_file: String,
+    pub front_markdown: String,
+    pub back_markdown: String,
+}
+
 #[derive(Clone, Debug, PartialEq)]
 pub struct SourceCard {
     pub source_question_id: Option<String>,

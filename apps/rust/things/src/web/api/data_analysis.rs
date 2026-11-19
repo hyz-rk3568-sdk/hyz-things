@@ -110,8 +110,6 @@ pub(crate) struct GradedQuestion {
     pub card_path: Option<String>,
     #[serde(default)]
     pub card_id: Option<String>,
-    #[serde(default)]
-    pub related_card: Option<hyz_things::domain::data_analysis::RelatedCardSnapshot>,
 }
 #[derive(Clone, Debug, Deserialize)]
 pub(crate) struct AnalysisResult {

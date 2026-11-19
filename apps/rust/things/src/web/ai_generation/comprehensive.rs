@@ -943,7 +943,7 @@ pub(crate) fn comprehensive_training(props: &ComprehensiveProps) -> Html {
                     <h3 class="mt-3 text-base font-semibold">{"解题解析"}</h3>
                     <p class="mt-2 whitespace-pre-wrap text-base leading-7" data-testid="analysis-explanation">{q.explanation.clone()}</p>
                     <RelatedMethodCard key={format!("analysis-{}-{index}", score.id)}
-                        card={q.related_card.clone()} source_file={q.card_path.clone().unwrap_or_default()}
+                        card_id={q.card_id.clone()}
                         test_id="analysis-related-card" />
                     <details class="mt-3 text-xs">
                         <summary class="cursor-pointer">{"查看原始数据证据"}</summary>
@@ -1015,6 +1015,7 @@ pub(crate) fn comprehensive_training(props: &ComprehensiveProps) -> Html {
                 actions={html! {
                     <div class="flex min-w-0 flex-wrap items-center gap-2 sm:justify-end">
                         <TrainingStatusBar prefix="analysis-result" counts={review_status} mode={TrainingStatusMode::Review}/>
+                        <AiPracticeActions key={format!("analysis-{}-{index}",score.id)} csrf={props.csrf.clone()} id={hyz_things::domain::ai_practice::AiPracticeQuestionId { module:hyz_things::domain::ai_practice::AiPracticeModule::DataAnalysis, session_id:score.id.clone(), question:index }}/>
                         <button type="button" class="btn btn-outline btn-sm" onclick={show_history}>{"查看练习记录"}</button>
                         <button type="button" class="btn btn-outline btn-sm" data-testid="analysis-retry-result" disabled={*busy} onclick={redo_from_result}>{"重做原题"}</button>
                         <button type="button" class="btn btn-primary btn-sm" onclick={again}>{"再出一套"}</button>
@@ -1047,7 +1048,7 @@ pub(crate) fn comprehensive_training(props: &ComprehensiveProps) -> Html {
             let current = current.clone();
             let reviewing_history = reviewing_history.clone();
             let review_run_id = review_run_id.clone();
-            Callback::from(move |id: String| {
+            Callback::from(move |(id, index): (String, usize)| {
                 let result = result.clone();
                 let error = error.clone();
                 let history_open = history_open.clone();
@@ -1065,7 +1066,7 @@ pub(crate) fn comprehensive_training(props: &ComprehensiveProps) -> Html {
                         Ok(value) => {
                             run.set(None);
                             history_open.set(false);
-                            current.set(0);
+                            current.set(index.min(value.questions.len().saturating_sub(1)));
                             reviewing_history.set(true);
                             review_run_id.set(id.clone());
                             result.set(Some(value));
@@ -1081,6 +1082,7 @@ pub(crate) fn comprehensive_training(props: &ComprehensiveProps) -> Html {
                     <button class="btn btn-outline btn-sm" onclick={back}>{"返回训练"}</button>
                 </div>})}>
                 <div class="space-y-4">
+                <AiPracticeFavoritesPanel module={hyz_things::domain::ai_practice::AiPracticeModule::DataAnalysis} on_open={Callback::from({let open_result=open_result.clone(); move |id: hyz_things::domain::ai_practice::AiPracticeQuestionId| open_result.emit((id.session_id,id.question))})}/>
                 {if history.is_empty(){html!{<p class="text-sm text-base-content/60">{"还没有已交卷的综合训练。"}</p>}}else{Html::default()}}
                 {for history.iter().map(|entry|{
                     let id=entry.id.clone();let open_result=open_result.clone();
@@ -1097,7 +1099,7 @@ pub(crate) fn comprehensive_training(props: &ComprehensiveProps) -> Html {
                                 }
                                 <p class="text-xs text-base-content/60">{format!("作答用时 {}分{}秒 · {}",entry.elapsed_ms/60000,(entry.elapsed_ms/1000)%60,entry.topics.join("、"))}</p></div>
                                 <div class="flex flex-wrap gap-2">
-                                    <button class="btn btn-outline btn-sm" onclick={Callback::from(move |_|open_result.emit(id.clone()))}>{"查看原题与解析"}</button>
+                                    <button class="btn btn-outline btn-sm" onclick={Callback::from(move |_|open_result.emit((id.clone(),0)))}>{"查看原题与解析"}</button>
                                     <button class="btn btn-primary btn-sm" data-testid="analysis-retry" disabled={*busy} onclick={Callback::from(move |_|redo.emit(redo_id.clone()))}>{"重做原题"}</button>
                                 </div>
                             </div>

@@ -159,6 +159,11 @@ test("logic judgment typesets KaTeX in stems, choices, review and source cards",
   const {state,open}=await logicFixture(page);
   state.run.questions[0].question='已知 $A \\rightarrow B$，推断哪项成立？';
   state.run.questions[0].options[0]='选项 $\\neg B$';
+  await page.route('**/api/v1/study/cards/*/current', route => route.fulfill({json:{
+    source_file:'判断/形式推理/S1-直言命题/cards.md',
+    front_markdown:'关联方法 $A \\rightarrow B$',
+    back_markdown:'方法详解 $\\neg B$',
+  }}));
   await open();
   await page.getByTestId('logic-statistics').locator('summary').click();
   await page.getByTestId('logic-card-item').first().click();
